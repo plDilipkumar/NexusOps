@@ -76,17 +76,21 @@ public class SecurityConfig {
 
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration cors = new CorsConfiguration();
-        cors.setAllowedOrigins(List.of(
+        CorsConfiguration readOnlyCors = new CorsConfiguration();
+        readOnlyCors.setAllowedOrigins(List.of(
                 "https://neurosql.vercel.app",
                 "http://localhost:5173"));
-        // POST is used only by the disabled-by-default, authenticated SQL validator.
-        cors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
-        cors.setAllowedHeaders(List.of("Accept", "Authorization", "Content-Type"));
-        cors.setMaxAge(3600L);
+        readOnlyCors.setAllowedMethods(List.of("GET", "OPTIONS"));
+        readOnlyCors.setAllowedHeaders(List.of("Accept", "Authorization", "Content-Type"));
+        readOnlyCors.setMaxAge(3600L);
+
+        CorsConfiguration validationCors = new CorsConfiguration(readOnlyCors);
+        validationCors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", cors);
+        // Register the more-specific route first so POST is not allowed on unrelated API paths.
+        source.registerCorsConfiguration("/api/sql/**", validationCors);
+        source.registerCorsConfiguration("/api/**", readOnlyCors);
         return source;
     }
 }
