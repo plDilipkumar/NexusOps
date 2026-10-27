@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-27 18:35 UTC
+Last verified: 2026-10-27 18:37 UTC
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -10,21 +10,22 @@ Last verified: 2026-10-27 18:35 UTC
 - [x] React + TypeScript + Vite frontend and Spring Boot 3 / Java 21 backend are present.
 - [x] Render service `neurosql-api` is configured in the confirmed workspace on the free plan, Singapore region, repository `plDilipkumar/NexusOps`, branch `main`, and Docker context `backend`.
 - [x] Render environment variables point to the dedicated NeuroSQL Neon database; credentials are not stored in GitHub.
-- [x] `GET /api/health/database` has been verified by the production smoke test to report `neurosql_db` and PostgreSQL `17.11` without exposing credentials.
+- [x] `GET /api/health/database` was verified by an earlier production smoke test to report `neurosql_db` and PostgreSQL `17.11` without exposing credentials.
 - [x] The frontend polls database health on load and every 60 seconds, with connected/unavailable states.
 - [x] Read-only `GET /api/schema` reads PostgreSQL information-schema metadata and groups schemas, tables, and ordered columns. It performs no writes and remains disabled by default.
 - [x] PR #4 merged as commit `69d7b53`: added Spring Security, environment-configured single-owner HTTP Basic authentication, BCrypt password hashing in memory, fail-closed authorization for `/api/schema`, public health routes, and CORS restricted to the production frontend and local Vite origin.
 - [x] Security tests cover unauthenticated schema access, configured-owner access, public health, CORS preflight, and denial when auth is disabled. GitHub Actions run #19 passed backend `mvn -B verify` and the frontend production build.
-- [x] Render's auto-deploy did not start after a prior merge. After confirming no new deployment existed, a manual deploy was triggered for commit `f68cd1f`; Render reported deployment `dep-dbge2159fdbs73d76ls0` as live. Logs confirmed Spring Boot startup and a Hikari PostgreSQL connection.
-- [x] Added a schema-explorer page with an owner Basic-auth form, schema/table/column rendering, table expansion, refresh and sign-out. It is gated by `VITE_SCHEMA_LOGIN_ENABLED=true`; credentials remain in React memory only and are never written to browser storage.
+- [x] Render deployment `dep-dbge2159fdbs73d76ls0` is live. Logs confirmed Spring Boot startup and a Hikari PostgreSQL connection.
+- [x] PR #5 merged as commit `deeb794`: added the gated schema-explorer page, owner Basic-auth sign-in, schema/table/column rendering, expandable table columns, refresh and sign-out. Credentials stay in React memory and are never written to browser storage.
 - [x] Added `frontend/.env.example` and documented the coordinated frontend/backend flags required to enable schema browsing.
-- [x] PR #5 preview deployment reports Vercel `READY`; GitHub Actions run #23 passed backend `mvn -B verify` and the frontend production build.
+- [x] GitHub Actions run #24 passed backend `mvn -B verify` and the frontend production build. The Vercel preview deployment reported `READY`.
+- [x] Vercel production deployment for commit `deeb794` reports `READY` and is aliased to `neurosql.vercel.app`.
 - [x] Production authentication and schema-browser flags remain unchanged and disabled. No secrets were committed, no database migrations were run, and no application tables were created.
 
 ## In progress
-- [ ] Merge the reviewed schema-explorer UI change and verify the main-branch production deployment.
 - [ ] Directly verify browser-side CORS and rendered sign-in/metadata behavior after owner auth and schema browsing are intentionally configured. The login form remains hidden in production by default; no live credentials were supplied or configured.
-- [ ] Investigate why Render's configured auto-deploy did not trigger for an earlier merge. Current Render service settings still say auto-deploy is enabled; reliability needs observation after this merge.
+- [ ] Confirm the post-merge production API/database smoke-test result. Direct opening of the public API endpoint was unavailable through the current HTTP tools; the last independently verified production smoke test was earlier.
+- [ ] Investigate why Render's auto-deploy did not start for an earlier backend change. Render still reports auto-deploy enabled; the latest merge changed only frontend/docs/progress files, so a new backend build was not required for that merge.
 - [ ] Replace the single-owner in-memory account with durable multi-user authentication and workspace authorization before exposing user-specific data.
 
 ## Next milestones
