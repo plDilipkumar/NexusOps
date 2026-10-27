@@ -1,6 +1,7 @@
 package com.neurosql.api;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -56,6 +57,17 @@ class SqlValidationControllerTest {
                         .content("{\"sql\":\"DELETE FROM customers\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(false));
+    }
+
+    @Test
+    void productionFrontendCanPreflightAuthenticatedValidationPost() throws Exception {
+        mockMvc.perform(options("/api/sql/validate")
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization,content-type"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string("Access-Control-Allow-Origin", "https://neurosql.vercel.app"));
     }
 
     @Test
