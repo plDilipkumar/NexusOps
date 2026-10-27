@@ -71,10 +71,7 @@ public class ReadOnlySqlValidator {
             if (BLOCKED_FUNCTIONS.contains(token)) {
                 errors.add("Potentially side-effecting function is not allowed: " + token + ".");
             }
-            if (token.equals("SHARE") && i > 0 && tokens.get(i - 1).equals("FOR")) {
-                errors.add("Row-locking clauses are not allowed.");
-            }
-            if (token.equals("UPDATE") && i > 0 && tokens.get(i - 1).equals("FOR")) {
+            if ((token.equals("SHARE") || token.equals("UPDATE")) && i > 0 && tokens.get(i - 1).equals("FOR")) {
                 errors.add("Row-locking clauses are not allowed.");
             }
         }
@@ -122,7 +119,7 @@ public class ReadOnlySqlValidator {
                     }
                 }
                 if (depth != 0) {
-                    return new Tokenization(words, false, true);
+                    return new Tokenization(words, true, false);
                 }
                 continue;
             }
@@ -155,7 +152,7 @@ public class ReadOnlySqlValidator {
                     }
                 }
                 if (!closed) {
-                    return new Tokenization(words, false, true);
+                    return new Tokenization(words, true, false);
                 }
                 continue;
             }
@@ -165,7 +162,7 @@ public class ReadOnlySqlValidator {
                     String delimiter = sql.substring(i, delimiterEnd);
                     int close = sql.indexOf(delimiter, delimiterEnd);
                     if (close < 0) {
-                        return new Tokenization(words, false, true);
+                        return new Tokenization(words, true, false);
                     }
                     i = close + delimiter.length();
                     continue;
@@ -185,7 +182,7 @@ public class ReadOnlySqlValidator {
             }
             i++;
         }
-        return new Tokenization(words, !multipleStatements, multipleStatements);
+        return new Tokenization(words, false, multipleStatements);
     }
 
     private static int dollarDelimiterEnd(String sql, int start) {
@@ -199,11 +196,7 @@ public class ReadOnlySqlValidator {
         return start;
     }
 
-    private record Tokenization(List<String> words, boolean valid, boolean multipleStatements) {
-        private boolean malformed() {
-            return !valid;
-        }
-    }
+    private record Tokenization(List<String> words, boolean malformed, boolean multipleStatements) {}
 
     public record ValidationResponse(
             boolean valid, String statementType, int statementCount, List<String> errors, List<String> warnings) {}
