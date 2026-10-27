@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-27 21:32 UTC
+Last verified: 2026-10-27 21:34 UTC
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -42,7 +42,8 @@ Last verified: 2026-10-27 21:32 UTC
 - [x] Added an `auth-schema-contract` GitHub Actions job using a disposable PostgreSQL 17 service. The job applies the proposed SQL only to an ephemeral CI database, then runs the contract test; it does not connect to Neon.
 - [x] GitHub Actions run #36 completed successfully for commit `92eba3891d1d03d9f9a83be8cbce06de0d96b08c`: backend Maven verification, frontend production build, and the proposed schema contract job all passed; production smoke was correctly skipped for this draft PR. Contract-test logs show PostgreSQL 17.11 created the four tables and ten indexes, rejected invalid fixtures, rolled back test rows, and reported no fixture rows remaining.
 - [x] Vercel preview for commit `92eba3891d1d03d9f9a83be8cbce06de0d96b08c` reports `READY`.
-- [ ] Follow-up workflow commit `00689646f730dff1e9c7ba661851f7597a1f1936` adds `paths-ignore: PROGRESS.md` to avoid running the full CI suite for tracker-only edits. Its Vercel preview was still `BUILDING`, and the associated Actions run was not yet visible at the last check.
+- [x] Follow-up workflow commit `00689646f730dff1e9c7ba661851f7597a1f1936` adds `paths-ignore: PROGRESS.md` to avoid running the full CI suite for tracker-only edits. Its Vercel preview reports `READY`.
+- [ ] GitHub Actions run #38 for the workflow-optimization commit is still in progress; the already-completed run #36 passed the backend, frontend, and schema contract checks for the schema-test change.
 - [ ] The proposed schema is only a foundation. Session lifecycle, login rate limiting, password policy, email verification/reset, authorization on every protected endpoint, and a separate least-privileged runtime database role remain unimplemented.
 
 ## In progress
