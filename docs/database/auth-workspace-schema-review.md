@@ -2,12 +2,12 @@
 
 **Status: draft only.** The SQL in `proposed/V1__durable_auth_workspaces.sql` is intentionally outside the application's migration-runner path. It has not been applied to the production `main` branch and must not be wired into application startup until the schema is approved.
 
-## Infrastructure inspection (2026-10-28 04:03 UTC)
+## Infrastructure inspection (2026-10-28 04:03 IST)
 
 - GitHub source of truth: `plDilipkumar/NexusOps`, default branch `main`.
 - Neon project: `neurosql`, PostgreSQL 17, Singapore region; database: `neurosql_db`.
 - Read-only query against Neon `main` returned PostgreSQL 17.11, zero visible application tables, and zero visible application views.
-- Vercel project `neurosql` is linked to `plDilipkumar/NexusOps`; latest inspected deployment for the draft branch reports `READY`.
+- Vercel project `neurosql` is linked to `plDilipkumar/NexusOps`; preview deployment for draft commit `9838791326fb6d7c659e0129cd68b1bc46eba0a5` reports `READY`.
 - Render service `neurosql-api` uses the same repository, `main`, Docker context `backend`, Singapore region, and free plan. Auto-deploy is configured; a prior merge required a manual deployment. The last verified production service commit remains `746d58d`.
 
 ## Proposed tables
@@ -19,9 +19,9 @@
 
 ## Workspace owner invariant
 
-The proposed schema now enforces **exactly one active owner at transaction end** using two deferred constraint triggers (one for workspace rows and one for membership changes), in addition to the partial unique index that prevents multiple active owners. Workspace creation must insert the workspace and its initial owner membership in the same transaction. Owner transfer must suspend or demote the current owner and activate the replacement within one transaction; the deferred trigger evaluates the final transaction state. Deleting a workspace is allowed because the trigger skips checks when the workspace row no longer exists.
+The proposed schema enforces **exactly one active owner at transaction end** using two deferred constraint triggers (one for workspace rows and one for membership changes), alongside the partial unique index that prevents multiple active owners. Workspace creation must insert the workspace and its initial owner membership in the same transaction. Owner transfer must suspend or demote the current owner and activate the replacement within one transaction; the deferred trigger checks the final transaction state. Deleting a workspace is allowed because the trigger skips checks when the workspace row no longer exists.
 
-The contract test explicitly checks that ownerless workspace creation and removal of the last active owner fail, while an atomic owner transfer succeeds.
+The contract test verifies that ownerless workspace creation and removal of the final active owner fail, while an atomic owner transfer succeeds.
 
 ## Database privileges and remaining readiness requirements
 
@@ -29,7 +29,13 @@ The schema revokes public privileges on the application schema, tables, and func
 
 ## Temporary-branch migration test
 
-The original schema was tested on Neon temporary branch `neurosql-auth-migration-check-20261028` (`br-shy-credit-b33ux9py`), cloned from `main`, before the deferred owner-invariant trigger was added. The updated DDL must be tested separately on a fresh temporary Neon branch before the proposal is considered validated.
+- The original schema version was tested on temporary Neon branch `neurosql-auth-migration-check-20261028` (`br-shy-credit-b33ux9py`).
+- The updated DDL, including the owner-invariant function and deferred triggers, was applied to a fresh temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) cloned from Neon `main`, database `neurosql_db`, PostgreSQL 17.11.
+- The updated branch has four proposed tables, ten indexes, and both owner-invariant triggers.
+- Direct temporary-branch tests passed for case-insensitive email uniqueness, duplicate workspace slug, duplicate active owner, invalid role, malformed session hash, foreign-key rejection, valid session insertion, atomic owner transfer, ownerless workspace rejection, and final-owner removal rejection.
+- Test fixtures were rolled back. A read-only follow-up found zero rows in all four proposed tables.
+- GitHub Actions run #42 passed backend Maven verification, frontend production build, and the ephemeral PostgreSQL 17 schema-contract job, including the new owner-invariant cases. The production smoke job was skipped for this draft PR, as intended.
+- A separate read-only query confirmed Neon `main` still has zero visible application tables and views.
 
 These are structural migration checks, not a complete application authentication test. Session lifecycle, login rate limiting, password policy, email verification/reset flows, workspace authorization on every protected endpoint, and least-privileged database grants remain unimplemented.
 
