@@ -13,10 +13,10 @@ Last verified: 2026-10-27
 - [x] Render environment variables point to the dedicated Neon database; credentials are not stored in GitHub.
 - [x] Merged PR #1 adding `GET /api/health/database`, success/failure unit tests, and test execution in the Docker build.
 - [x] GitHub Actions passed backend Maven verification and frontend production build.
-- [x] Main-push production smoke test passed: the deployed endpoint returned `status=UP`, database `neurosql_db`, and PostgreSQL `17.11`.
+- [x] Main-push production smoke tests passed: the deployed endpoint returned `status=UP`, database `neurosql_db`, and PostgreSQL `17.11`.
 
 ## In progress
-- [ ] Investigate why Render's configured auto-deploy did not register the merged commit; the latest backend deployment required a manual trigger.
+- [ ] Confirm future GitHub commits reliably trigger Render auto-deploys. The current backend deployment is live; a Render API deploy was initiated after the new commit did not appear promptly in the deploy list.
 - [ ] Connect the frontend to backend health and feature APIs, then verify end-to-end frontend/API/database behavior.
 
 ## Next milestones
