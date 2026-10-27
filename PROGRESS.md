@@ -1,12 +1,12 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-27 19:38 UTC
+Last verified: 2026-10-28 05:00 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
 - [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. Production deployment for commit `746d58d` reports `READY` and is aliased to `neurosql.vercel.app`.
 - [x] Neon project `neurosql` is on the free organization in Singapore, using PostgreSQL 17. The `main` branch is ready.
-- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. Read-only query on 2026-10-27 found zero visible application tables/views and zero `public.show_db_tree` functions. No schema changes have been made.
+- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. Current read-only inspection found zero visible application tables/views; the existing `public.show_db_tree` helper function is present. No production schema changes have been made.
 - [x] React + TypeScript + Vite frontend and Spring Boot 3 / Java 21 backend are present.
 - [x] Render service `neurosql-api` is configured in the confirmed workspace on the free plan, Singapore region, repository `plDilipkumar/NexusOps`, branch `main`, and Docker context `backend`; auto-deploy is configured for commits.
 - [x] Render deployment `dep-dbgfqe6gekts738l9eng` is live for commit `746d58d`. It was manually triggered after no automatic deployment appeared following the merge.
@@ -49,3 +49,15 @@ Last verified: 2026-10-27 19:38 UTC
 - Never run destructive SQL automatically.
 - Do not claim a feature or deployment is complete until verified.
 - Read this file before each work session and avoid repeating completed work.
+
+
+## Durable-session token primitive — feature branch only
+- [x] Re-inspected this progress file, the current security code, Neon project/branches/database, Vercel project and recent production deployments, and Render service/deploy history before selecting this step.
+- [x] Added `SessionTokenCodec` on branch `feature/session-token-codec-main`: generates 32-byte cryptographically random URL-safe bearer tokens and hashes canonical tokens to lowercase SHA-256 hex compatible with the proposed `user_sessions.token_hash` column.
+- [x] Added unit tests for token shape, uniqueness across 128 generated tokens, deterministic hash output, hash format, and malformed/non-canonical input rejection.
+- [ ] CI verification for the token codec is pending; the PR will target `main` so the repository's configured pull-request workflow actually runs.
+- [ ] The codec is intentionally not wired into HTTP authentication or persistence. The proposed durable-auth schema remains in draft PR #7 and has not been approved or applied to Neon `main`.
+- [x] Current infrastructure inspection: Neon default branch `br-empty-credit-b360dmpc` is ready; Vercel production deployment for commit `6425ab4` reports `READY`; Render free service `neurosql-api` remains live for commit `746d58d`, with auto-deploy configured.
+- [x] Render application logs show the Java 21 / Spring Boot service started successfully and initialized its database pool during the last deployment. No new backend deployment or environment change was needed for this isolated token primitive.
+- [ ] Render auto-deploy reliability remains an open issue: the last feature merge needed a manual deploy even though auto-deploy is enabled.
+- [x] No production database tables were created or modified, no secrets were added to GitHub, and no paid resources were introduced.
