@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-27 20:33 UTC
+Last verified: 2026-10-27 20:35 UTC
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -39,7 +39,7 @@ Last verified: 2026-10-27 20:33 UTC
 - [x] Tested email uniqueness, duplicate workspace slug rejection, one-active-owner enforcement, invalid membership role rejection, session token hash checks, foreign keys, valid session insertion, and schema/table `REVOKE` statements.
 - [x] Removed all temporary test rows; all four temporary-branch tables were empty after checks. A separate query confirmed Neon `main` still has zero visible tables.
 - [x] Added the proposed SQL under `docs/database/proposed/` so it is not picked up by an application migration runner, plus a schema review document describing invariants, test results, and remaining security work.
-- [ ] Draft PR #7 contains the schema proposal and progress update. It is not merged; no migration is approved for Neon `main`.
+- [x] Draft PR #7 contains the schema proposal and progress update. GitHub Actions run #33 passed backend `mvn -B verify` and the frontend production build; the Vercel preview for the proposal commit reported `READY`. The PR is not merged and no migration is approved for Neon `main`.
 - [ ] The proposed schema is only a foundation. Session lifecycle, login rate limiting, password policy, email verification/reset, authorization on every protected endpoint, and a separate least-privileged runtime database role remain unimplemented.
 
 ## In progress
