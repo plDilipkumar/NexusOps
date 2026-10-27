@@ -60,4 +60,12 @@ class ReadOnlySqlValidatorTest {
         assertThat(validator.validate("SELECT 'unfinished").valid()).isFalse();
         assertThat(validator.validate("   ").valid()).isFalse();
     }
+
+    @Test
+    void doesNotLetBackslashHideStatementBoundariesInStandardStrings() {
+        var result = validator.validate("SELECT 'x\\'; DELETE FROM customers; SELECT 'y'");
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.errors()).anyMatch(message -> message.contains("one SQL statement"));
+    }
 }
