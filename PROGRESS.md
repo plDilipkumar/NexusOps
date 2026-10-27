@@ -55,9 +55,9 @@ Last verified: 2026-10-28 05:00 IST
 - [x] Re-inspected this progress file, the current security code, Neon project/branches/database, Vercel project and recent production deployments, and Render service/deploy history before selecting this step.
 - [x] Added `SessionTokenCodec` on branch `feature/session-token-codec-main`: generates 32-byte cryptographically random URL-safe bearer tokens and hashes canonical tokens to lowercase SHA-256 hex compatible with the proposed `user_sessions.token_hash` column.
 - [x] Added unit tests for token shape, uniqueness across 128 generated tokens, deterministic hash output, hash format, and malformed/non-canonical input rejection.
-- [ ] CI verification for the token codec is pending; the PR will target `main` so the repository's configured pull-request workflow actually runs.
+- [x] GitHub Actions run #44 (`40602859467`) passed backend `mvn -B verify` (including the new token-codec tests) and the frontend production build. Production API/database smoke was skipped as expected for a pull request.
 - [ ] The codec is intentionally not wired into HTTP authentication or persistence. The proposed durable-auth schema remains in draft PR #7 and has not been approved or applied to Neon `main`.
-- [x] Current infrastructure inspection: Neon default branch `br-empty-credit-b360dmpc` is ready; Vercel production deployment for commit `6425ab4` reports `READY`; Render free service `neurosql-api` remains live for commit `746d58d`, with auto-deploy configured.
+- [x] Current infrastructure inspection: Neon default branch `br-empty-credit-b360dmpc` is ready; Vercel production deployment for commit `6425ab4` reports `READY`; Vercel preview for token-codec commit `853225f` reports `READY`; Render free service `neurosql-api` remains live for commit `746d58d`, with auto-deploy configured.
 - [x] Render application logs show the Java 21 / Spring Boot service started successfully and initialized its database pool during the last deployment. No new backend deployment or environment change was needed for this isolated token primitive.
 - [ ] Render auto-deploy reliability remains an open issue: the last feature merge needed a manual deploy even though auto-deploy is enabled.
 - [x] No production database tables were created or modified, no secrets were added to GitHub, and no paid resources were introduced.
