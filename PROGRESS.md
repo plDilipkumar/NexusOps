@@ -3,30 +3,26 @@
 Last verified: 2026-10-27
 
 ## Verified
-- [x] Repository was initially a placeholder; starter files now exist in `plDilipkumar/NexusOps`.
-- [x] Created Neon PostgreSQL 17 project `neurosql` on the free organization in Singapore.
-- [x] Read-only SQL check confirmed database `neurosql_db`, PostgreSQL 17.11, role `neurosql_owner`, and zero public application tables.
-- [x] Added initial React + TypeScript + Vite workspace UI.
-- [x] Added initial Spring Boot 3 / Java 21 API and `/api/health` route.
-- [x] Added README, safety principles, and this progress tracker.
-- [x] Created Vercel project `neurosql` linked to this repository with root directory `frontend`; latest production deployment reports `READY`.
-- [x] Created Render free web service `neurosql-api` in the confirmed workspace, using the backend Dockerfile and Singapore region.
-- [x] Configured Render database environment variables for the dedicated Neon database without placing credentials in GitHub.
-- [x] Render deployment status is `live`; application logs confirm Spring Boot started on port 10000.
+- [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
+- [x] Neon PostgreSQL 17 project `neurosql` is on the free organization in Singapore.
+- [x] Read-only SQL checks confirm database `neurosql_db`, PostgreSQL 17.11, and zero public application tables. No schema changes have been made.
+- [x] Initial React + TypeScript + Vite workspace UI and Spring Boot 3 / Java 21 API exist.
+- [x] Vercel project `neurosql` is linked to this repository with frontend root `frontend`; production deployment for merged commit `180bbb1` reports `READY`.
+- [x] Render free web service `neurosql-api` exists in the confirmed workspace and its initial deployment started Spring Boot on port 10000.
+- [x] Render environment variables point to the dedicated Neon database; credentials are not stored in GitHub.
+- [x] Merged PR #1 adding `GET /api/health/database`, success/failure unit tests, and a Docker build that runs `mvn -B verify`.
+- [x] Added GitHub Actions CI. The PR run passed both backend Maven verification and frontend production build.
 
-## In progress (feature branch; not yet deployed)
-- [x] Added `GET /api/health/database` to perform a real JDBC query and return database name and PostgreSQL version on success.
-- [x] Added unit tests for successful database checks and safe 503 responses on connection failure.
-- [x] Updated the backend Docker verification stage to run `mvn -B verify` rather than skipping tests.
-- [ ] Merge the database-health change and confirm the Render build passes tests.
-- [ ] Call the deployed health endpoints and verify JDBC connectivity to `neurosql_db` from Render.
+## In progress
+- [ ] Render has not yet registered a deployment for the merged commit; the service still lists its earlier deployment. Verify the deployment hook/status before treating the new endpoint as live.
+- [ ] After the new backend deploy, call `/api/health` and `/api/health/database`; confirm the JDBC query reports `neurosql_db` and PostgreSQL 17.11.
+- [ ] Verify end-to-end frontend/API/database connectivity.
 
 ## Next milestones
-- [ ] Define reviewed schema for saved connections, query history, and audit events; prepare/test migrations on a temporary Neon branch and request approval before main-branch changes.
+- [ ] Define reviewed schema for saved connections, query history, and audit events. Prepare/test migrations on a temporary Neon branch and request approval before any main-branch schema change.
 - [ ] Add backend schema browsing, safe query validation, query history, and EXPLAIN endpoints.
 - [ ] Connect the frontend to backend health and feature APIs.
-- [ ] Add authentication/authorization and CI.
-- [ ] Verify live frontend/API/database connectivity end-to-end.
+- [ ] Add authentication/authorization.
 
 ## Constraints
 - Keep within free-tier usage; no paid resources.
