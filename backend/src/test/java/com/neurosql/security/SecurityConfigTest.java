@@ -1,5 +1,6 @@
 package com.neurosql.security;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -47,9 +48,7 @@ class SecurityConfigTest {
     void configuredOwnerCanReadSchemaMetadata() throws Exception {
         when(jdbcTemplate.queryForObject(eq("SELECT current_database()"), eq(String.class)))
                 .thenReturn("neurosql_db");
-        when(jdbcTemplate.queryForList(SchemaController.SCHEMAS_SQL)).thenReturn(List.of());
-        when(jdbcTemplate.queryForList(SchemaController.TABLES_SQL)).thenReturn(List.of());
-        when(jdbcTemplate.queryForList(SchemaController.COLUMNS_SQL)).thenReturn(List.of());
+        when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of());
 
         mockMvc.perform(get("/api/schema").with(httpBasic("test-owner", "test-password")))
                 .andExpect(status().isOk())
