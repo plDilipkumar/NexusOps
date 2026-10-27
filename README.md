@@ -20,6 +20,8 @@ Configure `JDBC_DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` thro
 - `GET /api/schema` is a read-only schema metadata endpoint. It is denied by default and is only reachable when both `NEUROSQL_AUTH_ENABLED=true` and `NEUROSQL_SCHEMA_BROWSER_ENABLED=true`.
 - The initial auth boundary supports one environment-configured owner account over HTTP Basic on HTTPS. Configure `NEUROSQL_AUTH_USERNAME` and `NEUROSQL_AUTH_PASSWORD` only in the deployment environment. When auth is enabled but either credential is missing, the backend fails at startup rather than silently opening access.
 - CORS is restricted to the production frontend origin (`https://neurosql.vercel.app`) and local Vite origin (`http://localhost:5173`).
+- The schema explorer UI uses `VITE_SCHEMA_LOGIN_ENABLED=true` to show the owner sign-in form. Leave it unset/false in shared production until the backend's `NEUROSQL_AUTH_ENABLED=true`, `NEUROSQL_SCHEMA_BROWSER_ENABLED=true`, and owner credentials are deliberately configured in Render. The frontend keeps credentials in memory only and sends them via HTTPS Basic auth; it does not write them to localStorage.
+- Copy `frontend/.env.example` to `frontend/.env.local` for local settings. Do not commit real credentials.
 
 This is a single-owner security foundation, not yet multi-user authentication or workspace isolation. Keep both auth/schema flags disabled in shared production until the frontend login flow and direct browser verification are complete.
 
