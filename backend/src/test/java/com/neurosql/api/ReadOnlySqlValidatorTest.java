@@ -31,6 +31,7 @@ class ReadOnlySqlValidatorTest {
         var result = validator.validate("WITH changed AS (DELETE FROM customers RETURNING id) SELECT id FROM changed");
 
         assertThat(result.valid()).isFalse();
+        assertThat(result.statementCount()).isEqualTo(1);
         assertThat(result.errors()).anyMatch(message -> message.contains("DELETE"));
     }
 
