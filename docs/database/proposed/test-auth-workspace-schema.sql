@@ -19,6 +19,16 @@ BEGIN
         RAISE EXCEPTION 'Expected exactly ten proposed indexes';
     END IF;
 
+    IF (SELECT count(*)
+        FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'neurosql_app'
+          AND t.tgname IN ('ct_workspaces_require_active_owner', 'ct_memberships_require_active_owner')
+          AND NOT t.tgisinternal) <> 2 THEN
+        RAISE EXCEPTION 'Expected both deferred active-owner constraint triggers';
+    END IF;
+
     INSERT INTO neurosql_app.app_users (email, password_hash, display_name)
     VALUES ('alice@example.test', repeat('a', 60), 'Alice')
     RETURNING user_id INTO user_a;
@@ -84,6 +94,33 @@ BEGIN
 
     INSERT INTO neurosql_app.user_sessions (user_id, token_hash, expires_at)
     VALUES (user_a, repeat('a', 64), now() + interval '1 hour');
+
+    -- Transfer ownership in one transaction: the deferred invariant sees the final owner.
+    UPDATE neurosql_app.workspace_memberships
+       SET status = 'SUSPENDED'
+     WHERE workspace_id = workspace_a AND user_id = user_a AND role = 'OWNER';
+    INSERT INTO neurosql_app.workspace_memberships (workspace_id, user_id, role, status)
+    VALUES (workspace_a, user_b, 'OWNER', 'ACTIVE');
+    SET CONSTRAINTS ALL IMMEDIATE;
+
+    -- A workspace cannot be created without an active owner.
+    BEGIN
+        INSERT INTO neurosql_app.workspaces (name, slug, created_by_user_id)
+        VALUES ('Ownerless Team', 'ownerless-team', user_a);
+        RAISE EXCEPTION 'Expected ownerless workspace creation to be rejected';
+    EXCEPTION WHEN check_violation THEN
+        NULL;
+    END;
+
+    -- Removing the final active owner must fail; the subtransaction rolls back the deletion.
+    BEGIN
+        DELETE FROM neurosql_app.workspace_memberships
+         WHERE workspace_id = workspace_a AND user_id = user_b
+           AND role = 'OWNER' AND status = 'ACTIVE';
+        RAISE EXCEPTION 'Expected removal of the final active owner to be rejected';
+    EXCEPTION WHEN check_violation THEN
+        NULL;
+    END;
 
     RAISE NOTICE 'Schema contract checks passed';
 END
