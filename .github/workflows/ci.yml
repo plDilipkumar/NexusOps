@@ -43,3 +43,30 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+  production-smoke:
+    name: Production API and database smoke test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deployed API reaches the dedicated Neon database
+        shell: bash
+        run: |
+          for attempt in $(seq 1 18); do
+            if response=$(curl --fail --silent --show-error --max-time 10 https://neurosql-api.onrender.com/api/health/database); then
+              echo "$response"
+              if echo "$response" | grep -q '"status":"UP"' \
+                && echo "$response" | grep -q '"database":"neurosql_db"' \
+                && echo "$response" | grep -q '"postgresVersion":"17.11'; then
+                echo "Production API and Neon database check passed."
+                exit 0
+              fi
+              echo "Endpoint responded but did not report the expected database and version." >&2
+              exit 1
+            fi
+            echo "Attempt $attempt: waiting for the Render API/database endpoint..."
+            sleep 10
+          done
+          echo "Production API/database health check did not become ready." >&2
+          exit 1
