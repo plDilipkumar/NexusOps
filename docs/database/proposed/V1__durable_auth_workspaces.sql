@@ -56,7 +56,7 @@ CREATE TABLE neurosql_app.workspace_memberships (
     CHECK (invited_by_user_id IS NULL OR invited_by_user_id <> user_id)
 );
 
--- A workspace may have at most one active owner. Service logic must also prevent zero active owners.
+-- The unique index enforces at most one active owner.
 CREATE UNIQUE INDEX uq_workspace_active_owner
     ON neurosql_app.workspace_memberships (workspace_id)
     WHERE role = 'OWNER' AND status = 'ACTIVE';
@@ -83,7 +83,58 @@ CREATE INDEX ix_user_sessions_active_user_expiry
     ON neurosql_app.user_sessions (user_id, expires_at)
     WHERE revoked_at IS NULL;
 
+-- Enforce exactly one active owner at transaction end. Workspace creation and
+-- owner transfer must be atomic transactions so the deferred check sees final state.
+CREATE FUNCTION neurosql_app.assert_workspace_has_active_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    workspace_ids UUID[];
+    target_workspace_id UUID;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        workspace_ids := ARRAY[OLD.workspace_id];
+    ELSIF TG_OP = 'UPDATE' THEN
+        workspace_ids := ARRAY[OLD.workspace_id, NEW.workspace_id];
+    ELSE
+        workspace_ids := ARRAY[NEW.workspace_id];
+    END IF;
+
+    FOREACH target_workspace_id IN ARRAY workspace_ids LOOP
+        IF target_workspace_id IS NOT NULL
+           AND EXISTS (
+               SELECT 1 FROM neurosql_app.workspaces w
+               WHERE w.workspace_id = target_workspace_id
+           )
+           AND NOT EXISTS (
+               SELECT 1 FROM neurosql_app.workspace_memberships m
+               WHERE m.workspace_id = target_workspace_id
+                 AND m.role = 'OWNER'
+                 AND m.status = 'ACTIVE'
+           ) THEN
+            RAISE EXCEPTION 'Workspace % must have exactly one active owner', target_workspace_id
+                USING ERRCODE = '23514',
+                      CONSTRAINT = 'workspace_requires_active_owner';
+        END IF;
+    END LOOP;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER ct_workspaces_require_active_owner
+AFTER INSERT OR UPDATE ON neurosql_app.workspaces
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION neurosql_app.assert_workspace_has_active_owner();
+
+CREATE CONSTRAINT TRIGGER ct_memberships_require_active_owner
+AFTER INSERT OR UPDATE OR DELETE ON neurosql_app.workspace_memberships
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION neurosql_app.assert_workspace_has_active_owner();
+
 -- No application role is granted access here. A separate least-privileged runtime
 -- role and explicit grants must be designed before enabling database-backed auth.
 REVOKE ALL ON SCHEMA neurosql_app FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA neurosql_app FROM PUBLIC;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA neurosql_app FROM PUBLIC;
