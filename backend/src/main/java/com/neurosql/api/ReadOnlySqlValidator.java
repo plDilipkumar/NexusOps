@@ -81,7 +81,7 @@ public class ReadOnlySqlValidator {
 
     private static ValidationResponse response(
             boolean valid, String statementType, List<String> errors, List<String> warnings) {
-        return new ValidationResponse(valid, statementType, valid ? 1 : 0,
+        return new ValidationResponse(valid, statementType, statementType == null ? 0 : 1,
                 List.copyOf(errors), warnings);
     }
 
