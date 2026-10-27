@@ -1,66 +1,60 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-27 21:34 UTC
+Last verified: 2026-10-28 04:03 IST
 
-## Verified
+## Verified — main branch and production baseline
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
-- [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. The production domain is `neurosql.vercel.app`; the latest production-target deployment inspected reports `READY`.
-- [x] Neon project `neurosql` is on the free organization in Singapore, using PostgreSQL 17. The `main` branch is ready.
-- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. The latest read-only table listing for Neon `main` returned no tables. No schema changes have been made to the main branch.
+- [x] Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` and uses the Hobby/free plan. The custom domain is `neurosql.vercel.app`; latest inspected draft preview reports `READY`.
+- [x] Neon project `neurosql` is in Singapore on PostgreSQL 17; default branch `main` is ready.
+- [x] Read-only query on Neon `main`, database `neurosql_db`, confirmed PostgreSQL 17.11, zero visible application tables, and zero visible application views. No production schema changes were made.
 - [x] React + TypeScript + Vite frontend and Spring Boot 3 / Java 21 backend are present.
-- [x] Render service `neurosql-api` is configured in the confirmed workspace on the free plan, Singapore region, repository `plDilipkumar/NexusOps`, branch `main`, and Docker context `backend`; auto-deploy is configured for commits.
-- [x] Render deployment `dep-dbgfqe6gekts738l9eng` is live for commit `746d58d`. It was manually triggered after no automatic deployment appeared following the merge.
-- [x] GitHub Actions run #31 passed backend `mvn -B verify`, frontend production build, and production API/database smoke test. The smoke test confirmed `status=UP`, database `neurosql_db`, and PostgreSQL `17.11`.
-- [x] Render logs confirmed the backend started successfully on Java 21 and Tomcat port 10000. The CI smoke test confirmed the live database health response.
+- [x] Render `neurosql-api` is on the free plan in the confirmed workspace, Singapore region, repository `plDilipkumar/NexusOps`, branch `main`, Docker context `backend`; auto-deploy is configured.
+- [x] Last verified Render production deployment `dep-dbgfqe6gekts738l9eng` is live for commit `746d58d`. The prior production smoke test in GitHub Actions run #31 confirmed API status `UP`, database `neurosql_db`, PostgreSQL `17.11`.
 - [x] Render environment variables point to the dedicated NeuroSQL Neon database; credentials are not stored in GitHub.
-- [x] The frontend polls database health on load and every 60 seconds, with connected/unavailable states.
-- [x] Read-only `GET /api/schema` reads PostgreSQL information-schema metadata and groups schemas, tables, and ordered columns. It performs no writes and remains disabled by default.
-- [x] PR #4 merged as commit `69d7b53`: added Spring Security, environment-configured single-owner HTTP Basic authentication, BCrypt password hashing in memory, fail-closed authorization for `/api/schema`, public health routes, and CORS restricted to the production frontend and local Vite origin.
-- [x] Security tests cover unauthenticated schema access, configured-owner access, public health, CORS preflight, and denial when auth is disabled. GitHub Actions run #19 passed backend `mvn -B verify` and the frontend production build.
-- [x] PR #5 merged as commit `deeb794`: added the gated schema-explorer page, owner Basic-auth sign-in, schema/table/column rendering, expandable table columns, refresh and sign-out. Credentials stay in React memory and are never written to browser storage.
-- [x] Added `frontend/.env.example` and documented the coordinated frontend/backend flags required to enable schema browsing.
-- [x] GitHub Actions run #24 passed backend `mvn -B verify` and the frontend production build. The Vercel preview deployment reported `READY`.
-- [x] Production authentication and schema-browser flags remain disabled. No secrets were committed, no production database migrations were run, and no application tables were created on Neon `main`.
+- [x] Frontend polls database health on load and every 60 seconds, with connected/unavailable states.
+- [x] Read-only `GET /api/schema` reads PostgreSQL information-schema metadata and groups schemas, tables, and ordered columns. It remains disabled by default.
+- [x] PR #4 merged as commit `69d7b53`: Spring Security, environment-configured single-owner HTTP Basic authentication, BCrypt password hashing in memory, fail-closed authorization for `/api/schema`, public health routes, and restricted CORS.
+- [x] Security tests cover unauthenticated schema access, configured-owner access, public health, CORS preflight, and denial when auth is disabled. GitHub Actions run #19 passed backend verification and frontend build.
+- [x] PR #5 merged as commit `deeb794`: gated schema explorer UI, owner Basic-auth sign-in, schema/table/column rendering, expandable columns, refresh and sign-out. Credentials stay in React memory, not browser storage.
+- [x] Added `frontend/.env.example` and documented coordinated frontend/backend flags. GitHub Actions run #24 passed backend verification and frontend build.
+- [x] Production authentication, schema browser, and SQL validator remain disabled. No secrets were committed and no application tables were created on Neon `main`.
 
 ## SQL validation guardrail — merged in PR #6
-- [x] Added disabled-by-default `POST /api/sql/validate` behind the owner authentication route. It only analyzes drafts; it never executes SQL.
-- [x] Validator accepts SELECT/WITH-shaped drafts and conservatively rejects multiple statements, common mutation keywords, SELECT INTO, selected side-effecting PostgreSQL functions, and row-locking clauses. It explicitly warns that it is a lexical heuristic, not a PostgreSQL parser or proof of safety.
+- [x] Added disabled-by-default `POST /api/sql/validate` behind the owner authentication boundary. It analyzes drafts only and never executes SQL.
+- [x] Validator conservatively rejects multiple statements, common mutation keywords, `SELECT INTO`, selected side-effecting PostgreSQL functions, and row-locking clauses; it warns that this lexical heuristic is not a PostgreSQL parser or proof of safety.
 - [x] CORS POST permission is scoped to `/api/sql/**`; unrelated API routes remain GET/OPTIONS only.
-- [x] Added unit/controller tests for normal SELECT, CTE mutation, multi-statement input, quoted/commented keywords, escape-string boundaries, side-effecting functions, authentication, disabled-auth fail-closed behavior, request validation, and POST CORS preflight.
-- [x] PR #6 merged as commit `746d58d`.
-- [x] GitHub Actions run #29 passed backend `mvn -B verify` and frontend production build for the feature branch. Run #31 passed backend verification, frontend build, and the post-merge production API/database smoke test.
-- [x] Render deployment `dep-dbgfqe6gekts738l9eng` is live for the merged code. The validator remains disabled in production by default; no SQL is executed.
+- [x] Tests cover SELECT/CTE behavior, mutation and multi-statement rejection, quoted/commented keywords, escape-string boundaries, side-effecting functions, authentication, fail-closed behavior, request validation, and POST CORS preflight.
+- [x] PR #6 merged as commit `746d58d`. GitHub Actions run #31 passed backend verification, frontend build, and production API/database smoke test.
+- [x] Render reports the merged backend deployment live. SQL validation remains disabled in production; no SQL is executed.
 
-## Durable auth/workspace schema proposal — draft only
-- [x] Inspected Neon project `neurosql`, database `neurosql_db`, Vercel project/deployments, Render service/deploy history, and current auth/security code before choosing this milestone.
-- [x] Created temporary Neon branch `neurosql-auth-migration-check-20261028` (`br-shy-credit-b33ux9py`) from the current `main` branch.
-- [x] Applied the proposed DDL only on that temporary branch. It created four tables in `neurosql_app`: `app_users`, `workspaces`, `workspace_memberships`, and `user_sessions`; ten indexes were verified.
-- [x] Tested email uniqueness, duplicate workspace slug rejection, one-active-owner enforcement, invalid membership role rejection, session token hash checks, foreign keys, valid session insertion, and schema/table `REVOKE` statements.
-- [x] Removed all temporary test rows after the manual checks. A separate read-only inspection confirmed Neon `main` still has no tables.
-- [x] Added the proposed SQL under `docs/database/proposed/` so it is not picked up by an application migration runner, plus a schema review document. PR #7 remains a draft and the migration is not approved for Neon `main`.
-- [x] Added `docs/database/proposed/test-auth-workspace-schema.sql`, a repeatable contract test for the proposed schema. It checks table/index counts, case-insensitive email uniqueness, workspace slug uniqueness, one active owner, invalid roles, token-hash format, foreign keys, valid sessions, and rollback cleanup.
-- [x] Added an `auth-schema-contract` GitHub Actions job using a disposable PostgreSQL 17 service. The job applies the proposed SQL only to an ephemeral CI database, then runs the contract test; it does not connect to Neon.
-- [x] GitHub Actions run #36 completed successfully for commit `92eba3891d1d03d9f9a83be8cbce06de0d96b08c`: backend Maven verification, frontend production build, and the proposed schema contract job all passed; production smoke was correctly skipped for this draft PR. Contract-test logs show PostgreSQL 17.11 created the four tables and ten indexes, rejected invalid fixtures, rolled back test rows, and reported no fixture rows remaining.
-- [x] Vercel preview for commit `92eba3891d1d03d9f9a83be8cbce06de0d96b08c` reports `READY`.
-- [x] Follow-up workflow commit `00689646f730dff1e9c7ba661851f7597a1f1936` adds `paths-ignore: PROGRESS.md` to avoid running the full CI suite for tracker-only edits. Its Vercel preview reports `READY`.
-- [ ] GitHub Actions run #38 for the workflow-optimization commit is still in progress; the already-completed run #36 passed the backend, frontend, and schema contract checks for the schema-test change.
-- [ ] The proposed schema is only a foundation. Session lifecycle, login rate limiting, password policy, email verification/reset, authorization on every protected endpoint, and a separate least-privileged runtime database role remain unimplemented.
+## Durable auth/workspace schema proposal — draft only; not approved for production
+- [x] Inspected GitHub, Neon, Vercel, Render service/deploy history, and current security code before choosing this milestone.
+- [x] Original proposed schema was applied only to temporary Neon branch `neurosql-auth-migration-check-20261028` (`br-shy-credit-b33ux9py`); production `main` remained unchanged.
+- [x] Added proposed DDL under `docs/database/proposed/`, outside the application's migration-runner path. Draft PR #7 remains open and unmerged.
+- [x] Added repeatable CI contract tests and an ephemeral PostgreSQL 17 GitHub Actions job. The workflow never connects to Neon.
+- [x] Workflow optimization commit `00689646f730dff1e9c7ba661851f7597a1f1936` was verified: GitHub Actions run #38 completed successfully, and the Vercel preview reported `READY`.
+- [x] Improved the draft schema to enforce exactly one active workspace owner at transaction end with two deferred constraint triggers, in addition to the unique index that prevents multiple active owners. Workspace creation and owner transfer must be atomic transactions.
+- [x] Applied the updated proposed DDL only to fresh temporary Neon branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`), database `neurosql_db`, PostgreSQL 17.11.
+- [x] Verified updated branch contains four tables, ten indexes, and two owner-invariant triggers. Direct tests passed for duplicate email/slug/owner rejection, invalid role and token hash, foreign-key rejection, valid session insertion, atomic owner transfer, ownerless workspace rejection, and final-owner removal rejection.
+- [x] Direct-test fixtures were rolled back; read-only query found zero rows in all four proposed tables.
+- [x] GitHub Actions run #42 passed backend Maven verification, frontend production build, and the updated schema contract tests on disposable PostgreSQL 17. The production smoke job was skipped for the draft PR as expected.
+- [x] Vercel preview for draft commit `9838791326fb6d7c659e0129cd68b1bc46eba0a5` reports `READY`.
+- [x] Separate read-only query confirmed Neon `main` still has zero visible application tables and views.
+- [ ] Durable authentication remains unimplemented: session lifecycle, login rate limiting, password policy, email verification/reset, authorization on every protected endpoint, and a least-privileged runtime database role are still required.
 
-## In progress
-- [x] Verify the automated schema contract job: the ephemeral PostgreSQL 17 migration and constraint/cleanup tests passed in GitHub Actions run #36.
-- [ ] Verify the separate workflow optimization commit `00689646f730dff1e9c7ba661851f7597a1f1936` after its preview build and Actions checks finish.
-- [ ] Directly verify browser-side CORS and rendered sign-in/metadata behavior after owner auth and schema browsing are intentionally configured. The login form remains hidden in production by default; no live credentials were supplied or configured.
-- [ ] Investigate why Render's auto-deploy did not start after the PR #6 merge. Render reports auto-deploy enabled; that merged commit was manually deployed and verified through the production smoke test.
-- [ ] Replace the single-owner in-memory account with durable multi-user authentication and workspace authorization after the proposed schema is approved.
-- [ ] Keep the temporary Neon branch available for review/testing until the migration decision is made; do not apply the proposed DDL to Neon `main` without explicit user approval.
+## In progress / blockers
+- [ ] Review and approve or revise draft PR #7 before any production schema change. Do not merge the migration or apply it to Neon `main` without explicit approval.
+- [ ] Verify browser-side CORS and rendered sign-in/metadata behavior only after auth credentials and feature flags are deliberately configured; production auth and schema browsing remain disabled.
+- [ ] Investigate Render auto-deploy reliability. The prior PR #6 merge required manual deployment despite auto-deploy being enabled. No new backend deployment was needed for the current draft-only schema/CI changes.
+- [ ] The production health endpoint could not be fetched by the available web tool in this run; the last verified live API/database smoke test remains GitHub Actions run #31.
 
 ## Next milestones
-- [ ] Review and approve or revise the proposed auth/workspace schema before any production database change.
-- [ ] After approval, add a controlled migration runner and database-backed authentication behind disabled feature flags; test against a temporary Neon branch before production.
-- [ ] Implement secure session issuance, hashing, expiry/revocation, login rate limiting, password policy, and workspace membership authorization for every protected endpoint.
-- [ ] Add safe read-only SQL execution only after access control, a least-privileged database role, and database-side read-only transaction enforcement are in place; keep query history disabled until its persistence and authorization design is reviewed.
+- [ ] After schema approval, add a controlled migration runner and database-backed authentication behind disabled feature flags; test on a temporary Neon branch before any production change.
+- [ ] Implement secure session issuance, token hashing, expiry/revocation, login rate limiting, password policy, and workspace membership authorization for every protected endpoint.
+- [ ] Configure a least-privileged database runtime role and explicit grants before enabling database-backed auth or SQL features.
+- [ ] Add safe read-only SQL execution only after access control and database-side read-only transaction enforcement are in place; keep query history disabled until its persistence and authorization design is reviewed.
 - [ ] Add EXPLAIN performance analysis.
-- [ ] Define reviewed schema for saved connections, query history, and audit events only when needed. Prepare and test migrations on a temporary Neon branch and stop for user approval before any main-branch schema change.
+- [ ] Prepare any future schema migrations on a temporary Neon branch and stop for approval before applying them to Neon `main`.
 
 ## Constraints
 - Keep within free-tier usage; no paid resources.
