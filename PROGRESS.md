@@ -1,10 +1,10 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-27 19:30 UTC
+Last verified: 2026-10-27 19:35 UTC
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
-- [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. Latest production deployment reports `READY` for main commit `06a94ef`.
+- [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. Latest production deployment reports `READY` for main commit `06a94ef`; the PR #6 preview deployment also reported `READY`.
 - [x] Neon project `neurosql` is on the free organization in Singapore, using PostgreSQL 17. The `main` branch is ready.
 - [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. Read-only query on 2026-10-27 found zero visible application tables/views and zero `public.show_db_tree` functions. No schema changes have been made.
 - [x] React + TypeScript + Vite frontend and Spring Boot 3 / Java 21 backend are present.
@@ -29,17 +29,19 @@ Last verified: 2026-10-27 19:30 UTC
 - [ ] Investigate why Render's auto-deploy did not start for an earlier backend change. Render currently reports auto-deploy enabled; manual deploys have been used when necessary.
 - [ ] Replace the single-owner in-memory account with durable multi-user authentication and workspace authorization before exposing user-specific data.
 
-## Proposed in PR: SQL validation guardrail
-- [ ] Added a disabled-by-default `POST /api/sql/validate` endpoint behind the owner authentication route.
-- [ ] Validator accepts only SELECT/WITH-shaped drafts, rejects multiple statements, common mutation keywords, SELECT INTO, and selected side-effecting PostgreSQL functions. It does not execute SQL and returns explicit warnings that it is a lexical heuristic, not a PostgreSQL parser.
-- [ ] Added unit and controller tests for normal SELECT, CTE mutation, multi-statement input, quoted/commented keywords, escape-string boundaries, side-effecting functions, authentication, disabled-auth fail-closed behavior, request validation, and POST CORS preflight.
-- [ ] CI and deployment verification are pending; do not enable the validator in shared production.
+## SQL validation guardrail — PR #6
+- [x] Added disabled-by-default `POST /api/sql/validate` behind the owner authentication route. It only analyzes drafts; it never executes SQL.
+- [x] Validator accepts SELECT/WITH-shaped drafts and conservatively rejects multiple statements, common mutation keywords, SELECT INTO, selected side-effecting PostgreSQL functions, and row-locking clauses. It explicitly warns that it is a lexical heuristic, not a PostgreSQL parser or proof of safety.
+- [x] CORS POST permission is scoped to `/api/sql/**`; unrelated API routes remain GET/OPTIONS only.
+- [x] Added unit/controller tests for normal SELECT, CTE mutation, multi-statement input, quoted/commented keywords, escape-string boundaries, side-effecting functions, authentication, disabled-auth fail-closed behavior, request validation, and POST CORS preflight.
+- [x] GitHub Actions run #29 passed backend `mvn -B verify` and frontend production build for commit `9b1e3ed`.
+- [ ] PR #6 merge and post-merge deployment/production smoke verification are pending. The endpoint remains disabled in production.
 
 ## Next milestones
-- [ ] Run CI for the SQL validation branch, fix failures, and merge only after tests pass.
-- [ ] After deliberate owner credential setup and coordinated environment configuration, verify cross-origin Basic authentication and schema browsing end-to-end before enabling it for users.
+- [ ] Merge PR #6 only after the final branch checks pass, then verify Render auto-deploy and production health.
+- [ ] After deliberate owner credential setup and coordinated environment configuration, verify cross-origin Basic authentication and schema browsing end-to-end before enabling them for users.
 - [ ] Replace the single-owner in-memory account with durable multi-user authentication and workspace authorization before enabling user-specific data.
-- [ ] Add safe read-only SQL execution only after access control, least-privileged database role, and read-only transaction enforcement are in place; keep query history disabled until its persistence and authorization design is reviewed.
+- [ ] Add safe read-only SQL execution only after access control, a least-privileged database role, and read-only transaction enforcement are in place; keep query history disabled until its persistence and authorization design is reviewed.
 - [ ] Add EXPLAIN performance analysis.
 - [ ] Define reviewed schema for saved connections, query history, and audit events only when needed. Prepare and test migrations on a temporary Neon branch and stop for user approval before any main-branch schema change.
 
