@@ -81,7 +81,8 @@ public class SecurityConfig {
         cors.setAllowedOrigins(List.of(
                 "https://neurosql.vercel.app",
                 "http://localhost:5173"));
-        cors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        // Only current read-only API methods are allowed; expand deliberately when POST APIs exist.
+        cors.setAllowedMethods(List.of("GET", "OPTIONS"));
         cors.setAllowedHeaders(List.of("Accept", "Authorization", "Content-Type"));
         cors.setMaxAge(3600L);
 
