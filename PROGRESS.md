@@ -7,26 +7,24 @@ Last verified: 2026-10-27
 - [x] Neon PostgreSQL 17 project `neurosql` is on the free organization in Singapore.
 - [x] Read-only SQL checks confirm database `neurosql_db`, PostgreSQL 17.11, and zero application tables. No schema changes have been made.
 - [x] Initial React + TypeScript + Vite workspace UI and Spring Boot 3 / Java 21 API exist.
-- [x] Vercel project `neurosql` remains linked to this repository; the production deployment for latest commit `be3d1e4` reports `READY`.
+- [x] Vercel project `neurosql` remains linked to this repository; the latest production deployment reports `READY`.
 - [x] Render free service `neurosql-api` is live on commit `3a35086` and uses the dedicated Neon datasource. This deployment had to be triggered manually because a merge to `main` did not automatically start a deploy.
 - [x] Render Docker build runs `mvn -B verify` before packaging the backend image.
 - [x] Render environment variables point to the dedicated Neon database; credentials are not stored in GitHub.
-- [x] Merged PR #1 added `GET /api/health/database`, health tests, and test execution in the Docker build.
-- [x] Production smoke test in GitHub Actions run #15 passed after the Render deployment for commit `3a35086` went live: the API returned `status=UP`, database `neurosql_db`, and PostgreSQL `17.11`.
-- [x] Merged PR #2 (commit `93f7507`): the frontend polls `/api/health/database` on load and every 60 seconds, showing the live connection state and database version.
-- [x] Added explicit CORS allow-list entries for `https://neurosql.vercel.app` and the local Vite development origin.
-- [x] Merged PR #3 (commit `3a35086`): added read-only `GET /api/schema`, which reads PostgreSQL information-schema metadata, groups schemas/tables/columns, preserves column order, and performs no writes.
-- [x] Added schema API tests for an empty database and a populated table with ordered nullable/non-nullable columns. GitHub Actions run #14 passed backend `mvn -B verify`, the frontend production build, and the production API/database smoke test; run #15 passed those checks again.
-- [x] Schema endpoint is disabled by default via `NEUROSQL_SCHEMA_BROWSER_ENABLED=false` because table/column names can be sensitive before authentication and workspace authorization exist.
-- [x] README documents the schema endpoint and its security gate.
-- [x] Updated this tracker after the post-deployment smoke test; GitHub Actions run #15 passed.
+- [x] `GET /api/health/database` verifies live connectivity and reports database `neurosql_db` and PostgreSQL `17.11` without exposing credentials.
+- [x] The frontend polls database health on load and every 60 seconds, with explicit connected/unavailable states.
+- [x] Read-only `GET /api/schema` reads PostgreSQL information-schema metadata and groups schemas, tables, and ordered column metadata. It performs no writes.
+- [x] Schema endpoint remains disabled by default; no application tables have been created in Neon.
 
 ## In progress
-- [ ] Directly verify browser-side CORS and the rendered live connection indicator; this run could not execute an actual browser session.
-- [ ] Investigate Render auto-deploy reliability. The service reports auto-deploy enabled, but commits have not reliably triggered deployments; manually deploy only after confirming a push did not create a deployment.
+- [ ] New branch `feat/api-auth-boundary` adds environment-configured owner authentication, fail-closed schema authorization, and a restricted CORS allow-list. CI is pending; production flags remain off.
+- [ ] Directly verify browser-side CORS and the rendered live connection indicator; no actual browser session has been run.
+- [ ] Investigate Render auto-deploy reliability. Auto-deploy is configured for commits to `main`, but a previous merge required manual deployment.
 
 ## Next milestones
-- [ ] Implement authentication and workspace authorization before enabling schema metadata in production.
+- [ ] Complete CI verification for the API security boundary and merge only after tests pass.
+- [ ] Add a frontend login flow and verify cross-origin Basic authentication in a real browser before enabling schema browsing.
+- [ ] Replace the single-owner in-memory account with durable multi-user authentication and workspace authorization before exposing user-specific data.
 - [ ] Connect the schema explorer UI to the authorized schema API.
 - [ ] Add safe read-only SQL validation/execution and query history after access control is in place.
 - [ ] Add EXPLAIN performance analysis.
