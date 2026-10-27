@@ -43,7 +43,8 @@ class SessionTokenCodecTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> codec.hashToken("not-a-session-token"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> codec.hashToken("A".repeat(43)))
+        // A non-zero unused trailing bit is non-canonical Base64URL for 32 bytes.
+        assertThatThrownBy(() -> codec.hashToken("A".repeat(42) + "B"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }
