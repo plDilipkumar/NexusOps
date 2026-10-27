@@ -3,8 +3,12 @@ name: NeuroSQL CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'PROGRESS.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'PROGRESS.md'
 
 permissions:
   contents: read
