@@ -7,15 +7,17 @@ Last verified: 2026-10-27
 - [x] Neon PostgreSQL 17 project `neurosql` is on the free organization in Singapore.
 - [x] Read-only SQL checks confirm database `neurosql_db`, PostgreSQL 17.11, and zero public application tables. No schema changes have been made.
 - [x] Initial React + TypeScript + Vite workspace UI and Spring Boot 3 / Java 21 API exist.
-- [x] Vercel project `neurosql` is linked to this repository with frontend root `frontend`; production deployment for merged commit `180bbb1` reports `READY`.
-- [x] Render free web service `neurosql-api` exists in the confirmed workspace and its initial deployment started Spring Boot on port 10000.
+- [x] Vercel production deployments for the latest `main` commits report `READY`.
+- [x] Render free service `neurosql-api` is live in the confirmed workspace and runs the latest backend code from commit `d6609c8`.
+- [x] Render Docker build completed `mvn -B verify` successfully before packaging the backend image.
 - [x] Render environment variables point to the dedicated Neon database; credentials are not stored in GitHub.
-- [x] Merged PR #1 adding `GET /api/health/database`, success/failure unit tests, and a Docker build that runs `mvn -B verify`.
-- [x] Added GitHub Actions CI. The PR run passed both backend Maven verification and frontend production build.
+- [x] Merged PR #1 adding `GET /api/health/database`, success/failure unit tests, and test execution in the Docker build.
+- [x] GitHub Actions PR run passed backend Maven verification and frontend production build.
+- [x] Added a production smoke-check job to main-push CI; it requests `/api/health/database` and checks the expected database name/version.
 
 ## In progress
-- [ ] Render has not yet registered a deployment for the merged commit; the service still lists its earlier deployment. Verify the deployment hook/status before treating the new endpoint as live.
-- [ ] After the new backend deploy, call `/api/health` and `/api/health/database`; confirm the JDBC query reports `neurosql_db` and PostgreSQL 17.11.
+- [ ] Confirm a production smoke-check run returns `status=UP`, database `neurosql_db`, and PostgreSQL 17.11. The current connector view does not expose the main-push workflow result, and direct HTTP fetches of the Render host are unavailable here.
+- [ ] Investigate why Render's configured auto-deploy did not register the merged commit; the latest deployment required a manual trigger.
 - [ ] Verify end-to-end frontend/API/database connectivity.
 
 ## Next milestones
