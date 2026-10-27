@@ -35,10 +35,10 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
                     auth.requestMatchers("/api/health", "/api/health/database", "/actuator/health/**").permitAll();
                     if (authEnabled) {
-                        auth.requestMatchers("/api/schema/**").hasRole("OWNER");
+                        auth.requestMatchers("/api/schema/**", "/api/sql/**").hasRole("OWNER");
                     } else {
-                        // A configuration mistake must never expose schema metadata.
-                        auth.requestMatchers("/api/schema/**").denyAll();
+                        // Sensitive metadata and SQL guardrails must fail closed if auth is off.
+                        auth.requestMatchers("/api/schema/**", "/api/sql/**").denyAll();
                     }
                     auth.anyRequest().permitAll();
                 });
@@ -56,7 +56,6 @@ public class SecurityConfig {
             @Value("${neurosql.auth.password:}") String password,
             PasswordEncoder passwordEncoder) {
         if (!authEnabled) {
-            // Also suppress Spring Boot's generated development user when auth is intentionally off.
             return new InMemoryUserDetailsManager();
         }
         if (username.isBlank() || password.isBlank()) {
@@ -77,17 +76,21 @@ public class SecurityConfig {
 
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration cors = new CorsConfiguration();
-        cors.setAllowedOrigins(List.of(
+        CorsConfiguration readOnlyCors = new CorsConfiguration();
+        readOnlyCors.setAllowedOrigins(List.of(
                 "https://neurosql.vercel.app",
                 "http://localhost:5173"));
-        // Only current read-only API methods are allowed; expand deliberately when POST APIs exist.
-        cors.setAllowedMethods(List.of("GET", "OPTIONS"));
-        cors.setAllowedHeaders(List.of("Accept", "Authorization", "Content-Type"));
-        cors.setMaxAge(3600L);
+        readOnlyCors.setAllowedMethods(List.of("GET", "OPTIONS"));
+        readOnlyCors.setAllowedHeaders(List.of("Accept", "Authorization", "Content-Type"));
+        readOnlyCors.setMaxAge(3600L);
+
+        CorsConfiguration validationCors = new CorsConfiguration(readOnlyCors);
+        validationCors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", cors);
+        // Register the more-specific route first so POST is not allowed on unrelated API paths.
+        source.registerCorsConfiguration("/api/sql/**", validationCors);
+        source.registerCorsConfiguration("/api/**", readOnlyCors);
         return source;
     }
 }
