@@ -1,16 +1,16 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-27 20:35 UTC
+Last verified: 2026-10-27 21:28 UTC
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
-- [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. Latest production deployment reports `READY` and is aliased to `neurosql.vercel.app`.
+- [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. The production domain is `neurosql.vercel.app`; the latest production-target deployment inspected reports `READY`.
 - [x] Neon project `neurosql` is on the free organization in Singapore, using PostgreSQL 17. The `main` branch is ready.
-- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. Read-only query on 2026-10-27 found zero visible application tables/views and zero `public.show_db_tree` functions. No schema changes have been made to the main branch.
+- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. The latest read-only table listing for Neon `main` returned no tables. No schema changes have been made to the main branch.
 - [x] React + TypeScript + Vite frontend and Spring Boot 3 / Java 21 backend are present.
 - [x] Render service `neurosql-api` is configured in the confirmed workspace on the free plan, Singapore region, repository `plDilipkumar/NexusOps`, branch `main`, and Docker context `backend`; auto-deploy is configured for commits.
 - [x] Render deployment `dep-dbgfqe6gekts738l9eng` is live for commit `746d58d`. It was manually triggered after no automatic deployment appeared following the merge.
-- [x] GitHub Actions run #31 passed backend `mvn -B verify`, frontend production build, and production API/database smoke test. The smoke test confirmed `status=UP`, database `neurosql_db`, and PostgreSQL `17.11` after the new Render deployment.
+- [x] GitHub Actions run #31 passed backend `mvn -B verify`, frontend production build, and production API/database smoke test. The smoke test confirmed `status=UP`, database `neurosql_db`, and PostgreSQL `17.11`.
 - [x] Render logs confirmed the backend started successfully on Java 21 and Tomcat port 10000. The CI smoke test confirmed the live database health response.
 - [x] Render environment variables point to the dedicated NeuroSQL Neon database; credentials are not stored in GitHub.
 - [x] The frontend polls database health on load and every 60 seconds, with connected/unavailable states.
@@ -33,16 +33,18 @@ Last verified: 2026-10-27 20:35 UTC
 
 ## Durable auth/workspace schema proposal — draft only
 - [x] Inspected Neon project `neurosql`, database `neurosql_db`, Vercel project/deployments, Render service/deploy history, and current auth/security code before choosing this milestone.
-- [x] Read-only query against Neon `main` confirmed `neurosql_db`, PostgreSQL `17.11`, and zero visible tables. No production schema change was made.
 - [x] Created temporary Neon branch `neurosql-auth-migration-check-20261028` (`br-shy-credit-b33ux9py`) from the current `main` branch.
 - [x] Applied the proposed DDL only on that temporary branch. It created four tables in `neurosql_app`: `app_users`, `workspaces`, `workspace_memberships`, and `user_sessions`; ten indexes were verified.
 - [x] Tested email uniqueness, duplicate workspace slug rejection, one-active-owner enforcement, invalid membership role rejection, session token hash checks, foreign keys, valid session insertion, and schema/table `REVOKE` statements.
-- [x] Removed all temporary test rows; all four temporary-branch tables were empty after checks. A separate query confirmed Neon `main` still has zero visible tables.
-- [x] Added the proposed SQL under `docs/database/proposed/` so it is not picked up by an application migration runner, plus a schema review document describing invariants, test results, and remaining security work.
-- [x] Draft PR #7 contains the schema proposal and progress update. GitHub Actions run #33 passed backend `mvn -B verify` and the frontend production build; the Vercel preview for the proposal commit reported `READY`. The PR is not merged and no migration is approved for Neon `main`.
+- [x] Removed all temporary test rows after the manual checks. A separate read-only inspection confirmed Neon `main` still has no tables.
+- [x] Added the proposed SQL under `docs/database/proposed/` so it is not picked up by an application migration runner, plus a schema review document. PR #7 remains a draft and the migration is not approved for Neon `main`.
+- [x] Added `docs/database/proposed/test-auth-workspace-schema.sql`, a repeatable contract test for the proposed schema. It checks table/index counts, case-insensitive email uniqueness, workspace slug uniqueness, one active owner, invalid roles, token-hash format, foreign keys, valid sessions, and rollback cleanup.
+- [x] Added an `auth-schema-contract` GitHub Actions job using a disposable PostgreSQL 17 service. The job applies the proposed SQL only to an ephemeral CI database, then runs the contract test; it does not connect to Neon.
+- [ ] CI and Vercel checks for commit `92eba3891d1d03d9f9a83be8cbce06de0d96b08c` were still pending/not yet visible in the connector at the last check. Do not mark the new contract job as passing until its job logs confirm it.
 - [ ] The proposed schema is only a foundation. Session lifecycle, login rate limiting, password policy, email verification/reset, authorization on every protected endpoint, and a separate least-privileged runtime database role remain unimplemented.
 
 ## In progress
+- [ ] Verify the new automated schema contract job and fix any SQL or workflow errors it exposes.
 - [ ] Directly verify browser-side CORS and rendered sign-in/metadata behavior after owner auth and schema browsing are intentionally configured. The login form remains hidden in production by default; no live credentials were supplied or configured.
 - [ ] Investigate why Render's auto-deploy did not start after the PR #6 merge. Render reports auto-deploy enabled; that merged commit was manually deployed and verified through the production smoke test.
 - [ ] Replace the single-owner in-memory account with durable multi-user authentication and workspace authorization after the proposed schema is approved.
