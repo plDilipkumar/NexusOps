@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-27 21:28 UTC
+Last verified: 2026-10-27 21:32 UTC
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -40,11 +40,14 @@ Last verified: 2026-10-27 21:28 UTC
 - [x] Added the proposed SQL under `docs/database/proposed/` so it is not picked up by an application migration runner, plus a schema review document. PR #7 remains a draft and the migration is not approved for Neon `main`.
 - [x] Added `docs/database/proposed/test-auth-workspace-schema.sql`, a repeatable contract test for the proposed schema. It checks table/index counts, case-insensitive email uniqueness, workspace slug uniqueness, one active owner, invalid roles, token-hash format, foreign keys, valid sessions, and rollback cleanup.
 - [x] Added an `auth-schema-contract` GitHub Actions job using a disposable PostgreSQL 17 service. The job applies the proposed SQL only to an ephemeral CI database, then runs the contract test; it does not connect to Neon.
-- [ ] CI and Vercel checks for commit `92eba3891d1d03d9f9a83be8cbce06de0d96b08c` were still pending/not yet visible in the connector at the last check. Do not mark the new contract job as passing until its job logs confirm it.
+- [x] GitHub Actions run #36 completed successfully for commit `92eba3891d1d03d9f9a83be8cbce06de0d96b08c`: backend Maven verification, frontend production build, and the proposed schema contract job all passed; production smoke was correctly skipped for this draft PR. Contract-test logs show PostgreSQL 17.11 created the four tables and ten indexes, rejected invalid fixtures, rolled back test rows, and reported no fixture rows remaining.
+- [x] Vercel preview for commit `92eba3891d1d03d9f9a83be8cbce06de0d96b08c` reports `READY`.
+- [ ] Follow-up workflow commit `00689646f730dff1e9c7ba661851f7597a1f1936` adds `paths-ignore: PROGRESS.md` to avoid running the full CI suite for tracker-only edits. Its Vercel preview was still `BUILDING`, and the associated Actions run was not yet visible at the last check.
 - [ ] The proposed schema is only a foundation. Session lifecycle, login rate limiting, password policy, email verification/reset, authorization on every protected endpoint, and a separate least-privileged runtime database role remain unimplemented.
 
 ## In progress
-- [ ] Verify the new automated schema contract job and fix any SQL or workflow errors it exposes.
+- [x] Verify the automated schema contract job: the ephemeral PostgreSQL 17 migration and constraint/cleanup tests passed in GitHub Actions run #36.
+- [ ] Verify the separate workflow optimization commit `00689646f730dff1e9c7ba661851f7597a1f1936` after its preview build and Actions checks finish.
 - [ ] Directly verify browser-side CORS and rendered sign-in/metadata behavior after owner auth and schema browsing are intentionally configured. The login form remains hidden in production by default; no live credentials were supplied or configured.
 - [ ] Investigate why Render's auto-deploy did not start after the PR #6 merge. Render reports auto-deploy enabled; that merged commit was manually deployed and verified through the production smoke test.
 - [ ] Replace the single-owner in-memory account with durable multi-user authentication and workspace authorization after the proposed schema is approved.
