@@ -14,10 +14,15 @@ Last verified: 2026-10-27
 - [x] Merged PR #1 adding `GET /api/health/database`, success/failure unit tests, and test execution in the Docker build.
 - [x] GitHub Actions passed backend Maven verification and frontend production build.
 - [x] Main-push production smoke tests passed: the deployed endpoint returned `status=UP`, database `neurosql_db`, and PostgreSQL `17.11`.
+- [x] Merged PR #2 (commit `93f7507`): the frontend polls `/api/health/database` on load and every 60 seconds, showing the live connection state and database version.
+- [x] Added explicit CORS allow-list entries for `https://neurosql.vercel.app` and local Vite development origin.
+- [x] GitHub Actions run #10 passed backend Maven verification, frontend production build, and the production API/database smoke test.
+- [x] Vercel production deployment for commit `93f7507` reports `READY` on `https://neurosql.vercel.app`.
+- [x] Render deployment for commit `93f7507` is live; its logs show Spring Boot started and connected to the dedicated Neon datasource.
 
 ## In progress
-- [ ] Verify the frontend database-health integration after the feature branch passes CI and is deployed. The UI now calls the backend health endpoint and refreshes status every 60 seconds; production/browser CORS verification is pending.
-- [ ] Confirm future GitHub commits reliably trigger Render auto-deploys. The backend is live, but an earlier commit required an API-triggered deploy after it did not appear promptly in the deploy list.
+- [ ] Directly verify browser-side CORS and the rendered live connection indicator. The production bundle is deployed and contains the health poll; CI verified the API/database path, but this run could not execute an actual browser session against the page.
+- [ ] Fix or investigate Render auto-deploy integration. A merge to `main` did not create a Render deployment during the observation window, so the live service was deployed manually. The service still reports auto-deploy enabled; do not assume future pushes deploy reliably.
 
 ## Next milestones
 - [ ] Define reviewed schema for saved connections, query history, and audit events. Prepare/test migrations on a temporary Neon branch and request approval before any main-branch schema change.
