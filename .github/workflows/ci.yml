@@ -44,6 +44,47 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  auth-schema-contract:
+    name: Proposed auth schema contract (ephemeral PostgreSQL 17)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: neurosql_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d neurosql_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Apply proposed schema to disposable CI database
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V1__durable_auth_workspaces.sql
+      - name: Verify schema constraints and fixture cleanup
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-auth-workspace-schema.sql
+
   production-smoke:
     name: Production API and database smoke test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
