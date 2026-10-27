@@ -136,11 +136,14 @@ public class ReadOnlySqlValidator {
             }
             if (c == '\'' || c == '"') {
                 char quote = c;
+                boolean escapeBackslash = quote == '\'' && i > 0
+                        && (sql.charAt(i - 1) == 'E' || sql.charAt(i - 1) == 'e')
+                        && (i < 2 || !Character.isLetterOrDigit(sql.charAt(i - 2)) && sql.charAt(i - 2) != '_');
                 i++;
                 boolean closed = false;
                 while (i < sql.length()) {
                     char current = sql.charAt(i++);
-                    if (current == '\\' && i < sql.length()) {
+                    if (current == '\\' && escapeBackslash && i < sql.length()) {
                         i++;
                     } else if (current == quote) {
                         if (i < sql.length() && sql.charAt(i) == quote) {
