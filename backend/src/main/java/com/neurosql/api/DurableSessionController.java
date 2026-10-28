@@ -1,6 +1,7 @@
 package com.neurosql.api;
 
 import java.time.Instant;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -11,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,6 +36,28 @@ public class DurableSessionController {
 
     public DurableSessionController(SessionLifecycleService sessions) {
         this.sessions = sessions;
+    }
+
+    /**
+     * Returns only the identity and expiry associated with the current durable
+     * bearer session. The raw token and database details are never returned.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<SessionIdentity> me(Authentication authentication) {
+        if (authentication == null
+                || !(authentication.getPrincipal() instanceof DurableSessionAuthenticationFilter.SessionPrincipal principal)
+                || principal.userId() == null
+                || principal.sessionId() == null
+                || principal.expiresAt() == null
+                || !principal.expiresAt().isAfter(Instant.now())) {
+            return unauthorized();
+        }
+
+        SessionIdentity identity = new SessionIdentity(
+                principal.userId(), principal.sessionId(), principal.expiresAt());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(identity);
     }
 
     /**
@@ -62,10 +86,13 @@ public class DurableSessionController {
                 .build();
     }
 
-    private static ResponseEntity<Void> unauthorized() {
+    private static <T> ResponseEntity<T> unauthorized() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\"")
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .build();
+    }
+
+    public record SessionIdentity(UUID userId, UUID sessionId, Instant expiresAt) {
     }
 }
