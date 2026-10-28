@@ -11,12 +11,12 @@ DECLARE
     workspace_a UUID;
 BEGIN
     IF (SELECT count(*) FROM information_schema.tables
-        WHERE table_schema = 'neurosql_app' AND table_type = 'BASE TABLE') <> 4 THEN
-        RAISE EXCEPTION 'Expected exactly four proposed application tables';
+        WHERE table_schema = 'neurosql_app' AND table_type = 'BASE TABLE') <> 5 THEN
+        RAISE EXCEPTION 'Expected exactly five proposed application tables';
     END IF;
 
-    IF (SELECT count(*) FROM pg_indexes WHERE schemaname = 'neurosql_app') <> 10 THEN
-        RAISE EXCEPTION 'Expected exactly ten proposed indexes';
+    IF (SELECT count(*) FROM pg_indexes WHERE schemaname = 'neurosql_app') <> 12 THEN
+        RAISE EXCEPTION 'Expected exactly twelve proposed indexes';
     END IF;
 
     IF (SELECT count(*)
