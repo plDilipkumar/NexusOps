@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 05:00 IST
+Last verified: 2026-10-28 05:58 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -61,3 +61,16 @@ Last verified: 2026-10-28 05:00 IST
 - [x] Render application logs show the Java 21 / Spring Boot service started successfully and initialized its database pool during the last deployment. No new backend deployment or environment change was needed for this isolated token primitive.
 - [ ] Render auto-deploy reliability remains an open issue: the last feature merge needed a manual deploy even though auto-deploy is enabled.
 - [x] No production database tables were created or modified, no secrets were added to GitHub, and no paid resources were introduced.
+
+
+## Fixed session lifetime policy — PR #9 (not merged)
+- [x] Re-read the default-branch progress tracker and inspected the current open PRs before continuing. PR #9 remains open against `main`; PR #7 remains a draft schema proposal and has not been approved.
+- [x] Added `SessionLifetimePolicy` on `feature/session-token-codec-main`: sessions have a fixed 12-hour maximum lifetime, are not sliding, and are considered active only when unrevoked, unexpired, issued no later than the current clock, and expiring no later than the maximum lifetime from issuance.
+- [x] Added deterministic tests for fixed expiry, active session, expiry boundary, revocation, future issue timestamps, overlong lifetime, inconsistent/missing timestamps, and null issue-time rejection.
+- [x] The first CI attempt (#47) caught invalid use of nonexistent `Instant.plusHours/minusHours/minusMinutes` helpers in tests. Replaced them with supported second-based arithmetic; latest GitHub Actions run #48 (`40608838717`) passed backend Maven verification and frontend production build. Production smoke test was skipped as expected for a pull request.
+- [x] Vercel preview for fixed test commit `fe87f8782c02d5dca6fd094237b9714970e7b02b` reports `READY`.
+- [x] Neon project `neurosql` is on the free tier in Singapore, PostgreSQL 17. The ready `main` branch contains database `neurosql_db`; table listing is empty and the branch tree shows only the existing `public.show_db_tree` helper function. No database changes were made.
+- [x] Render service `neurosql-api` is configured on the free plan in Singapore, linked to `plDilipkumar/NexusOps` branch `main`, with commit-triggered auto-deploy enabled. Latest listed live deployment remains commit `746d58d`; this branch only changes Java utility/tests/docs, so no backend deployment was triggered.
+- [ ] The session lifetime policy is a tested utility only; it is not wired to login, HTTP authentication, or database persistence. Durable authentication remains blocked on review/approval of draft PR #7 and implementation of the session lifecycle, authorization, rate limiting, and least-privileged database access.
+- [ ] Render's earlier missed auto-deploy remains unresolved. No new backend deployment or production smoke test was expected for this pull-request-only change.
+- [x] No secrets, paid resources, production environment changes, or database migrations were introduced.
