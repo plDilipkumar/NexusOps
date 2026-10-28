@@ -1,5 +1,6 @@
 package com.neurosql.security;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -38,4 +39,12 @@ public class WorkspaceAuthorizationService {
                 .map(actualRole -> actualRole.isAtLeast(minimumRole))
                 .orElse(false);
     }
+    /** Lists the authenticated user's active workspace memberships. */
+    public List<JdbcWorkspaceAuthorizationRepository.ActiveWorkspace> listActiveWorkspaces(UUID userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        return memberships.listActiveWorkspaces(userId);
+    }
+
 }
