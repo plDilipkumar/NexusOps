@@ -52,7 +52,7 @@ jobs:
         run: npm run build
 
   session-postgres-integration:
-    name: Session repository integration tests (PostgreSQL 17)
+    name: Durable-auth JDBC integration tests (PostgreSQL 17)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -84,7 +84,7 @@ jobs:
           NEUROSQL_TEST_JDBC_URL: jdbc:postgresql://localhost:5432/neurosql_test
           NEUROSQL_TEST_DB_USERNAME: postgres
           NEUROSQL_TEST_DB_PASSWORD: postgres
-        run: mvn -B -Dtest=JdbcSessionRepositoryPostgresIntegrationTest,WorkspaceAuthorizationPostgresIntegrationTest,JdbcAccountRepositoryPostgresIntegrationTest test
+        run: mvn -B -Dtest=JdbcSessionRepositoryPostgresIntegrationTest,WorkspaceAuthorizationPostgresIntegrationTest,JdbcAccountRepositoryPostgresIntegrationTest,DurableLoginPostgresIntegrationTest test
 
   production-smoke:
     name: Production API and database smoke test
