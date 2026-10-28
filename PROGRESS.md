@@ -1,10 +1,10 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 08:03 IST
+Last verified: 2026-10-28 08:08 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
-- [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. Production deployment for commit `746d58d` reports `READY` and is aliased to `neurosql.vercel.app`.
+- [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. Latest inspected production deployment for commit `6425ab4` reports `READY` and the project includes the `neurosql.vercel.app` alias.
 - [x] Neon project `neurosql` is on the free organization in Singapore, using PostgreSQL 17. The `main` branch is ready.
 - [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. A direct read-only query on 2026-10-28 found zero visible application tables, zero views, and zero `public.show_db_tree` functions. No production schema changes have been made.
 - [x] React + TypeScript + Vite frontend and Spring Boot 3 / Java 21 backend are present.
@@ -94,7 +94,8 @@ Last verified: 2026-10-28 08:03 IST
 - [x] Wired the limiter into the Spring Security chain only when `neurosql.auth.enabled=true`, and only for `/api/schema/**` and `/api/sql/**`. Requests without a Basic Authorization header are not counted. Forwarded client-IP headers are not trusted; this avoids treating a shared reverse-proxy IP as one global identity.
 - [x] The in-memory state is capped at 10,000 identities and successful authentication clears that username's prior failures. This is defense-in-depth for the current single-instance configuration, not a distributed limiter; it resets on restart and must be reviewed before multi-user/multi-instance use.
 - [x] Added deterministic unit tests for the rolling window, threshold, retry delay, success reset, and lockout expiry, plus a MockMvc test that verifies repeated invalid Basic credentials return 401 and then 429.
-- [x] GitHub Actions run #58 (`40621859681`) passed backend `mvn -B verify` and frontend production build. The production API/database smoke test was skipped as expected for a pull-request run.
+- [x] GitHub Actions run #58 (`40621859681`) passed backend `mvn -B verify` (45 tests, zero failures) and frontend production build. The production API/database smoke test was skipped as expected for a pull-request run.
+- [x] Follow-up GitHub Actions run #59 (`40621956278`) passed after the progress update; Vercel preview for that exact documentation commit `ed727bc1421fcc31eabce230670859274fa191ec` reports `READY`.
 - [x] Vercel preview for commit `8c3f70881d309a197a03606a3c236cd618bba2dc` reports `READY`; the project query filtered by the GitHub repository returned the `neurosql` project linked to `plDilipkumar/NexusOps`.
 - [x] Render service `neurosql-api` remains on the free plan, linked to `plDilipkumar/NexusOps` branch `main`, with commit auto-deploy configured. Latest listed live deployment remains commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; no backend deployment was triggered for this unmerged feature branch.
 - [x] Neon project `neurosql` remains on the free tier in Singapore, PostgreSQL 17. Production branch `main` is ready and database `neurosql_db` exists. A fresh table listing returned no tables; the branch tree currently shows the existing `public.show_db_tree` helper. No schema changes or migration were made.
