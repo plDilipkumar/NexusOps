@@ -70,6 +70,21 @@ class SecurityConfigTest {
     }
 
     @Test
+    void repeatedInvalidBasicCredentialsAreRateLimited() throws Exception {
+        for (int attempt = 0; attempt < BasicAuthAttemptRateLimiter.MAX_FAILED_ATTEMPTS; attempt++) {
+            mockMvc.perform(get("/api/schema")
+                            .with(httpBasic("rate-limit-test-user", "wrong-password")))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        mockMvc.perform(get("/api/schema")
+                        .with(httpBasic("rate-limit-test-user", "wrong-password")))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists("Retry-After"))
+                .andExpect(jsonPath("$.error").value("too_many_authentication_attempts"));
+    }
+
+    @Test
     void configuredOwnerCanReadSchemaMetadata() throws Exception {
         when(jdbcTemplate.queryForObject(eq("SELECT current_database()"), eq(String.class)))
                 .thenReturn("neurosql_db");
