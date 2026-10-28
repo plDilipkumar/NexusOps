@@ -14,7 +14,7 @@ class SessionLifetimePolicyTest {
     @Test
     void setsAFixedTwelveHourExpiryFromIssueTime() {
         SessionLifetimePolicy policy = new SessionLifetimePolicy(Clock.fixed(NOW, ZoneOffset.UTC));
-        Instant issuedAt = NOW.minusMinutes(1);
+        Instant issuedAt = NOW.minusSeconds(60);
 
         assertThat(policy.expiresAt(issuedAt))
                 .isEqualTo(issuedAt.plus(SessionLifetimePolicy.MAX_SESSION_LIFETIME));
@@ -24,31 +24,31 @@ class SessionLifetimePolicyTest {
     void considersAnUnrevokedUnexpiredSessionActive() {
         SessionLifetimePolicy policy = new SessionLifetimePolicy(Clock.fixed(NOW, ZoneOffset.UTC));
 
-        assertThat(policy.isActive(NOW.minusHours(1), NOW.plusHours(1), null)).isTrue();
+        assertThat(policy.isActive(NOW.minusSeconds(3600), NOW.plusSeconds(3600), null)).isTrue();
     }
 
     @Test
     void rejectsExpiredOrRevokedSessions() {
         SessionLifetimePolicy policy = new SessionLifetimePolicy(Clock.fixed(NOW, ZoneOffset.UTC));
 
-        assertThat(policy.isActive(NOW.minusHours(2), NOW, null)).isFalse();
-        assertThat(policy.isActive(NOW.minusHours(2), NOW.plusHours(1), NOW.minusSeconds(1))).isFalse();
+        assertThat(policy.isActive(NOW.minusSeconds(7200), NOW, null)).isFalse();
+        assertThat(policy.isActive(NOW.minusSeconds(7200), NOW.plusSeconds(3600), NOW.minusSeconds(1))).isFalse();
     }
 
     @Test
     void rejectsFutureIssueTimesAndExpiryBeyondMaximumLifetime() {
         SessionLifetimePolicy policy = new SessionLifetimePolicy(Clock.fixed(NOW, ZoneOffset.UTC));
 
-        assertThat(policy.isActive(NOW.plusSeconds(1), NOW.plusHours(1), null)).isFalse();
-        assertThat(policy.isActive(NOW.minusHours(1), NOW.plusHours(12).plusNanos(1), null)).isFalse();
+        assertThat(policy.isActive(NOW.plusSeconds(1), NOW.plusSeconds(3600), null)).isFalse();
+        assertThat(policy.isActive(NOW.minusSeconds(3600), NOW.plusSeconds(43200).plusNanos(1), null)).isFalse();
     }
 
     @Test
     void rejectsInconsistentOrMissingTimestamps() {
         SessionLifetimePolicy policy = new SessionLifetimePolicy(Clock.fixed(NOW, ZoneOffset.UTC));
 
-        assertThat(policy.isActive(null, NOW.plusHours(1), null)).isFalse();
-        assertThat(policy.isActive(NOW.minusHours(1), null, null)).isFalse();
+        assertThat(policy.isActive(null, NOW.plusSeconds(3600), null)).isFalse();
+        assertThat(policy.isActive(NOW.minusSeconds(3600), null, null)).isFalse();
         assertThat(policy.isActive(NOW, NOW, null)).isFalse();
         assertThat(policy.isActive(NOW, NOW.minusSeconds(1), null)).isFalse();
     }
