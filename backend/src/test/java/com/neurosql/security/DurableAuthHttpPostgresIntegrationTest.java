@@ -144,7 +144,7 @@ class DurableAuthHttpPostgresIntegrationTest {
                 new HttpEntity<>(bearerHeaders),
                 JsonNode.class);
         assertThat(workspaces.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(workspaces.getBody()).hasSize(1);
+        assertThat(workspaces.getBody().size()).isEqualTo(1);
         assertThat(workspaces.getBody().get(0).path("workspaceId").asText())
                 .isEqualTo(fixture.workspaceId().toString());
         assertThat(workspaces.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).contains("no-store");
