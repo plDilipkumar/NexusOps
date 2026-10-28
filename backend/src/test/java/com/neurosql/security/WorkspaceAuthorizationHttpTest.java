@@ -104,6 +104,19 @@ class WorkspaceAuthorizationHttpTest {
     }
 
     @Test
+    void unregisteredSqlRoutesFailClosedUntilTheyHaveAnExplicitRolePolicy() throws Exception {
+        authenticateSession();
+
+        mockMvc.perform(get("/api/sql/execute")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_policy_missing"));
+
+        verifyNoInteractions(workspaceAuthorizationService);
+    }
+
+    @Test
     void legacyConfiguredOwnerRemainsCompatibleWithoutWorkspaceHeader() throws Exception {
         mockSchemaDatabase();
 
