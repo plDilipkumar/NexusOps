@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 09:07 IST
+Last verified: 2026-10-28 10:00 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -118,3 +118,20 @@ Last verified: 2026-10-28 09:07 IST
 - [ ] This repository adapter is not wired to login, HTTP authentication, or a session controller, and its SQL has not yet been integration-tested against the temporary Neon schema branch. It remains gated off until the schema proposal in draft PR #7 is approved and a least-privileged runtime database role is configured.
 - [ ] Render's prior missed auto-deploy remains unresolved. No production smoke test was expected for this pull-request-only change.
 - [x] No credentials, paid resources, or production database changes were introduced.
+
+
+## Session lifecycle orchestration — PR #9 (not merged)
+- [x] Re-read the default-branch progress tracker and active feature-branch tracker, inspected the open authentication/schema proposals, and checked Neon, Vercel, and Render before choosing this step.
+- [x] Added `SessionLifecycleService`, gated by `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=true`. It is not wired to a controller, login, or the Spring Security filter chain, and the flag remains unset in production.
+- [x] Session issuance generates a canonical 256-bit URL-safe token, derives its SHA-256 digest, stores only the digest through `JdbcSessionRepository`, and returns the raw token once with a fixed 12-hour expiry. The issued-session record redacts the token from `toString()` to reduce accidental log disclosure.
+- [x] Session validation hashes canonical tokens and delegates active-session checks to the repository; malformed tokens and missing timestamps fail closed without database calls. Revocation also delegates by digest and rejects malformed tokens or missing timestamps.
+- [x] Added four service tests covering digest-only persistence, fixed expiry, token redaction, invalid issue inputs, digest-based validation, and digest-based revocation.
+- [x] GitHub Actions run #64 (`40632424691`) passed backend Maven verification and frontend production build for the service implementation. Run #65 (`40632439757`) passed backend Maven verification and frontend production build including the new service tests; the production smoke job was skipped as expected for a pull-request run.
+- [x] Vercel preview for test commit `e2699e3bfbb0140e07e12fd452648c9ae633d6ee` reports `READY`; the Vercel project is linked to `plDilipkumar/NexusOps`.
+- [x] Neon project `neurosql` is the dedicated free-tier PostgreSQL 17 project in Singapore. Production branch `main` (`br-empty-credit-b360dmpc`) and database `neurosql_db` are ready; a fresh table listing returned no application tables. The separate temporary branch `neurosql-auth-owner-invariant` contains the four proposed `neurosql_app` tables and owner-invariant function for migration testing. No SQL writes or schema changes were performed in this run.
+- [x] Render service `neurosql-api` is in the confirmed Dilip Kumar workspace, on the free plan in Singapore, linked to `plDilipkumar/NexusOps` branch `main`, with auto-deploy configured. The latest listed live deployment remains commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; no backend deployment was triggered for this unmerged feature branch.
+- [ ] The lifecycle service tests use a mocked repository. JDBC statements have not yet been integration-tested against the temporary Neon schema branch; add an isolated PostgreSQL integration test before wiring the service to HTTP authentication.
+- [ ] Draft PR #7 still contains the proposed durable-auth/workspace schema. It has not been merged or applied to Neon `main`; explicit approval is required before that production schema change.
+- [ ] Authentication remains disabled in production. Registration, account-status management, workspace authorization, and a least-privileged runtime database role are not complete.
+- [ ] Render's earlier missed auto-deploy remains unresolved; this run did not modify `main` or trigger a backend deployment.
+- [x] No credentials, paid resources, production environment changes, or production database modifications were introduced.
