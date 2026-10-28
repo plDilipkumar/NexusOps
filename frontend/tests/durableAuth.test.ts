@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildDurableSchemaHeaders,
+  createRequestGuard,
   isCanonicalWorkspaceId,
   parseIssuedSession,
   parseSessionIdentity,
@@ -68,4 +69,21 @@ test("schema request headers validate token and workspace before building auth h
   });
   assert.throws(() => buildDurableSchemaHeaders("invalid", workspaceId), /session token is invalid/);
   assert.throws(() => buildDurableSchemaHeaders(token, ""), /valid workspace/);
+});
+
+
+test("invalidates stale asynchronous requests after a newer request or sign-out", () => {
+  const guard = createRequestGuard();
+  const first = guard.begin();
+  assert.equal(guard.isCurrent(first), true);
+
+  const second = guard.begin();
+  assert.equal(guard.isCurrent(first), false);
+  assert.equal(guard.isCurrent(second), true);
+
+  guard.invalidate();
+  assert.equal(guard.isCurrent(second), false);
+
+  const afterSignOut = guard.begin();
+  assert.equal(guard.isCurrent(afterSignOut), true);
 });
