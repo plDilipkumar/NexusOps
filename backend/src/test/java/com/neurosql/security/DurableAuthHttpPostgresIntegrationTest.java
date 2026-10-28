@@ -129,7 +129,26 @@ class DurableAuthHttpPostgresIntegrationTest {
 
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS neurosql_app.auth_login_rate_limits (
-                    identity_hash VARCHAR(64) PRIMARY KEY CHECK (identity_hash ~ '^[0-9a-f]{64} {
+                    identity_hash VARCHAR(64) PRIMARY KEY CHECK (identity_hash ~ '^[0-9a-f]{64}$'),
+                    failure_timestamps TIMESTAMPTZ[] NOT NULL DEFAULT ARRAY[]::TIMESTAMPTZ[],
+                    blocked_until TIMESTAMPTZ,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    CHECK (cardinality(failure_timestamps) <= 5),
+                    CHECK (array_position(failure_timestamps, NULL) IS NULL),
+                    CHECK ((cardinality(failure_timestamps) < 5 AND blocked_until IS NULL)
+                        OR (cardinality(failure_timestamps) = 5 AND blocked_until IS NOT NULL))
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS ix_auth_login_rate_limits_updated_at
+                ON neurosql_app.auth_login_rate_limits (updated_at)
+                """);
+        // This suite is guarded to run only against the disposable loopback neurosql_test database.
+        jdbc.update("DELETE FROM neurosql_app.auth_login_rate_limits");
+    }
+
+    @Test
+    void loginWorkspaceAuthorizationSchemaAndLogoutUseRealHttpAndPostgres() {
         Fixture fixture = insertFixture();
         String baseUrl = "http://localhost:" + port;
 
@@ -342,195 +361,6 @@ class DurableAuthHttpPostgresIntegrationTest {
 
         assertThat(deleted).isEqualTo(100);
         assertThat(remaining).isEqualTo(5);
-    }
-
-    private Fixture insertFixture() {
-        UUID userId = UUID.randomUUID();
-        UUID otherOwnerId = UUID.randomUUID();
-        UUID workspaceId = UUID.randomUUID();
-        UUID unrelatedWorkspaceId = UUID.randomUUID();
-        String email = "http-integration-" + UUID.randomUUID() + "@example.com";
-        String otherEmail = "http-owner-" + UUID.randomUUID() + "@example.com";
-        String passwordHash = passwordEncoder.encode(PASSWORD);
-        String otherPasswordHash = passwordEncoder.encode("Other-Owner-Password-2026");
-
-        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
-            insertUser(userId, email, passwordHash, "HTTP Integration User");
-            insertUser(otherOwnerId, otherEmail, otherPasswordHash, "Other Workspace Owner");
-            insertWorkspace(workspaceId, "http-team-" + shortId(workspaceId), userId);
-            insertWorkspace(unrelatedWorkspaceId, "other-team-" + shortId(unrelatedWorkspaceId), otherOwnerId);
-            insertMembership(workspaceId, userId, "OWNER");
-            insertMembership(unrelatedWorkspaceId, otherOwnerId, "OWNER");
-        });
-        return new Fixture(userId, workspaceId, unrelatedWorkspaceId, email);
-    }
-
-    private void insertUser(UUID userId, String email, String passwordHash, String displayName) {
-        jdbc.update("""
-                INSERT INTO neurosql_app.app_users
-                    (user_id, email, password_hash, display_name, status, email_verified_at)
-                VALUES (?, ?, ?, ?, 'ACTIVE', now())
-                """,
-                userId, email, passwordHash, displayName);
-    }
-
-    private void insertWorkspace(UUID workspaceId, String slug, UUID createdBy) {
-        jdbc.update("""
-                INSERT INTO neurosql_app.workspaces (workspace_id, name, slug, created_by_user_id)
-                VALUES (?, ?, ?, ?)
-                """,
-                workspaceId, "Integration workspace " + slug, slug, createdBy);
-    }
-
-    private void insertMembership(UUID workspaceId, UUID userId, String role) {
-        jdbc.update("""
-                INSERT INTO neurosql_app.workspace_memberships (workspace_id, user_id, role, status)
-                VALUES (?, ?, ?, 'ACTIVE')
-                """,
-                workspaceId, userId, role);
-    }
-
-    private static HttpHeaders bearer(String token) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-        return headers;
-    }
-
-    private static String shortId(UUID id) {
-        return id.toString().substring(0, 8);
-    }
-
-    private static String requiredEnvironment(String name) {
-        String value = System.getenv(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(name + " must be set for the disposable PostgreSQL integration test.");
-        }
-        return value;
-    }
-
-    private record Fixture(UUID userId, UUID workspaceId, UUID unrelatedWorkspaceId, String email) {
-    }
-}
-),
-                    failure_timestamps TIMESTAMPTZ[] NOT NULL DEFAULT ARRAY[]::TIMESTAMPTZ[],
-                    blocked_until TIMESTAMPTZ,
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    CHECK (cardinality(failure_timestamps) <= 5),
-                    CHECK (array_position(failure_timestamps, NULL) IS NULL),
-                    CHECK ((cardinality(failure_timestamps) < 5 AND blocked_until IS NULL)
-                        OR (cardinality(failure_timestamps) = 5 AND blocked_until IS NOT NULL))
-                )
-                """);
-        jdbc.execute("""
-                CREATE INDEX IF NOT EXISTS ix_auth_login_rate_limits_updated_at
-                ON neurosql_app.auth_login_rate_limits (updated_at)
-                """);
-        // This suite is guarded to run only against the disposable loopback neurosql_test database.
-        jdbc.update("DELETE FROM neurosql_app.auth_login_rate_limits");
-    }
-
-    @Test
-    void loginWorkspaceAuthorizationSchemaAndLogoutUseRealHttpAndPostgres() {
-        Fixture fixture = insertFixture();
-        String baseUrl = "http://localhost:" + port;
-
-        HttpHeaders loginHeaders = new HttpHeaders();
-        loginHeaders.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<JsonNode> login = http.exchange(
-                baseUrl + "/api/auth/login",
-                HttpMethod.POST,
-                new HttpEntity<>(Map.of("email", fixture.email(), "password", PASSWORD), loginHeaders),
-                JsonNode.class);
-
-        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(login.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).contains("no-store");
-        String token = login.getBody().path("token").asText();
-        assertThat(token).matches("[A-Za-z0-9_-]{43}");
-
-        HttpHeaders bearerHeaders = bearer(token);
-        ResponseEntity<JsonNode> identity = http.exchange(
-                baseUrl + "/api/auth/me", HttpMethod.GET, new HttpEntity<>(bearerHeaders), JsonNode.class);
-        assertThat(identity.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(identity.getBody().path("userId").asText()).isEqualTo(fixture.userId().toString());
-
-        ResponseEntity<JsonNode> workspaces = http.exchange(
-                baseUrl + "/api/auth/workspaces",
-                HttpMethod.GET,
-                new HttpEntity<>(bearerHeaders),
-                JsonNode.class);
-        assertThat(workspaces.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(workspaces.getBody().size()).isEqualTo(1);
-        assertThat(workspaces.getBody().get(0).path("workspaceId").asText())
-                .isEqualTo(fixture.workspaceId().toString());
-        assertThat(workspaces.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).contains("no-store");
-
-        HttpHeaders otherWorkspaceHeaders = bearer(token);
-        otherWorkspaceHeaders.set(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, fixture.unrelatedWorkspaceId().toString());
-        ResponseEntity<JsonNode> deniedSchema = http.exchange(
-                baseUrl + "/api/schema",
-                HttpMethod.GET,
-                new HttpEntity<>(otherWorkspaceHeaders),
-                JsonNode.class);
-        assertThat(deniedSchema.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-        assertThat(deniedSchema.getBody().path("error").asText()).isEqualTo("workspace_access_denied");
-
-        HttpHeaders authorizedWorkspaceHeaders = bearer(token);
-        authorizedWorkspaceHeaders.set(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, fixture.workspaceId().toString());
-        ResponseEntity<JsonNode> schema = http.exchange(
-                baseUrl + "/api/schema",
-                HttpMethod.GET,
-                new HttpEntity<>(authorizedWorkspaceHeaders),
-                JsonNode.class);
-        assertThat(schema.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(schema.getBody().path("database").asText()).isEqualTo("neurosql_test");
-        assertThat(schema.getBody().path("schemas").toString()).contains("neurosql_app", "app_users");
-
-        ResponseEntity<Void> logout = http.exchange(
-                baseUrl + "/api/auth/logout",
-                HttpMethod.POST,
-                new HttpEntity<>(bearerHeaders),
-                Void.class);
-        assertThat(logout.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-        assertThat(logout.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).contains("no-store");
-
-        ResponseEntity<JsonNode> afterLogout = http.exchange(
-                baseUrl + "/api/auth/me", HttpMethod.GET, new HttpEntity<>(bearerHeaders), JsonNode.class);
-        assertThat(afterLogout.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-    }
-
-    @Test
-    void repeatedFailedLoginAttemptsAreThrottledWithoutCreatingSessions() {
-        Fixture fixture = insertFixture();
-        String baseUrl = "http://localhost:" + port;
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        for (int attempt = 0; attempt < BasicAuthAttemptRateLimiter.MAX_FAILED_ATTEMPTS; attempt++) {
-            ResponseEntity<JsonNode> failed = http.exchange(
-                    baseUrl + "/api/auth/login",
-                    HttpMethod.POST,
-                    new HttpEntity<>(Map.of("email", fixture.email(), "password", "Definitely-Wrong-Password-2026"), headers),
-                    JsonNode.class);
-            assertThat(failed.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-            assertThat(failed.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).contains("no-store");
-        }
-
-        ResponseEntity<JsonNode> throttled = http.exchange(
-                baseUrl + "/api/auth/login",
-                HttpMethod.POST,
-                new HttpEntity<>(Map.of("email", fixture.email(), "password", "Definitely-Wrong-Password-2026"), headers),
-                JsonNode.class);
-        assertThat(throttled.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
-        String retryAfter = throttled.getHeaders().getFirst(HttpHeaders.RETRY_AFTER);
-        assertThat(retryAfter).matches("\\d+");
-        assertThat(Long.parseLong(retryAfter))
-                .isBetween(1L, BasicAuthAttemptRateLimiter.BLOCK_DURATION.toSeconds());
-
-        Integer sessionCount = jdbc.queryForObject(
-                "SELECT count(*) FROM neurosql_app.user_sessions WHERE user_id = ?",
-                Integer.class,
-                fixture.userId());
-        assertThat(sessionCount).isZero();
     }
 
     private Fixture insertFixture() {
