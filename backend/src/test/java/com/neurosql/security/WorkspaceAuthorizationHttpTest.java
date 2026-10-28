@@ -117,6 +117,20 @@ class WorkspaceAuthorizationHttpTest {
     }
 
     @Test
+    void newSchemaPathsAndMethodsFailClosedUntilTheyHaveAnExplicitPolicy() throws Exception {
+        authenticateSession();
+
+        mockMvc.perform(get("/api/schema/admin")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_policy_missing"));
+
+        verifyNoInteractions(workspaceAuthorizationService);
+        verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
     void legacyConfiguredOwnerRemainsCompatibleWithoutWorkspaceHeader() throws Exception {
         mockSchemaDatabase();
 
