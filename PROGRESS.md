@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 13:03 IST
+Last verified: 2026-10-28 14:02 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -179,3 +179,17 @@ Last verified: 2026-10-28 13:03 IST
 - [ ] Production smoke test was skipped as expected for the pull request. This filter remains disabled in production, no login/session-issuance endpoint is wired, and workspace membership authorization is still not enforced by HTTP endpoints.
 - [ ] Draft PR #7 still contains the proposed durable-auth schema. It has not been merged or applied to Neon `main`; explicit user approval is required before any production migration.
 - [x] No credentials, paid resources, production environment changes, or database writes were introduced.
+
+
+## Gated durable-session logout endpoint — PR #9 (not merged)
+- [x] Re-read this tracker on `main` and the feature branch; inspected PR #9, its security filter/configuration, session lifecycle, and proposed schema before selecting logout as the next small HTTP-lifecycle step.
+- [x] Added feature-gated `POST /api/auth/logout`. It is absent unless `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=true`; only a validated `SessionPrincipal` with a bearer token can revoke a session. Basic-auth owner credentials and unauthenticated requests receive 401.
+- [x] Logout returns 204 with `Cache-Control: no-store`, does not log or return the bearer token, and treats a concurrent/repeated revoke as idempotent. The bearer filter now covers this exact logout path as well as the existing schema/SQL paths.
+- [x] Added scoped CORS for `POST /api/auth/**` and MockMvc tests for successful logout, invalid/missing bearer credentials, Basic-auth rejection, and browser preflight.
+- [x] GitHub Actions run #81 (`40657766776`) passed for code commit `f8eedca4543d8269179b1504cdc1dff6eff6640b`: backend Maven verification 74 tests, 0 failures/errors, 4 skipped because the DB integration tests run in the separate job; PostgreSQL 17 integration job 4 passed, 0 failures/errors/skips; frontend production build passed.
+- [x] Vercel preview for code commit `f8eedca4543d8269179b1504cdc1dff6eff6640b` reports `READY`. Project `neurosql` is linked to `plDilipkumar/NexusOps` on the Hobby plan.
+- [x] Read-only Neon inspection confirms project `neurosql` (`lingering-dew-88806235`), PostgreSQL 17.11, database `neurosql_db`: production branch `main` has no application tables; temporary branch `neurosql-auth-owner-invariant-20261028` contains the four proposed `neurosql_app` tables. No Neon writes were performed.
+- [x] Render service `neurosql-api` remains in the confirmed Dilip Kumar workspace, free plan, Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy on commit. No Render deployment was triggered for unmerged feature work; latest listed live deployment remains commit `746d58d`.
+- [ ] This endpoint is not production-ready by itself: there is still no HTTP login/session-issuance endpoint, no workspace membership enforcement on protected endpoints, and the proposed schema/runtime grants remain unapproved. The feature flag must remain off until schema approval and end-to-end security verification.
+- [ ] Draft PR #7 remains unmerged and unapplied to Neon `main`; user approval is required before any production schema change. Render's previously observed missed auto-deploy remains unresolved.
+- [x] No credentials, paid resources, production environment changes, production database writes, or schema migrations were introduced.
