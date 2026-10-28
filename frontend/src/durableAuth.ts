@@ -10,7 +10,7 @@ export type SessionIdentity = { userId: string; sessionId: string; expiresAt: st
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ISO_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO_INSTANT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/;
 const WORKSPACE_ROLES = new Set(["OWNER", "ADMIN", "MEMBER", "VIEWER"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -18,7 +18,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isFutureInstant(value: unknown, nowMs: number): value is string {
-  if (typeof value !== "string" || !ISO_INSTANT_PATTERN.test(value)) return false;
+  if (typeof value !== "string") return false;
+  const match = ISO_INSTANT_PATTERN.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const daysInMonth = month === 2
+    ? (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28)
+    : ([4, 6, 9, 11].includes(month) ? 30 : 31);
+
+  if (
+    month < 1 || month > 12 ||
+    day < 1 || day > daysInMonth ||
+    hour > 23 || minute > 59 || second > 59
+  ) return false;
+
+  if (match[8] !== "Z") {
+    const offsetHours = Number(match[10]);
+    const offsetMinutes = Number(match[11]);
+    if (offsetHours > 23 || offsetMinutes > 59) return false;
+  }
+
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && timestamp > nowMs;
 }
