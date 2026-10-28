@@ -1,6 +1,7 @@
 package com.neurosql.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
 import java.util.ArrayList;
@@ -33,6 +34,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * HTTP-to-JDBC authentication lifecycle test using only the disposable CI
@@ -361,6 +363,47 @@ class DurableAuthHttpPostgresIntegrationTest {
 
         assertThat(deleted).isEqualTo(100);
         assertThat(remaining).isEqualTo(5);
+    }
+
+
+    @Test
+    void exhaustedLimiterCapacityFailsClosedWithoutEvictingActiveBlocks() {
+        jdbc.update("""
+                INSERT INTO neurosql_app.auth_login_rate_limits
+                    (identity_hash, failure_timestamps, blocked_until, updated_at)
+                SELECT lpad(to_hex(i), 64, '0'),
+                       ARRAY[
+                           now() - INTERVAL '5 minutes',
+                           now() - INTERVAL '4 minutes',
+                           now() - INTERVAL '3 minutes',
+                           now() - INTERVAL '2 minutes',
+                           now() - INTERVAL '1 minute'
+                       ],
+                       now() + INTERVAL '10 minutes',
+                       now() - (i * INTERVAL '1 second')
+                FROM generate_series(1, ?) AS generated(i)
+                """, JdbcLoginAttemptRateLimiter.MAX_TRACKED_IDENTITIES);
+
+        String newIdentity = "capacity-exhausted-" + UUID.randomUUID() + "@example.test";
+        assertThatThrownBy(() -> sharedRateLimiter.recordFailure(newIdentity))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode())
+                        .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+
+        Integer total = jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.auth_login_rate_limits", Integer.class);
+        String newHash = new LoginIdentityHasher(TEST_RATE_LIMIT_HMAC_KEY).hash(newIdentity);
+        Integer newIdentityCount = jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.auth_login_rate_limits WHERE identity_hash = ?",
+                Integer.class,
+                newHash);
+        Integer activeBlocks = jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.auth_login_rate_limits WHERE blocked_until > now()",
+                Integer.class);
+
+        assertThat(total).isEqualTo(JdbcLoginAttemptRateLimiter.MAX_TRACKED_IDENTITIES);
+        assertThat(newIdentityCount).isZero();
+        assertThat(activeBlocks).isEqualTo(JdbcLoginAttemptRateLimiter.MAX_TRACKED_IDENTITIES);
     }
 
     private Fixture insertFixture() {
