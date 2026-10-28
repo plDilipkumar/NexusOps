@@ -70,6 +70,11 @@ public class SecurityConfig {
             http.httpBasic(Customizer.withDefaults());
         }
 
+        if (durableSessionsEnabled) {
+            // Apply no-store headers even when MVC returns validation/parsing errors.
+            http.addFilterBefore(new AuthResponseHeadersFilter(), BasicAuthenticationFilter.class);
+        }
+
         DurableSessionAuthenticationFilter sessionFilter = null;
         if (durableSessionsEnabled) {
             SessionLifecycleService lifecycle = sessionLifecycleService.getIfAvailable();
