@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 03:02 IST
+Last verified: 2026-10-29 04:03 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -382,3 +382,17 @@ Last verified: 2026-10-29 03:02 IST
 - [ ] The limiter tested here is still process-local and keyed by normalized login identity. It is not a distributed defense and can behave differently across multiple instances; durable auth must not be enabled in production until shared rate limiting and account-lockout/denial-of-service trade-offs are addressed.
 - [ ] Draft PR #7 remains unapproved/unmerged, and its proposed schema/grants have not been applied to Neon `main`. A least-privileged production LOGIN role and secret configuration remain approval-gated. Registration, password recovery, and workspace lifecycle administration remain unfinished.
 - [x] No credentials were committed, no paid resources were introduced, no production environment settings changed, no backend deployment was triggered, and no production database writes or migrations were performed.
+
+
+## Proposed shared login rate-limit schema — draft PR #7
+- [x] Re-read the current progress tracker and inspected the durable-login rate limiter, login service, proposed V1/V2 schema, Neon branches/databases, Vercel linkage/deployments, and Render service/deploy history before selecting this step.
+- [x] Added proposed-only `docs/database/proposed/V3__shared_login_rate_limits.sql`. The table stores an HMAC-SHA256 hex identity key (not the raw email), a bounded rolling array of up to five failure timestamps, the block expiry, and an update timestamp; it includes consistency checks and an update-time index.
+- [x] Granted `neurosql_auth_runtime` only the required read/insert columns, updates to failure timestamps/block expiry/update time, and DELETE for later stale-row cleanup. The role cannot update the identity hash or TRUNCATE the table.
+- [x] Added `test-auth-login-rate-limits.sql` and updated the schema-contract CI job to apply V3 after V1/V2 and test privileges, the five-failure block representation, and fixture rollback on disposable PostgreSQL 17.
+- [x] Initial GitHub Actions run #149 (`40781167176`) failed because the existing schema-contract test hard-coded four tables and ten indexes. Updated its expectations to five tables and twelve indexes; run #150 (`40781414857`) then passed backend Maven verification, frontend production build, schema/constraint tests, runtime-grant tests, and shared-rate-limit tests. Production smoke was skipped as expected for the unmerged draft branch.
+- [x] Applied the additive V3 migration only to temporary Neon branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`), database `neurosql_db`. Read-only checks confirmed five application tables, twelve indexes, the intended constraints and grants, no UPDATE privilege on `identity_hash`, no TRUNCATE privilege, and zero leftover test rows.
+- [x] Rechecked Neon `main` (`br-empty-credit-b360dmpc`): `neurosql_db` is PostgreSQL 17.11 and still has zero visible application tables/views; its role list still contains only `neurosql_owner`. No production SQL writes or migrations were performed.
+- [x] Vercel project `neurosql` remains associated with `plDilipkumar/NexusOps`; the latest preview for commit `71e78e1176e9519efca3a7d07b7f736ceaa6ab92` reports `READY`. Render `neurosql-api` remains free-tier, linked to repository branch `main`, Docker context `backend`; the live deployment remains commit `746d58d`. No backend deployment or environment change was triggered.
+- [ ] This is the shared-state schema proposal and its contract test only; the JDBC limiter is not yet implemented or wired. Next, add a validated HMAC key configuration, transactional row-locking operations and bounded stale-row cleanup, then test concurrent requests against disposable PostgreSQL. Keep the legacy Basic-auth limiter separate.
+- [ ] Draft PR #7 remains unapproved/unmerged. Do not apply V3 or any other proposed auth migration to Neon `main` without explicit user approval. Durable auth remains disabled in production.
+- [x] No credentials were committed, no paid resources were introduced, and no production environment settings or schema were changed.
