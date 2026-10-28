@@ -1,12 +1,12 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 19:00 IST
+Last verified: 2026-10-28 19:56 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
 - [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. Latest inspected production deployment for commit `6425ab4` reports `READY` and the project includes the `neurosql.vercel.app` alias.
 - [x] Neon project `neurosql` is on the free organization in Singapore, using PostgreSQL 17. The `main` branch is ready.
-- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. A direct read-only query on 2026-10-28 found zero visible application tables, zero views, and zero `public.show_db_tree` functions. No production schema changes have been made.
+- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. Read-only inspection on 2026-10-28 found no application tables on `main`; the branch tree does show the existing `public.show_db_tree` helper function (correcting earlier notes that said no such function existed). No production schema changes have been made.
 - [x] React + TypeScript + Vite frontend and Spring Boot 3 / Java 21 backend are present.
 - [x] Render service `neurosql-api` is configured in the confirmed workspace on the free plan, Singapore region, repository `plDilipkumar/NexusOps`, branch `main`, and Docker context `backend`; auto-deploy is configured for commits.
 - [x] Render deployment `dep-dbgfqe6gekts738l9eng` is live for commit `746d58d`. It was manually triggered after no automatic deployment appeared following the merge.
@@ -272,3 +272,18 @@ Last verified: 2026-10-28 19:00 IST
 - [ ] Draft PR #7 remains unmerged/unapproved and its migration remains isolated on the temporary Neon branch. A least-privileged runtime database role and explicit grants are still required before enabling durable auth.
 - [ ] Registration, password recovery, workspace lifecycle administration, and a shared multi-instance rate limiter remain unfinished. Render's prior missed auto-deploy issue remains unresolved.
 - [x] No credentials were committed, no paid resources were introduced, no production environment settings were changed, and no production database schema changes were made.
+
+
+## Stale durable workspace-response protection — PR #9 (not merged)
+- [x] Re-read the current PROGRESS.md and inspected the latest frontend auth validation and workspace-selection flow before selecting a race-condition fix.
+- [x] Added a request-generation guard in frontend/src/durableAuth.ts. Only the newest schema request may update schema data, errors, or loading state; older responses are ignored after a newer request starts.
+- [x] Invalidated in-flight schema responses when login begins, workspace selection changes, the user signs out, or the local session expires. This prevents a delayed response for a previous workspace/session from repopulating UI state after the context changes.
+- [x] Added an eighth dependency-free frontend test covering new-request supersession and explicit invalidation.
+- [x] Local verification with Node.js 22.16.0: node --experimental-strip-types --test frontend/tests/durableAuth.test.ts passed all 8 tests (0 failures).
+- [x] GitHub Actions run #118 (40706600928) passed all jobs for code commit 9fb308e6f4f21d5422ec8d88883a3c49fd0a059c: backend tests, frontend durable-auth tests and production build, and PostgreSQL 17 integration tests. The production API/database smoke test was skipped as expected for the unmerged feature branch.
+- [x] Vercel preview deployment for commit 9fb308e6f4f21d5422ec8d88883a3c49fd0a059c reports READY; build events confirm tsc -b && vite build, Vite production compilation, and deployment completion. The project remains linked to plDilipkumar/NexusOps on the Hobby plan. Latest inspected production deployment remains READY for main commit 6425ab4.
+- [x] Read-only Neon checks: project neurosql (lingering-dew-88806235), free tier, Singapore, PostgreSQL 17.11; production branch main (br-empty-credit-b360dmpc) database neurosql_db has no application tables, while its tree shows public.show_db_tree. Temporary branch neurosql-auth-owner-invariant-20261028 (br-sweet-sky-b38kd7rm) contains the four proposed neurosql_app tables. No Neon writes or migrations were performed.
+- [x] Render service neurosql-api was verified in the previously confirmed workspace: free plan, Singapore, repository plDilipkumar/NexusOps, branch main, Docker context backend, auto-deploy configured. Latest listed live deployment remains commit 746d58d; no backend deployment was triggered for this frontend-only feature-branch change.
+- [ ] This is frontend race-condition protection, not end-to-end authentication proof. Durable auth remains disabled in production; login/schema integration is still blocked on schema approval and least-privileged runtime database grants.
+- [ ] Draft PR #7 remains unmerged/unapproved; the proposed migration has not been applied to Neon main. Registration, password recovery, workspace lifecycle administration, and a shared multi-instance login rate limiter remain unfinished. Render's prior missed auto-deploy issue remains unresolved.
+- [x] No credentials, paid resources, production environment changes, or production database schema changes were introduced.
