@@ -60,12 +60,17 @@ public class JdbcWorkspaceAuthorizationRepository {
 
         List<Optional<ActiveWorkspace>> rows = jdbcTemplate.query(
                 LIST_ACTIVE_WORKSPACES_SQL,
-                (resultSet, rowNumber) -> WorkspaceRole.fromDatabase(resultSet.getString("role"))
-                        .map(role -> new ActiveWorkspace(
-                                resultSet.getObject("workspace_id", UUID.class),
-                                resultSet.getString("name"),
-                                resultSet.getString("slug"),
-                                role)),
+                (resultSet, rowNumber) -> {
+                    Optional<WorkspaceRole> role = WorkspaceRole.fromDatabase(resultSet.getString("role"));
+                    if (role.isEmpty()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new ActiveWorkspace(
+                            resultSet.getObject("workspace_id", UUID.class),
+                            resultSet.getString("name"),
+                            resultSet.getString("slug"),
+                            role.get()));
+                },
                 userId);
         return rows.stream().flatMap(Optional::stream).toList();
     }
