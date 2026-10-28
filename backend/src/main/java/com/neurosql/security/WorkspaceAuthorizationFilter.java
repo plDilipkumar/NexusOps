@@ -60,7 +60,7 @@ public final class WorkspaceAuthorizationFilter extends OncePerRequestFilter {
             return;
         }
 
-        WorkspaceRole minimumRole = requiredRole(requestPath(request));
+        WorkspaceRole minimumRole = requiredRole(requestPath(request), request.getMethod());
         if (minimumRole == null) {
             // New SQL endpoints must declare an explicit role policy before being exposed.
             reject(response, HttpServletResponse.SC_FORBIDDEN, "workspace_policy_missing");
@@ -112,11 +112,14 @@ public final class WorkspaceAuthorizationFilter extends OncePerRequestFilter {
                 : requestUri;
     }
 
-    private static WorkspaceRole requiredRole(String path) {
-        if (isWithin(path, "/api/schema") || "/api/sql/validate".equals(path)) {
+    private static WorkspaceRole requiredRole(String path, String method) {
+        if ("GET".equalsIgnoreCase(method) && "/api/schema".equals(path)) {
             return WorkspaceRole.VIEWER;
         }
-        // Do not let a future execution endpoint inherit the validation endpoint's weaker policy.
+        if ("POST".equalsIgnoreCase(method) && "/api/sql/validate".equals(path)) {
+            return WorkspaceRole.VIEWER;
+        }
+        // New paths and HTTP methods must declare an explicit role policy before being exposed.
         return null;
     }
 
