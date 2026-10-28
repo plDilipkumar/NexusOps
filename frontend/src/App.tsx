@@ -7,6 +7,9 @@ type SchemaColumn = { name: string; dataType: string; nullable: boolean; ordinal
 type SchemaTable = { name: string; type: string; columns: SchemaColumn[] };
 type SchemaInfo = { name: string; tables: SchemaTable[] };
 type SchemaResponse = { database: string; schemas: SchemaInfo[]; tableCount: number; timestamp: string };
+type DurableWorkspace = { workspaceId: string; name: string; slug: string; role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER" };
+type DurableSession = { token: string; email: string; userId: string; sessionId: string; expiresAt: string };
+const DURABLE_AUTH_ENABLED = import.meta.env.VITE_DURABLE_AUTH_ENABLED === "true";
 const SCHEMA_LOGIN_ENABLED = import.meta.env.VITE_SCHEMA_LOGIN_ENABLED === "true";
 function basicAuthorization(username: string, password: string) {
   const bytes = new TextEncoder().encode(username + ":" + password);
@@ -26,20 +29,119 @@ const [schemaData,setSchemaData]=useState<SchemaResponse|null>(null);
 const [schemaLoading,setSchemaLoading]=useState(false);
 const [schemaError,setSchemaError]=useState("");
 const [expandedTables,setExpandedTables]=useState<Record<string,boolean>>({});
+const [durableEmail,setDurableEmail]=useState("");
+const [durablePassword,setDurablePassword]=useState("");
+const [durableSession,setDurableSession]=useState<DurableSession|null>(null);
+const [durableWorkspaces,setDurableWorkspaces]=useState<DurableWorkspace[]>([]);
+const [selectedWorkspaceId,setSelectedWorkspaceId]=useState("");
+const [durableAuthLoading,setDurableAuthLoading]=useState(false);
 const loadSchema=async(credentials:SchemaCredentials)=>{setSchemaLoading(true);setSchemaError("");try{const response=await fetch(API_BASE_URL+"/api/schema",{headers:{Accept:"application/json",Authorization:basicAuthorization(credentials.username,credentials.password)}});if(response.status===401)throw new Error("Sign-in failed. Check the owner username and password.");if(response.status===403)throw new Error("Schema access is disabled on the API or this account is not authorized.");if(response.status===404)throw new Error("The schema browser endpoint is not enabled on the API.");if(!response.ok)throw new Error("Schema request failed (HTTP "+response.status+").");const payload=(await response.json()) as SchemaResponse;if(!payload||!Array.isArray(payload.schemas)||typeof payload.tableCount!=="number")throw new Error("The API returned an unexpected schema response.");setSchemaData(payload);setSchemaCredentials(credentials);setSchemaPassword("");}catch(error){setSchemaData(null);setSchemaCredentials(null);setSchemaError(error instanceof Error?error.message:"Unable to load schema.");}finally{setSchemaLoading(false);}};
+const loadDurableSchema=async(token:string,workspaceId:string)=>{
+  setSchemaLoading(true);setSchemaError("");setSchemaCredentials(null);
+  try{
+    if(!workspaceId)throw new Error("Choose an active workspace before browsing schema.");
+    const response=await fetch(API_BASE_URL+"/api/schema",{headers:{Accept:"application/json",Authorization:"Bearer "+token,"X-NeuroSQL-Workspace-Id":workspaceId},cache:"no-store"});
+    if(response.status===401){setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");throw new Error("Your session is invalid or expired. Sign in again.");}
+    if(response.status===400)throw new Error("The selected workspace identifier was rejected.");
+    if(response.status===403)throw new Error("This account does not have permission to browse that workspace.");
+    if(response.status===404)throw new Error("Schema browsing is not enabled on the API.");
+    if(!response.ok)throw new Error("Schema request failed (HTTP "+response.status+").");
+    const payload=(await response.json()) as SchemaResponse;
+    if(!payload||!Array.isArray(payload.schemas)||typeof payload.tableCount!=="number")throw new Error("The API returned an unexpected schema response.");
+    setSchemaData(payload);
+  }catch(error){setSchemaData(null);setSchemaError(error instanceof Error?error.message:"Unable to load schema.");}
+  finally{setSchemaLoading(false);}
+};
+const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
+  event.preventDefault();
+  const email=durableEmail.trim().toLowerCase();
+  const password=durablePassword;
+  if(!email||!password){setSchemaError("Enter your email and password.");return;}
+  setDurableAuthLoading(true);setSchemaError("");setSchemaData(null);
+  let issuedToken:string|null=null;
+  try{
+    const response=await fetch(API_BASE_URL+"/api/auth/login",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({email,password}),cache:"no-store"});
+    if(response.status===401)throw new Error("Invalid email or password.");
+    if(response.status===429){const retryAfter=response.headers.get("Retry-After");throw new Error(retryAfter?"Too many login attempts. Try again in "+retryAfter+" seconds.":"Too many login attempts. Try again later.");}
+    if(!response.ok)throw new Error("Login failed (HTTP "+response.status+").");
+    const loginPayload=(await response.json()) as {token?:unknown;expiresAt?:unknown};
+    if(typeof loginPayload.token!=="string"||!/^[A-Za-z0-9_-]{43}$/.test(loginPayload.token)||typeof loginPayload.expiresAt!=="string"||!Number.isFinite(Date.parse(loginPayload.expiresAt))||Date.parse(loginPayload.expiresAt)<=Date.now())throw new Error("The API returned an invalid session response.");
+    issuedToken=loginPayload.token;
+    const authHeaders={Accept:"application/json",Authorization:"Bearer "+issuedToken};
+    const identityResponse=await fetch(API_BASE_URL+"/api/auth/me",{headers:authHeaders,cache:"no-store"});
+    if(identityResponse.status===401)throw new Error("The new session could not be validated. Please sign in again.");
+    if(!identityResponse.ok)throw new Error("Unable to verify session identity (HTTP "+identityResponse.status+").");
+    const identity=(await identityResponse.json()) as {userId?:unknown;sessionId?:unknown;expiresAt?:unknown};
+    if(typeof identity.userId!=="string"||typeof identity.sessionId!=="string"||typeof identity.expiresAt!=="string"||!Number.isFinite(Date.parse(identity.expiresAt))||Date.parse(identity.expiresAt)<=Date.now())throw new Error("The API returned an invalid session identity.");
+    const workspaceResponse=await fetch(API_BASE_URL+"/api/auth/workspaces",{headers:authHeaders,cache:"no-store"});
+    if(workspaceResponse.status===401)throw new Error("The session was rejected while loading workspaces.");
+    if(!workspaceResponse.ok)throw new Error("Unable to load workspaces (HTTP "+workspaceResponse.status+").");
+    const rawWorkspaces=(await workspaceResponse.json()) as unknown;
+    if(!Array.isArray(rawWorkspaces)||!rawWorkspaces.every((item:unknown)=>{
+      if(typeof item!=="object"||item===null)return false;
+      const workspace=item as Record<string,unknown>;
+      return typeof workspace.workspaceId==="string"&&typeof workspace.name==="string"&&typeof workspace.slug==="string"&&["OWNER","ADMIN","MEMBER","VIEWER"].includes(String(workspace.role));
+    }))throw new Error("The API returned an unexpected workspace list.");
+    const workspaces=rawWorkspaces as DurableWorkspace[];
+    setDurableSession({token:issuedToken,email,userId:identity.userId,sessionId:identity.sessionId,expiresAt:identity.expiresAt});
+    setDurableWorkspaces(workspaces);setDurablePassword("");
+    if(workspaces.length===0){setSelectedWorkspaceId("");setSchemaError("Signed in, but no active workspace membership is assigned to this account.");return;}
+    const firstWorkspace=workspaces[0];
+    setSelectedWorkspaceId(firstWorkspace.workspaceId);
+    await loadDurableSchema(issuedToken,firstWorkspace.workspaceId);
+  }catch(error){
+    if(issuedToken){try{await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+issuedToken},cache:"no-store"});}catch{/* Best-effort revocation; never log the token. */}}
+    setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);
+    setSchemaError(error instanceof Error?error.message:"Unable to sign in.");
+  }finally{setDurableAuthLoading(false);}
+};
+const logoutDurable=async()=>{
+  const token=durableSession?.token;
+  if(token){try{await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store"});}catch{/* Clear local credentials even if the network is unavailable. */}}
+  setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setDurableEmail("");setDurablePassword("");setSchemaData(null);setSchemaError("");setExpandedTables({});
+};
+const selectDurableWorkspace=(workspaceId:string)=>{
+  setSelectedWorkspaceId(workspaceId);setSchemaData(null);setExpandedTables({});setSchemaError("");
+  if(durableSession&&workspaceId)void loadDurableSchema(durableSession.token,workspaceId);
+};
 const handleSchemaLogin=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const username=schemaUsername.trim();if(!username||!schemaPassword){setSchemaError("Enter both the owner username and password.");return;}await loadSchema({username,password:schemaPassword});};
 const logoutSchema=()=>{setSchemaCredentials(null);setSchemaData(null);setSchemaUsername("");setSchemaPassword("");setSchemaError("");setExpandedTables({});};
 
+useEffect(()=>{if(!durableSession)return;const expire=()=>{setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setSchemaError("Your session expired. Sign in again.");};const remaining=Date.parse(durableSession.expiresAt)-Date.now();if(!Number.isFinite(remaining)||remaining<=0){expire();return;}const timer=window.setTimeout(expire,remaining);return()=>window.clearTimeout(timer);},[durableSession?.expiresAt]);
 useEffect(()=>{let cancelled=false;const check=async()=>{try{const response=await fetch(`${API_BASE_URL}/api/health/database`,{headers:{Accept:"application/json"}});if(!response.ok)throw new Error(`HTTP ${response.status}`);const payload=(await response.json()) as DatabaseHealth;if(payload.status!=="UP")throw new Error("Database reported unavailable");if(!cancelled){setDatabaseHealth(payload);setHealthError("");setHealthCheckedAt(new Date().toLocaleTimeString());}}catch(error){if(!cancelled){setDatabaseHealth(null);setHealthError(error instanceof Error?error.message:"Unable to reach API");setHealthCheckedAt(new Date().toLocaleTimeString());}}finally{if(!cancelled)setHealthLoading(false);}};void check();const timer=window.setInterval(()=>void check(),60000);return()=>{cancelled=true;window.clearInterval(timer);};},[]);
 const nav=[["Workspace",TerminalSquare],["Schema explorer",Database],["Query history",History],["Performance lab",Gauge]] as const;
-return <div className="shell"><aside className="sidebar"><div className="brand"><div className="mark"><Braces size={20}/></div><div><b>NeuroSQL</b><small>SQL INTELLIGENCE WORKSPACE</small></div></div><div className="workspace"><Database size={17}/><div><b>Personal workspace</b><small>Neon · PostgreSQL 17</small></div><ChevronDown size={14}/></div><label>WORKSPACE</label><nav>{nav.map(([label,Icon])=><button key={label} className={active===label?"nav active":"nav"} onClick={()=>{setActive(label);setNotice(label==="Workspace"||label==="Schema explorer"?"":label+" is planned for the next milestone.");}}><Icon size={17}/>{label}{label==="Performance lab"&&<small>BETA</small>}</button>)}</nav><div className="sidebottom"><div className="safety"><ShieldCheck size={18}/><div><b>Safety first</b><small>Read-only query mode by default</small></div></div><button className="nav" onClick={()=>setNotice("Settings will be added with authentication and connection management.")}><Settings2 size={17}/>Settings</button><div className="profile"><div className="avatar">DK</div><div><b>Developer</b><small>Free plan</small></div></div></div></aside><main><header><div className="crumb">NeuroSQL <ArrowRight size={13}/> <b>{active}</b></div><div className="header-right"><span className="pill"><i/> Database workspace <ChevronDown size={13}/></span><div className="avatar">DK</div></div></header><section className="content">{active === "Schema explorer" ? (
+const selectedWorkspace=durableWorkspaces.find(workspace=>workspace.workspaceId===selectedWorkspaceId);
+return <div className="shell"><aside className="sidebar"><div className="brand"><div className="mark"><Braces size={20}/></div><div><b>NeuroSQL</b><small>SQL INTELLIGENCE WORKSPACE</small></div></div><div className="workspace"><Database size={17}/><div><b>{selectedWorkspace?.name||"Personal workspace"}</b><small>{selectedWorkspace?selectedWorkspace.role+" · PostgreSQL 17":"Neon · PostgreSQL 17"}</small></div><ChevronDown size={14}/></div><label>WORKSPACE</label><nav>{nav.map(([label,Icon])=><button key={label} className={active===label?"nav active":"nav"} onClick={()=>{setActive(label);setNotice(label==="Workspace"||label==="Schema explorer"?"":label+" is planned for the next milestone.");}}><Icon size={17}/>{label}{label==="Performance lab"&&<small>BETA</small>}</button>)}</nav><div className="sidebottom"><div className="safety"><ShieldCheck size={18}/><div><b>Safety first</b><small>Read-only query mode by default</small></div></div><button className="nav" onClick={()=>setNotice("Settings will be added with authentication and connection management.")}><Settings2 size={17}/>Settings</button><div className="profile"><div className="avatar">DK</div><div><b>Developer</b><small>Free plan</small></div></div></div></aside><main><header><div className="crumb">NeuroSQL <ArrowRight size={13}/> <b>{active}</b></div><div className="header-right"><span className="pill"><i/> {selectedWorkspace?.name||"Database workspace"} <ChevronDown size={13}/></span><div className="avatar">DK</div></div></header><section className="content">{active === "Schema explorer" ? (
 <div className="schema-page">
   <div className="schema-page-heading">
     <div><div className="eyebrow"><Database size={14}/> READ-ONLY METADATA</div><h2>Schema explorer</h2><p>Browse schemas, tables, and ordered column definitions from the connected PostgreSQL database.</p></div>
     {schemaData && <div className="schema-summary"><b>{schemaData.tableCount}</b><small>tables found</small></div>}
   </div>
-  {!SCHEMA_LOGIN_ENABLED ? (
-    <article className="schema-gate"><LockKeyhole size={22}/><div><b>Schema access is disabled in this deployment</b><p>The browser remains hidden until the frontend login flag and the backend owner-authentication and schema-browser flags are deliberately configured together.</p><small>No credentials are requested or stored by this disabled view.</small></div></article>
+  {!SCHEMA_LOGIN_ENABLED && !DURABLE_AUTH_ENABLED ? (
+    <article className="schema-gate"><LockKeyhole size={22}/><div><b>Schema access is disabled in this deployment</b><p>The browser remains hidden until an authentication mode is deliberately enabled on both frontend and backend.</p><small>No credentials are requested or stored by this disabled view.</small></div></article>
+  ) : DURABLE_AUTH_ENABLED ? (
+    durableSession ? (
+      <>
+        <article className="schema-accessbar"><div><CheckCircle2 size={17}/><div><b>Signed in as {durableSession.email}</b><small>Session expires {new Date(durableSession.expiresAt).toLocaleString()} · token held in memory only</small></div></div><div className="schema-actions">
+          <label style={{display:"grid",gap:"5px",fontSize:"10px",color:"#a8b7ce"}}>Workspace
+            <select aria-label="Active workspace" value={selectedWorkspaceId} disabled={schemaLoading||durableAuthLoading||durableWorkspaces.length===0} onChange={event=>selectDurableWorkspace(event.target.value)} style={{minWidth:"185px",maxWidth:"240px",padding:"8px 10px",border:"1px solid #30405c",borderRadius:"7px",background:"#0a1220",color:"#e7ecf6"}}>
+              <option value="">Select workspace</option>{durableWorkspaces.map(workspace=><option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.name} · {workspace.role}</option>)}
+            </select>
+          </label>
+          <button type="button" className="secondary" disabled={schemaLoading||!selectedWorkspaceId} onClick={()=>{if(durableSession&&selectedWorkspaceId)void loadDurableSchema(durableSession.token,selectedWorkspaceId);}}>{schemaLoading?"Refreshing…":"Refresh schema"}</button>
+          <button type="button" className="secondary" onClick={()=>void logoutDurable()}>Sign out</button>
+        </div></article>
+        {durableWorkspaces.length===0&&<div className="schema-error" role="status">This account has no active workspace membership. Ask a workspace owner to assign access.</div>}
+      </>
+    ) : (
+      <form className="schema-login" onSubmit={handleDurableLogin}>
+        <div className="schema-login-icon"><LockKeyhole size={19}/></div><h3>Sign in to NeuroSQL</h3><p>Use an active, email-verified NeuroSQL account. Your bearer token stays in memory and is cleared when you sign out or the session expires.</p>
+        <label>Email<input type="email" autoComplete="username" value={durableEmail} onChange={event=>setDurableEmail(event.target.value)} maxLength={254} required /></label>
+        <label>Password<input type="password" autoComplete="current-password" value={durablePassword} onChange={event=>setDurablePassword(event.target.value)} maxLength={256} required /></label>
+        <button type="submit" className="run" disabled={durableAuthLoading}>{durableAuthLoading?"Signing in…":"Sign in and load workspaces"} <ArrowRight size={14}/></button>
+        <small>Accounts must be provisioned and email-verified. Registration and password recovery are not available yet.</small>
+      </form>
+    )
   ) : schemaData && schemaCredentials ? (
     <article className="schema-accessbar"><div><CheckCircle2 size={17}/><div><b>Connected to {schemaData.database}</b><small>Signed in as {schemaCredentials.username} · credentials are held in memory only</small></div></div><div className="schema-actions"><button type="button" className="secondary" disabled={schemaLoading} onClick={()=>void loadSchema(schemaCredentials)}>{schemaLoading?"Refreshing…":"Refresh schema"}</button><button type="button" className="secondary" onClick={logoutSchema}>Sign out</button></div></article>
   ) : (
@@ -52,7 +154,7 @@ return <div className="shell"><aside className="sidebar"><div className="brand">
     </form>
   )}
   {schemaError && <div className="schema-error" role="alert"><Activity size={15}/>{schemaError}</div>}
-  {SCHEMA_LOGIN_ENABLED && schemaData && schemaCredentials && (
+  {((!DURABLE_AUTH_ENABLED && SCHEMA_LOGIN_ENABLED && schemaData && schemaCredentials) || (DURABLE_AUTH_ENABLED && durableSession && selectedWorkspaceId && schemaData)) && (
     <div className="schema-list">
       {schemaData.schemas.length===0 ? <article className="schema-empty-state"><Database size={22}/><b>No visible schemas</b><p>The connected role did not return any visible schema metadata.</p></article> : schemaData.schemas.map(schema=>(
         <article className="schema-card" key={schema.name}>
