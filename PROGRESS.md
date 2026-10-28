@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 08:08 IST
+Last verified: 2026-10-28 09:07 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -102,3 +102,19 @@ Last verified: 2026-10-28 08:08 IST
 - [ ] The limiter is not enabled in production because owner authentication remains disabled. It is username-based and process-local; before enabling durable multi-user auth, revisit account-lockout abuse, shared/distributed rate limits, and durable session lifecycle.
 - [ ] Draft PR #7 still contains the unapproved durable-auth schema proposal. It has not been merged or applied to Neon `main`.
 - [ ] Render auto-deploy reliability remains unresolved; the current run did not change `main` or trigger a backend deployment.
+
+
+## Feature-gated JDBC session repository — PR #9 (not merged)
+- [x] Re-read the default-branch progress tracker and inspected the current feature branch, open PRs, Neon project/branches/database, Vercel Git linkage and deployments, and Render service/deploy history before selecting this step.
+- [x] Added `JdbcSessionRepository` on `feature/session-token-codec-main`. The Spring bean is disabled unless `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=true`; the flag has not been configured in production.
+- [x] Session creation accepts only a lowercase 64-character SHA-256 token digest, validates that expiry is after issuance and no more than twelve hours later, and persists the digest rather than a raw bearer token.
+- [x] Active-session lookup is parameterized and filters out revoked sessions, future-issued sessions, expired or overlong sessions, and sessions belonging to non-ACTIVE users.
+- [x] Revocation is idempotent and uses `GREATEST(revoked_at, created_at)` semantics to avoid violating the proposed schema's timestamp constraint if the caller clock is behind.
+- [x] Added repository tests using a recording `JdbcTemplate` for parameterized insert/query/update behavior, malformed digest rejection, fixed lifetime checks, active-account filters, and idempotent revocation.
+- [x] GitHub Actions run #62 (`40627671686`) passed backend `mvn -B verify` and the frontend production build. The production API/database smoke job was skipped, as expected for a pull request.
+- [x] Vercel preview for the tested commit `b8f26b1905770c1907f6587096de68364b7076c3` reports `READY`.
+- [x] Direct infrastructure inspection confirmed Neon project `neurosql`, PostgreSQL 17, database `neurosql_db`; the production `main` branch still has zero application tables. No migration was applied and no production rows/schema were changed.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby plan. Render service `neurosql-api` remains on the free plan, linked to repository branch `main`, with the last listed live deployment on commit `746d58d`. No Render deploy or environment change was triggered for this feature-branch-only work.
+- [ ] This repository adapter is not wired to login, HTTP authentication, or a session controller, and its SQL has not yet been integration-tested against the temporary Neon schema branch. It remains gated off until the schema proposal in draft PR #7 is approved and a least-privileged runtime database role is configured.
+- [ ] Render's prior missed auto-deploy remains unresolved. No production smoke test was expected for this pull-request-only change.
+- [x] No credentials, paid resources, or production database changes were introduced.
