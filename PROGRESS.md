@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 04:03 IST
+Last verified: 2026-10-29 05:09 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -396,3 +396,20 @@ Last verified: 2026-10-29 04:03 IST
 - [ ] This is the shared-state schema proposal and its contract test only; the JDBC limiter is not yet implemented or wired. Next, add a validated HMAC key configuration, transactional row-locking operations and bounded stale-row cleanup, then test concurrent requests against disposable PostgreSQL. Keep the legacy Basic-auth limiter separate.
 - [ ] Draft PR #7 remains unapproved/unmerged. Do not apply V3 or any other proposed auth migration to Neon `main` without explicit user approval. Durable auth remains disabled in production.
 - [x] No credentials were committed, no paid resources were introduced, and no production environment settings or schema were changed.
+
+
+## Shared PostgreSQL durable-login rate limiter — PR #9 (not merged)
+- [x] Added `DurableLoginAttemptRateLimiter` abstraction so durable login can use shared PostgreSQL state while legacy HTTP Basic authentication keeps its own process-local limiter.
+- [x] Added `LoginIdentityHasher`: normalized login identities are keyed with HMAC-SHA256; only a lowercase 64-character digest is stored. The shared HMAC key must be at least 32 UTF-8 bytes and is read from `NEUROSQL_AUTH_RATE_LIMIT_HMAC_KEY`; no secret was added to source control.
+- [x] Added `JdbcLoginAttemptRateLimiter`, conditionally available only when both durable sessions and shared throttling are explicitly enabled. Existing identity rows are locked with `SELECT ... FOR UPDATE`; a transaction-scoped advisory lock is used only when admitting a new identity under the 10,000-row cap.
+- [x] Preserved the five-failures/15-minute rolling window and 15-minute block. Active blocks are not evicted to make room; if every tracked identity is actively blocked at capacity, new failure processing fails closed with HTTP 503.
+- [x] Added bounded stale-state cleanup: every 64 limiter operations, at most 100 rows older than 24 hours are removed when their block is not active. Successful login clears the matching state.
+- [x] Added HMAC tests and disposable PostgreSQL integration coverage for concurrent failures across two limiter instances, normalized identity sharing, the 10,000-identity cap, active-block preservation, and bounded cleanup. The existing HTTP login-throttling test now exercises the JDBC limiter.
+- [x] Initial CI run #153 (`40788705829`) caught a malformed test-fixture insertion; corrected the fixture and committed `f865adb9c14e44d14fad38dc746edb665aebd25c`.
+- [x] GitHub Actions run #154 (`40788818913`) passed: backend Maven verification reported 113 tests, 0 failures/errors and 14 database-only skips in the standard job; the dedicated PostgreSQL 17 integration job passed 14 tests with 0 failures/errors/skips; frontend validation tests and production build passed. Production smoke was skipped as expected for this unmerged PR.
+- [x] Vercel preview for code commit `f865adb9c14e44d14fad38dc746edb665aebd25c` reports `READY`: https://neurosql-bhf27jt91-dilips-projects-d0ae994d.vercel.app. This is a preview, not production.
+- [x] Rechecked infrastructure: Neon project `neurosql` remains free-tier PostgreSQL 17 in Singapore. Production branch `br-empty-credit-b360dmpc`, database `neurosql_db`, still has zero application tables. Temporary branch `br-sweet-sky-b38kd7rm` has the five proposed auth/rate-limit tables including V3; this run made no Neon writes.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps`. Render `neurosql-api` remains free-tier, linked to branch `main`, with live deployment still on commit `746d58d`. No backend deployment or production environment change was triggered.
+- [ ] Production remains gated: draft PR #7 is still unapproved/unmerged, V1/V2/V3 are not applied to Neon `main`, and the production LOGIN role plus HMAC secret have not been configured. Do not enable shared durable auth until the schema is approved and the runtime grants/credentials are verified.
+- [ ] Next: review failure/availability behavior under an exhausted table and add a safe operational check for the shared limiter before any production enablement. Registration, recovery, and workspace lifecycle administration remain unfinished.
+- [x] No credentials were committed, no paid resources were introduced, and no production database, environment settings, or backend deployment was changed.
