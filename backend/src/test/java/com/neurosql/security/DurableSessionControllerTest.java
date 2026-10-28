@@ -7,9 +7,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
@@ -44,6 +46,57 @@ class DurableSessionControllerTest {
 
     @MockBean
     private SessionLifecycleService sessions;
+
+    @Test
+    void activeBearerSessionCanReadItsOwnIdentityWithoutReturningToken() throws Exception {
+        Instant expiresAt = Instant.now().plusSeconds(3600);
+        when(sessions.validateSession(eq(TOKEN), any(Instant.class))).thenReturn(Optional.of(
+                new JdbcSessionRepository.StoredSession(
+                        SESSION_ID, USER_ID, Instant.now().minusSeconds(60), expiresAt)));
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.userId").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.sessionId").value(SESSION_ID.toString()))
+                .andExpect(jsonPath("$.expiresAt").value(expiresAt.toString()))
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        verify(sessions).validateSession(eq(TOKEN), any(Instant.class));
+        verify(sessions, never()).revokeSession(eq(TOKEN), any(Instant.class));
+    }
+
+    @Test
+    void missingBearerCannotReadIdentity() throws Exception {
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+
+        verifyNoInteractions(sessions);
+    }
+
+    @Test
+    void invalidBearerCannotReadIdentity() throws Exception {
+        when(sessions.validateSession(eq(TOKEN), any(Instant.class))).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\""))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+
+        verify(sessions, never()).revokeSession(eq(TOKEN), any(Instant.class));
+    }
+
+    @Test
+    void basicOwnerCredentialsCannotReadDurableSessionIdentity() throws Exception {
+        mockMvc.perform(get("/api/auth/me")
+                        .with(httpBasic("test-owner", "test-owner-password-123")))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(sessions);
+    }
 
     @Test
     void activeBearerSessionCanLogoutAndReceiveNoContent() throws Exception {
@@ -97,6 +150,16 @@ class DurableSessionControllerTest {
         mockMvc.perform(options("/api/auth/logout")
                         .header("Origin", "https://neurosql.vercel.app")
                         .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://neurosql.vercel.app"));
+    }
+
+    @Test
+    void browserCanPreflightIdentityGet() throws Exception {
+        mockMvc.perform(options("/api/auth/me")
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "GET")
                         .header("Access-Control-Request-Headers", "authorization"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "https://neurosql.vercel.app"));
