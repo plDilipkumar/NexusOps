@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 10:58 IST
+Last verified: 2026-10-28 12:05 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -157,9 +157,9 @@ Last verified: 2026-10-28 10:58 IST
 - [x] Added feature-gated, read-only `JdbcWorkspaceAuthorizationRepository`. It returns a role only when the workspace exists, the membership is ACTIVE, and the user account is ACTIVE. Query parameters are bound; null identifiers return no authorization.
 - [x] Added `WorkspaceAuthorizationService.hasMinimumRole`; missing IDs, missing membership, null required role, inactive users/memberships, and unknown stored roles deny access. The service/repository use the existing `neurosql.auth.durable-sessions-enabled` feature gate and are not wired to HTTP routes.
 - [x] Added unit tests for role hierarchy and fail-closed behavior, plus PostgreSQL integration tests for workspace isolation, minimum-role checks, disabled accounts, and suspended memberships. The CI PostgreSQL 17 job now runs both the session repository and workspace authorization integration test classes.
-- [ ] CI for the new workspace authorization implementation is pending at the time of this progress update. Do not mark tests/builds passed until the workflow run completes.
+- [x] GitHub Actions run #75 (`40644486781`) passed backend `mvn -B verify` (62 tests, 0 failures/errors; the two DB integration classes were skipped in this non-database job), frontend production build, and the disposable PostgreSQL 17 integration job (2 session repository tests + 2 workspace authorization tests, 4 total; 0 failures/errors/skips).
 - [x] Read-only Neon inspection: project `neurosql` is free-tier, Singapore, PostgreSQL 17; production branch `main` (`br-empty-credit-b360dmpc`) and database `neurosql_db` remain ready with zero visible application tables. Temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) contains the four proposed `neurosql_app` tables. No Neon writes were made in this run.
-- [x] Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` on the Hobby plan. Latest inspected deployment before these commits was `READY` for feature commit `c508c48b25d45d940564c0455589128e643e8465`; deployment for the new commits has not yet been verified.
+- [x] Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` on the Hobby plan. Preview deployment for workspace-authorization test commit `014856a41b9d65eef202b9eab3d433fff469f658` reports `READY`; production remains on the existing `main` deployment.
 - [x] Render service `neurosql-api` is in the previously confirmed Dilip Kumar workspace, on the free plan in Singapore, linked to repository branch `main`, with commit auto-deploy configured. Latest listed service deployment remains on commit `746d58d`; no backend deployment was triggered for this unmerged feature-branch work.
 - [ ] The repository/service is not wired to HTTP authentication. Workspace authorization remains a tested foundation only; do not expose endpoints until the schema is approved, least-privileged grants are configured, and end-to-end authorization is verified.
 - [ ] Draft PR #7 still contains the proposed durable-auth schema. It has not been merged or applied to Neon `main`; explicit approval is required before that production schema change.
