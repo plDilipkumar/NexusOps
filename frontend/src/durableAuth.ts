@@ -102,3 +102,24 @@ export function buildDurableSchemaHeaders(token: string, workspaceId: string): R
     "X-NeuroSQL-Workspace-Id": workspaceId,
   };
 }
+
+
+/**
+ * Tracks the newest async request so responses from an old workspace/session
+ * cannot overwrite state after a newer request, sign-out, or expiry.
+ */
+export function createRequestGuard() {
+  let generation = 0;
+  return {
+    begin(): number {
+      generation += 1;
+      return generation;
+    },
+    isCurrent(requestId: number): boolean {
+      return requestId === generation;
+    },
+    invalidate(): void {
+      generation += 1;
+    },
+  };
+}
