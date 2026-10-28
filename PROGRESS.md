@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 05:12 IST
+Last verified: 2026-10-29 05:15 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -419,6 +419,7 @@ Last verified: 2026-10-29 05:12 IST
 
 ## Latest verification update — shared PostgreSQL login throttling (2026-10-29)
 - Code commit `2a323cfd62f3c9de450f20a54fc5e3739782cef7` adds the exhausted-capacity regression test. GitHub Actions run #156 (https://github.com/plDilipkumar/NexusOps/actions/runs/40789147710) passed: backend Maven verification (114 tests, 0 failures/errors, 15 DB-only tests skipped in the standard job), disposable PostgreSQL 17 integration (15 tests, 0 failures/errors/skips), and frontend validation tests/build. Production API smoke was skipped as expected for the unmerged PR.
+- [x] Added a fail-closed bean condition in commit `446e26c988c72281b19c71c8e9119a2b42d89977`: durable login is not registered unless shared PostgreSQL throttling is also enabled, so it cannot silently fall back to process-local throttling. GitHub Actions run #158 (https://github.com/plDilipkumar/NexusOps/actions/runs/40789398585) passed the same backend, frontend, and 15-test PostgreSQL integration checks; production smoke remained skipped.
 - The integration suite verifies concurrent failures across two limiter instances, the 10,000-identity cap without evicting an active block, a fail-closed HTTP 503 when every tracked identity is blocked, and cleanup capped at 100 stale rows per batch.
 - Vercel preview for commit `2a323cfd62f3c9de450f20a54fc5e3739782cef7` reports READY: https://neurosql-r4kpzqobn-dilips-projects-d0ae994d.vercel.app. This is a preview, not production.
 - Production remains unchanged: Neon `neurosql_db` on `main` still has zero application tables; the five proposed tables exist only on temporary branch `br-sweet-sky-b38kd7rm`, whose application tables contain zero rows. Render `neurosql-api` remains on free plan/branch `main`, live commit `746d58d`; no backend deployment or environment changes were made.
