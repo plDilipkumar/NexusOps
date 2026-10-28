@@ -46,6 +46,9 @@ class DurableSessionAuthenticationSecurityTest {
     @MockBean
     private SessionLifecycleService sessions;
 
+    @MockBean
+    private WorkspaceAuthorizationService workspaceAuthorizationService;
+
     @Test
     void rejectsInvalidBearerBeforeSchemaControllerRuns() throws Exception {
         when(sessions.validateSession(eq(TOKEN), any(Instant.class))).thenReturn(Optional.empty());
@@ -58,15 +61,16 @@ class DurableSessionAuthenticationSecurityTest {
     }
 
     @Test
-    void validUserSessionCannotEscalateToOwnerOnlySchemaAccess() throws Exception {
+    void validUserSessionMustSupplyWorkspaceBeforeSchemaAccess() throws Exception {
         Instant issuedAt = Instant.now().minusSeconds(60);
         Instant expiresAt = Instant.now().plusSeconds(3600);
         when(sessions.validateSession(eq(TOKEN), any(Instant.class))).thenReturn(Optional.of(
                 new JdbcSessionRepository.StoredSession(SESSION_ID, USER_ID, issuedAt, expiresAt)));
 
         mockMvc.perform(get("/api/schema").header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isBadRequest());
 
         verifyNoInteractions(jdbcTemplate);
+        verifyNoInteractions(workspaceAuthorizationService);
     }
 }
