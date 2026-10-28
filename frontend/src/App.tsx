@@ -97,8 +97,9 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
 };
 const logoutDurable=async()=>{
   const token=durableSession?.token;
-  if(token){try{await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store"});}catch{/* Clear local credentials even if the network is unavailable. */}}
-  setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setDurableEmail("");setDurablePassword("");setSchemaData(null);setSchemaError("");setExpandedTables({});
+  let revocationConfirmed=!token;
+  if(token){try{const response=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store"});revocationConfirmed=response.status===204||response.status===401;}catch{/* The local token is still cleared; surface that server revocation was not confirmed. */}}
+  setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setDurableEmail("");setDurablePassword("");setSchemaData(null);setSchemaError(revocationConfirmed?"":"Signed out locally, but the server could not confirm session revocation. The session may remain valid until it expires.");setExpandedTables({});
 };
 const selectDurableWorkspace=(workspaceId:string)=>{
   setSelectedWorkspaceId(workspaceId);setSchemaData(null);setExpandedTables({});setSchemaError("");
