@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 16:02 IST
+Last verified: 2026-10-28 17:03 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -222,3 +222,22 @@ Last verified: 2026-10-28 16:02 IST
 - [ ] Durable-auth schema remains draft PR #7, unapproved and unapplied to Neon `main`. Do not enable durable sessions in production until the schema is approved and a least-privileged runtime database role/grants are configured and verified.
 - [ ] Login currently supports only pre-provisioned active, email-verified accounts. Registration, email verification/reset, workspace lifecycle, and workspace membership enforcement on protected schema/SQL routes remain unfinished. The rate limiter is process-local and is not sufficient for a multi-instance deployment.
 - [x] No credentials were committed, no production environment settings changed, and no production schema migrations were applied.
+
+
+## Workspace-scoped HTTP authorization and workspace discovery — PR #9 (not merged)
+- [x] Re-read `PROGRESS.md` on `main` and the feature branch, reviewed PRs #7/#9 and the current security/controllers, and inspected the dedicated Neon project/database, Vercel Git linkage/deployments, and Render service/deploy history before choosing this milestone.
+- [x] Added `GET /api/auth/workspaces`, available only with durable sessions enabled. It requires a validated durable bearer principal and returns only active memberships for that account (workspace ID, name, slug, role) with `Cache-Control: no-store`; it never returns tokens.
+- [x] Extended the parameterized JDBC membership repository to list active memberships for active accounts and omit unknown role values. The new query uses the proposed `neurosql_app` schema, so it remains gated and must not be enabled before schema approval and database grants.
+- [x] Added `WorkspaceAuthorizationFilter` to the Spring Security chain only when durable sessions are enabled. Durable-session requests to `/api/schema/**` and `/api/sql/**` must include a canonical `X-NeuroSQL-Workspace-Id` UUID and have an active membership with at least VIEWER role before the controller runs. Missing/invalid IDs return 400; missing membership returns 403. The existing configured Basic-auth OWNER path remains compatible.
+- [x] Added explicit route policy mapping: schema browsing and `POST /api/sql/validate` require VIEWER. Other SQL paths fail closed with `workspace_policy_missing` until an endpoint-specific minimum role is deliberately defined, preventing a future SQL execution route from accidentally inheriting viewer access. Added the workspace header to the allowed CORS headers.
+- [x] Added HTTP tests for missing workspace ID, permitted viewer access, denial before metadata access for non-members, legacy owner compatibility, workspace discovery, Basic-auth rejection on durable workspace discovery, CORS preflight, and fail-closed behavior for an unregistered SQL route. Added PostgreSQL integration coverage for active workspace listing and exclusion of suspended memberships/inactive accounts.
+- [x] GitHub Actions run #101 (`40681593923`) passed: backend `mvn -B verify` reported 98 tests, 0 failures, 0 errors, 7 skipped (database-only integration tests run separately); PostgreSQL 17 integration job passed 7 tests (2 session, 3 workspace authorization, 2 account lookup), 0 failures/errors/skips; frontend production build passed. Production smoke was skipped as expected for this pull request.
+- [x] The first implementation attempts exposed a checked-`SQLException` compile issue and missing mock workspace-service beans in a legacy security test. Both were fixed; run #101 is the verified passing run. Earlier runs #98 (`40681326192`) and #99 (`40681434553`) failed before the correction.
+- [x] Vercel preview for feature commit `d269b4796335b7e39afbb00db9746ecb00e09e37` reports `READY`; project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby plan.
+- [x] Read-only Neon inspection confirms project `neurosql` (`lingering-dew-88806235`), free tier, Singapore, PostgreSQL 17.11. Production database `neurosql_db` on `main` (`br-empty-credit-b360dmpc`) still has zero visible application tables. Existing temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) contains the four proposed `neurosql_app` tables. No Neon writes or migrations were performed.
+- [x] Render service `neurosql-api` is in the confirmed Dilip Kumar workspace, free plan, Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy enabled. Latest listed live deploy remains commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; no backend deployment was triggered for this unmerged feature work.
+- [ ] Frontend integration is still outstanding: the UI does not yet call `GET /api/auth/workspaces`, present a workspace selector, or send `X-NeuroSQL-Workspace-Id`. Keep durable sessions disabled in production until the frontend and end-to-end flow are verified.
+- [ ] Draft PR #7 still contains the proposed schema and remains unmerged/unapproved. No migration has been applied to Neon `main`; explicit approval is required before any production schema change. A least-privileged runtime database role and explicit grants are also still required.
+- [ ] The process-local login rate limiter is not suitable for multi-instance enforcement. Registration, email verification/reset, workspace lifecycle administration, and production end-to-end authentication remain unfinished.
+- [ ] Render's previously observed missed auto-deploy remains unresolved; no deploy was needed for this pull-request-only change.
+- [x] No credentials were committed, no paid resources were introduced, and no production environment settings or database schemas were changed.
