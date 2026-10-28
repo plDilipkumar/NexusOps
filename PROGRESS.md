@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 18:04 IST
+Last verified: 2026-10-28 19:00 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -257,3 +257,18 @@ Last verified: 2026-10-28 18:04 IST
 - [ ] Draft PR #7 remains unmerged and unapplied to Neon main. A least-privileged runtime role and explicit grants are still required. Registration, password recovery, and a shared multi-instance rate limiter remain future work.
 - [x] No credentials were committed, no paid resources were introduced, and no production database or environment settings were changed.
 
+
+
+## Frontend durable-auth response validation and tests — PR #9 (not merged)
+- [x] Re-read the main and feature-branch progress trackers, reviewed PRs #7/#9 and the frontend durable-login/workspace flow, and inspected the dedicated Neon project/database, Vercel project/deployments, and Render service before selecting this step.
+- [x] Extracted durable-auth payload validation into `frontend/src/durableAuth.ts`. Login responses must contain a 43-character URL-safe opaque token and a future ISO timestamp; identity responses must contain UUID user/session IDs and a future ISO timestamp; workspace lists must use UUID workspace IDs, non-empty names/slugs, known roles, and unique IDs.
+- [x] Schema request headers are now built through a helper that validates the bearer token and workspace UUID before adding `Authorization` and `X-NeuroSQL-Workspace-Id`. Existing token-in-memory and no-browser-storage behavior is unchanged.
+- [x] Added seven dependency-free Node test cases in `frontend/tests/durableAuth.test.ts` and wired `npm test` into the frontend CI job before `npm run build`. The tests cover valid/invalid/expired sessions, UUID identity fields, malformed/duplicate workspace data, role allowlisting, and header construction.
+- [x] Initial CI run #112 (run ID `40697369873`) caught a frontend build failure because the Node test file was initially placed under `frontend/src`, causing the production TypeScript build to type-check `node:test` imports without Node type definitions. Moved the tests to `frontend/tests`; run #114 caught the same issue on an intermediate commit. Latest GitHub Actions run #115 (`40697488187`) passed all jobs: backend Maven verification, all 7 frontend tests (0 failures), frontend production build, and PostgreSQL 17 JDBC integration tests. The production smoke job was skipped as expected for this unmerged feature branch.
+- [x] Vercel preview for verified code commit `fe050983f0a813593df49e3d8abbe812f5a6bc1c` reports `READY` at `https://neurosql-pkcktlx5i-dilips-projects-d0ae994d.vercel.app`. The Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` on the Hobby plan; the latest inspected production deployment remains `READY` for main commit `6425ab4`.
+- [x] Read-only Neon inspection confirms project `neurosql` (`lingering-dew-88806235`) is free-tier, Singapore, PostgreSQL 17. Database `neurosql_db` on production branch `main` (`br-empty-credit-b360dmpc`) has no visible application tables. Temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) contains the four proposed `neurosql_app` tables. No Neon writes or migrations were performed.
+- [x] Render service `neurosql-api` was inspected in the previously confirmed Dilip Kumar workspace: free plan, Singapore, repository `plDilipkumar/NexusOps`, branch `main`, Docker context `backend`, auto-deploy on commit. Latest listed live deployment remains commit `746d58d`; no backend deployment was triggered for feature-branch work.
+- [ ] This improves frontend validation coverage but is not end-to-end authentication testing. Durable auth remains disabled in production; no live login test was attempted because the proposed schema and runtime grants are not approved/configured.
+- [ ] Draft PR #7 remains unmerged/unapproved and its migration remains isolated on the temporary Neon branch. A least-privileged runtime database role and explicit grants are still required before enabling durable auth.
+- [ ] Registration, password recovery, workspace lifecycle administration, and a shared multi-instance rate limiter remain unfinished. Render's prior missed auto-deploy issue remains unresolved.
+- [x] No credentials were committed, no paid resources were introduced, no production environment settings were changed, and no production database schema changes were made.
