@@ -1,14 +1,15 @@
 # Proposed durable authentication and workspace schema
 
-**Status: draft only.** The SQL in `proposed/V1__durable_auth_workspaces.sql` is intentionally outside the application's migration-runner path. It has not been applied to the production `main` branch and must not be wired into application startup until the schema is approved.
+**Status: draft only.** The SQL in `proposed/V1__durable_auth_workspaces.sql` and `proposed/V2__durable_auth_runtime_grants.sql` is intentionally outside the application's migration-runner path. Neither migration has been applied to Neon `main`; do not wire them into application startup until the schema is approved.
 
-## Infrastructure inspection (2026-10-28 04:03 IST)
+## Infrastructure inspection (2026-10-29 IST)
 
 - GitHub source of truth: `plDilipkumar/NexusOps`, default branch `main`.
 - Neon project: `neurosql`, PostgreSQL 17, Singapore region; database: `neurosql_db`.
-- Read-only query against Neon `main` returned PostgreSQL 17.11, zero visible application tables, and zero visible application views.
-- Vercel project `neurosql` is linked to `plDilipkumar/NexusOps`; preview deployment for draft commit `9838791326fb6d7c659e0129cd68b1bc46eba0a5` reports `READY`.
-- Render service `neurosql-api` uses the same repository, `main`, Docker context `backend`, Singapore region, and free plan. Auto-deploy is configured; a prior merge required a manual deployment. The last verified production service commit remains `746d58d`.
+- Read-only query against Neon `main` reports PostgreSQL 17.11, zero visible application tables and views. The existing `public.show_db_tree` helper is unrelated to the proposed auth schema.
+- Temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) contains the four proposed `neurosql_app` tables and is used only for migration/privilege testing.
+- Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` on the Hobby plan; production alias `neurosql.vercel.app` remains configured.
+- Render service `neurosql-api` uses the same repository, branch `main`, Docker context `backend`, Singapore region, and free plan. Auto-deploy is configured; the last verified production service commit remains `746d58d`.
 
 ## Proposed tables
 
@@ -21,24 +22,29 @@
 
 The proposed schema enforces **exactly one active owner at transaction end** using two deferred constraint triggers (one for workspace rows and one for membership changes), alongside the partial unique index that prevents multiple active owners. Workspace creation must insert the workspace and its initial owner membership in the same transaction. Owner transfer must suspend or demote the current owner and activate the replacement within one transaction; the deferred trigger checks the final transaction state. Deleting a workspace is allowed because the trigger skips checks when the workspace row no longer exists.
 
-The contract test verifies that ownerless workspace creation and removal of the final active owner fail, while an atomic owner transfer succeeds.
+The schema contract test verifies that ownerless workspace creation and removal of the final active owner fail, while an atomic owner transfer succeeds.
 
-## Database privileges and remaining readiness requirements
+## Proposed least-privilege runtime grants
 
-The schema revokes public privileges on the application schema, tables, and functions. It deliberately does not create a database login role or grant application privileges. Before enabling this feature, configure a separate least-privileged runtime role and explicit grants; the current Render connection uses the database owner and is not an acceptable isolation boundary for future SQL execution.
+`V2__durable_auth_runtime_grants.sql` creates a `NOLOGIN`, non-superuser group role named `neurosql_auth_runtime`. It grants only schema `USAGE`, column-scoped reads for account login and workspace authorization, column-scoped session insertion, and permission to update only `user_sessions.revoked_at`.
 
-## Temporary-branch migration test
+The runtime role intentionally cannot create objects, modify account/workspace rows, change a session token hash or user association, delete sessions, or read unrelated account columns such as `display_name` and `last_login_at`. The current repository queries were checked against the granted columns.
+
+Production connection setup remains a separate, manual step: create a dedicated LOGIN role through Neon role management, grant it membership in `neurosql_auth_runtime`, and put its credential only in the Render environment. Do not use the database owner as the runtime identity. No production login role, Render environment variable, or secret was created or changed during this work.
+
+## Temporary-branch migration and privilege tests
 
 - The original schema version was tested on temporary Neon branch `neurosql-auth-migration-check-20261028` (`br-shy-credit-b33ux9py`).
-- The updated DDL, including the owner-invariant function and deferred triggers, was applied to a fresh temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) cloned from Neon `main`, database `neurosql_db`, PostgreSQL 17.11.
-- The updated branch has four proposed tables, ten indexes, and both owner-invariant triggers.
+- The updated schema with owner-invariant triggers was tested on temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`), database `neurosql_db`, PostgreSQL 17.11.
+- The updated branch contains four proposed tables, ten indexes, and both owner-invariant triggers.
 - Direct temporary-branch tests passed for case-insensitive email uniqueness, duplicate workspace slug, duplicate active owner, invalid role, malformed session hash, foreign-key rejection, valid session insertion, atomic owner transfer, ownerless workspace rejection, and final-owner removal rejection.
-- Test fixtures were rolled back. A read-only follow-up found zero rows in all four proposed tables.
-- GitHub Actions run #42 passed backend Maven verification, frontend production build, and the ephemeral PostgreSQL 17 schema-contract job, including the new owner-invariant cases. The production smoke job was skipped for this draft PR, as intended.
-- A separate read-only query confirmed Neon `main` still has zero visible application tables and views.
+- Applied the proposed V2 runtime role/grants on that temporary branch only. Read-only verification confirmed `rolcanlogin=false`, `rolsuper=false`, `rolcreatedb=false`, `rolcreaterole=false`, `rolreplication=false`, `rolbypassrls=false`, and `rolinherit=false`.
+- A temporary transaction switched to `neurosql_auth_runtime` and successfully exercised the same account lookup, workspace membership lookup, session insert/read, and revocation operations required by the current JDBC repositories. Privilege checks confirmed no schema CREATE, no access to unrelated account/workspace columns, no ability to update `token_hash`, no session DELETE, and no membership INSERT. The transaction was rolled back; follow-up read-only checks found zero test rows. The temporary role/grants remain only on the isolated test branch.
+- The GitHub Actions workflow now applies V1 and V2 only to disposable PostgreSQL 17, then runs schema and least-privilege contract scripts. CI verification for the new workflow is pending and will be recorded only after the run completes.
+- Neon `main` remains unchanged with zero visible application tables/views.
 
-These are structural migration checks, not a complete application authentication test. Session lifecycle, login rate limiting, password policy, email verification/reset flows, workspace authorization on every protected endpoint, and least-privileged database grants remain unimplemented.
+These checks validate the proposed SQL and current repository access patterns; they are not production activation. The actual Neon temporary branch has not been used for HTTP login testing, and the runtime group role has not been granted to a production LOGIN role.
 
 ## Approval boundary
 
-Do not apply this migration to Neon `main`, add it to an automatically executed migration directory, or enable production authentication without explicit user approval. Keep production auth, schema browsing, and SQL validation disabled in the meantime.
+Do not apply either migration to Neon `main`, add them to an automatically executed migration directory, create production login credentials, or enable production durable authentication without explicit user approval. Keep production durable auth, schema browsing, and SQL validation disabled until the schema, role membership, and deployment configuration are approved and tested.
