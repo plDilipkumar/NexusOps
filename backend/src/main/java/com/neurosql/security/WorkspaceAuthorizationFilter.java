@@ -34,20 +34,7 @@ public final class WorkspaceAuthorizationFilter extends OncePerRequestFilter {
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
-        String path = request.getServletPath();
-        if (path == null || path.isBlank()) {
-            String requestUri = request.getRequestURI();
-            String contextPath = request.getContextPath();
-            if (requestUri == null) {
-                return true;
-            }
-            path = contextPath != null
-                    && !contextPath.isEmpty()
-                    && !"/".equals(contextPath)
-                    && requestUri.startsWith(contextPath)
-                    ? requestUri.substring(contextPath.length())
-                    : requestUri;
-        }
+        String path = requestPath(request);
         return !(isWithin(path, "/api/schema") || isWithin(path, "/api/sql"));
     }
 
@@ -73,6 +60,13 @@ public final class WorkspaceAuthorizationFilter extends OncePerRequestFilter {
             return;
         }
 
+        WorkspaceRole minimumRole = requiredRole(requestPath(request));
+        if (minimumRole == null) {
+            // New SQL endpoints must declare an explicit role policy before being exposed.
+            reject(response, HttpServletResponse.SC_FORBIDDEN, "workspace_policy_missing");
+            return;
+        }
+
         String rawWorkspaceId = request.getHeader(WORKSPACE_HEADER);
         if (rawWorkspaceId == null || rawWorkspaceId.isBlank()) {
             reject(response, HttpServletResponse.SC_BAD_REQUEST, "workspace_id_required");
@@ -91,13 +85,39 @@ public final class WorkspaceAuthorizationFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (!authorization.hasMinimumRole(principal.userId(), workspaceId, WorkspaceRole.VIEWER)) {
+        if (!authorization.hasMinimumRole(principal.userId(), workspaceId, minimumRole)) {
             reject(response, HttpServletResponse.SC_FORBIDDEN, "workspace_access_denied");
             return;
         }
 
         request.setAttribute(WORKSPACE_REQUEST_ATTRIBUTE, workspaceId);
         filterChain.doFilter(request, response);
+    }
+
+    private static String requestPath(HttpServletRequest request) {
+        String path = request.getServletPath();
+        if (path != null && !path.isBlank()) {
+            return path;
+        }
+        String requestUri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (requestUri == null) {
+            return "";
+        }
+        return contextPath != null
+                && !contextPath.isEmpty()
+                && !"/".equals(contextPath)
+                && requestUri.startsWith(contextPath)
+                ? requestUri.substring(contextPath.length())
+                : requestUri;
+    }
+
+    private static WorkspaceRole requiredRole(String path) {
+        if (isWithin(path, "/api/schema") || "/api/sql/validate".equals(path)) {
+            return WorkspaceRole.VIEWER;
+        }
+        // Do not let a future execution endpoint inherit the validation endpoint's weaker policy.
+        return null;
     }
 
     private static boolean isLegacyOwner(Authentication authentication) {
