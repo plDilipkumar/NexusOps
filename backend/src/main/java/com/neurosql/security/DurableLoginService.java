@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class DurableLoginService {
     private final Clock clock;
     private final String dummyPasswordHash;
 
+    @Autowired
     public DurableLoginService(
             JdbcAccountRepository accounts,
             PasswordEncoder passwordEncoder,
