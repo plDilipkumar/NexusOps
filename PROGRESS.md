@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 17:04 IST
+Last verified: 2026-10-28 18:04 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -236,8 +236,24 @@ Last verified: 2026-10-28 17:04 IST
 - [x] Vercel preview for final code commit `39d3e1b202d4ae71220a5c2615305f2d02f1ac32` reports `READY`; project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby plan.
 - [x] Read-only Neon inspection confirms project `neurosql` (`lingering-dew-88806235`), free tier, Singapore, PostgreSQL 17.11. Production database `neurosql_db` on `main` (`br-empty-credit-b360dmpc`) still has zero visible application tables. Existing temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) contains the four proposed `neurosql_app` tables. No Neon writes or migrations were performed.
 - [x] Render service `neurosql-api` is in the confirmed Dilip Kumar workspace, free plan, Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy enabled. Latest listed live deploy remains commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; no backend deployment was triggered for this unmerged feature work.
-- [ ] Frontend integration is still outstanding: the UI does not yet call `GET /api/auth/workspaces`, present a workspace selector, or send `X-NeuroSQL-Workspace-Id`. Keep durable sessions disabled in production until the frontend and end-to-end flow are verified.
+- [x] Feature-gated frontend wiring now calls `POST /api/auth/login`, verifies the returned session through `GET /api/auth/me`, loads `GET /api/auth/workspaces`, presents a workspace selector, and sends `X-NeuroSQL-Workspace-Id` on schema requests. See the 2026-10-28 frontend integration section below.
+- [ ] End-to-end durable-auth verification remains blocked until the proposed schema is approved, least-privileged runtime grants are configured, and the backend feature flag is deliberately enabled in a non-production test environment.
 - [ ] Draft PR #7 still contains the proposed schema and remains unmerged/unapproved. No migration has been applied to Neon `main`; explicit approval is required before any production schema change. A least-privileged runtime database role and explicit grants are also still required.
 - [ ] The process-local login rate limiter is not suitable for multi-instance enforcement. Registration, email verification/reset, workspace lifecycle administration, and production end-to-end authentication remain unfinished.
 - [ ] Render's previously observed missed auto-deploy remains unresolved; no deploy was needed for this pull-request-only change.
 - [x] No credentials were committed, no paid resources were introduced, and no production environment settings or database schemas were changed.
+
+## Feature-gated durable-auth frontend and workspace selection — PR #9 (not merged)
+- [x] Re-read the default-branch and feature-branch progress trackers, inspected the current frontend and auth/workspace controllers, and checked the dedicated Neon project/database, Vercel Git linkage/deployments, and Render service configuration before selecting this milestone.
+- [x] Added `VITE_DURABLE_AUTH_ENABLED` with a safe default of `false` in `frontend/.env.example`. The existing Basic-owner schema flow remains available only when its separate flag is enabled; durable auth takes precedence only when its own flag is explicitly true.
+- [x] Added a durable login flow that calls `POST /api/auth/login`, validates the opaque token shape and expiry, verifies identity through `GET /api/auth/me`, and fetches active memberships from `GET /api/auth/workspaces`. Workspace responses are shape-checked before use.
+- [x] Added an active workspace selector showing the returned workspace name and role. Schema metadata requests use the bearer token and `X-NeuroSQL-Workspace-Id` header; 400/401/403/404 responses are handled explicitly and switching workspace clears old metadata before requesting the new workspace.
+- [x] Bearer tokens remain in React memory only (no localStorage/sessionStorage). The UI clears the local session on expiry/sign-out. Logout attempts server revocation and now warns if the server cannot confirm revocation rather than silently implying it succeeded.
+- [x] GitHub Actions run #106 (`40689332643`) passed for the initial frontend integration commit `ebf537eaa2da7cf345b471510c851a31ebe14102`: backend Maven verification reported 99 tests with 0 failures/errors (7 database-only tests skipped in the default job), PostgreSQL 17 integration job passed all 7 tests, and the frontend production build passed. Production API smoke test was skipped as expected for unmerged feature work.
+- [x] A small follow-up made logout report unconfirmed server-side revocation. Vercel preview for latest code commit `0d1853e0dee38d7f901d05ca279bb55479aa3d5c` reports `READY`, confirming the latest frontend bundle builds. GitHub Actions run #107 (`40689522087`) was still in progress at the time of this update; do not mark that run passed until its final result is checked.
+- [x] Neon read-only inspection: project `neurosql` (`lingering-dew-88806235`), PostgreSQL 17, database `neurosql_db` on main branch `br-empty-credit-b360dmpc` has no application tables. Temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) contains the four proposed `neurosql_app` tables. No Neon writes or migrations were performed.
+- [x] Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` on the Hobby plan; latest preview for `0d1853e0dee38d7f901d05ca279bb55479aa3d5c` is `READY`. Render service `neurosql-api` remains on the free plan, linked to repository branch `main`, with auto-deploy configured; latest listed live deployment remains commit `746d58d`. No Render deployment or production environment change was made.
+- [ ] The frontend wiring is not a production-ready authentication rollout: durable auth remains gated and production still runs the `main` code path. No live login/workspace end-to-end test was attempted because production schema/grants are not approved and production auth must not be enabled.
+- [ ] Draft PR #7 remains unmerged and unapplied to Neon main. A least-privileged runtime role and explicit grants are still required. Registration, password recovery, and a shared multi-instance rate limiter remain future work.
+- [x] No credentials were committed, no paid resources were introduced, and no production database or environment settings were changed.
+
