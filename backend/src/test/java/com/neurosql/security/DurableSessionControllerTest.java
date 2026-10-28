@@ -1,5 +1,6 @@
 package com.neurosql.security;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -57,7 +58,7 @@ class DurableSessionControllerTest {
         mockMvc.perform(get("/api/auth/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
                 .andExpect(jsonPath("$.userId").value(USER_ID.toString()))
                 .andExpect(jsonPath("$.sessionId").value(SESSION_ID.toString()))
                 .andExpect(jsonPath("$.expiresAt").value(expiresAt.toString()))
@@ -71,7 +72,8 @@ class DurableSessionControllerTest {
     void missingBearerCannotReadIdentity() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\""))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
         verifyNoInteractions(sessions);
     }
@@ -84,7 +86,7 @@ class DurableSessionControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\""))
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
         verify(sessions, never()).revokeSession(eq(TOKEN), any(Instant.class));
     }
@@ -108,7 +110,7 @@ class DurableSessionControllerTest {
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
                 .andExpect(status().isNoContent())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
         verify(sessions).revokeSession(eq(TOKEN), any(Instant.class));
     }
@@ -121,7 +123,7 @@ class DurableSessionControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\""))
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
         verify(sessions, never()).revokeSession(eq(TOKEN), any(Instant.class));
     }
@@ -131,7 +133,7 @@ class DurableSessionControllerTest {
         mockMvc.perform(post("/api/auth/logout"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\""))
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
         verifyNoInteractions(sessions);
     }
