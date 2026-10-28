@@ -49,7 +49,7 @@ public class SecurityConfig {
                     if (durableSessionsEnabled) {
                         // The conditional controller validates SessionPrincipal and returns a Bearer challenge.
                         // Let missing credentials reach it instead of Spring's HTTP Basic entry point.
-                        auth.requestMatchers("/api/auth/me", "/api/auth/logout").permitAll();
+                        auth.requestMatchers("/api/auth/login", "/api/auth/me", "/api/auth/logout").permitAll();
                     } else {
                         auth.requestMatchers("/api/auth/me", "/api/auth/logout").denyAll();
                     }

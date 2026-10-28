@@ -20,12 +20,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.neurosql.api.DurableSessionController;
+import com.neurosql.security.DurableLoginService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -47,6 +49,9 @@ class DurableSessionControllerTest {
 
     @MockBean
     private SessionLifecycleService sessions;
+
+    @MockBean
+    private DurableLoginService loginService;
 
     @Test
     void activeBearerSessionCanReadItsOwnIdentityWithoutReturningToken() throws Exception {
@@ -166,4 +171,56 @@ class DurableSessionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "https://neurosql.vercel.app"));
     }
+
+    @Test
+    void verifiedAccountCanLoginAndReceiveOnlyTokenAndExpiry() throws Exception {
+        Instant issuedAt = Instant.parse("2026-10-28T12:00:00Z");
+        Instant expiresAt = issuedAt.plusSeconds(12 * 60 * 60);
+        SessionLifecycleService.IssuedSession issued =
+                new SessionLifecycleService.IssuedSession(TOKEN, issuedAt, expiresAt);
+        when(loginService.login("alice@example.test", "Correct-Horse-Battery-2026"))
+                .thenReturn(DurableLoginService.LoginAttempt.authenticated(issued));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"alice@example.test\",\"password\":\"Correct-Horse-Battery-2026\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache"))
+                .andExpect(jsonPath("$.token").value(TOKEN))
+                .andExpect(jsonPath("$.expiresAt").value(expiresAt.toString()))
+                .andExpect(jsonPath("$.userId").doesNotExist());
+
+        verify(loginService).login("alice@example.test", "Correct-Horse-Battery-2026");
+    }
+
+    @Test
+    void loginFailureIsGenericAndDoesNotReturnToken() throws Exception {
+        when(loginService.login("alice@example.test", "bad-password"))
+                .thenReturn(DurableLoginService.LoginAttempt.invalidCredentials());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"alice@example.test\",\"password\":\"bad-password\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\""))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(jsonPath("$.message").value("Invalid email or password."))
+                .andExpect(jsonPath("$.token").doesNotExist());
+    }
+
+    @Test
+    void loginLockoutReturnsRetryAfterWithoutSession() throws Exception {
+        when(loginService.login("alice@example.test", "bad-password"))
+                .thenReturn(DurableLoginService.LoginAttempt.rateLimited(300));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"alice@example.test\",\"password\":\"bad-password\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "300"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(jsonPath("$.message").value("Too many login attempts. Try again later."));
+    }
+
 }
