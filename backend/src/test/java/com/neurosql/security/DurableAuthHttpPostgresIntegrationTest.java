@@ -183,6 +183,41 @@ class DurableAuthHttpPostgresIntegrationTest {
         assertThat(afterLogout.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
+    @Test
+    void repeatedFailedLoginAttemptsAreThrottledWithoutCreatingSessions() {
+        Fixture fixture = insertFixture();
+        String baseUrl = "http://localhost:" + port;
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        for (int attempt = 0; attempt < BasicAuthAttemptRateLimiter.MAX_FAILED_ATTEMPTS; attempt++) {
+            ResponseEntity<JsonNode> failed = http.exchange(
+                    baseUrl + "/api/auth/login",
+                    HttpMethod.POST,
+                    new HttpEntity<>(Map.of("email", fixture.email(), "password", "Definitely-Wrong-Password-2026"), headers),
+                    JsonNode.class);
+            assertThat(failed.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(failed.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).contains("no-store");
+        }
+
+        ResponseEntity<JsonNode> throttled = http.exchange(
+                baseUrl + "/api/auth/login",
+                HttpMethod.POST,
+                new HttpEntity<>(Map.of("email", fixture.email(), "password", "Definitely-Wrong-Password-2026"), headers),
+                JsonNode.class);
+        assertThat(throttled.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        String retryAfter = throttled.getHeaders().getFirst(HttpHeaders.RETRY_AFTER);
+        assertThat(retryAfter).matches("\\d+");
+        assertThat(Long.parseLong(retryAfter))
+                .isBetween(1L, BasicAuthAttemptRateLimiter.BLOCK_DURATION.toSeconds());
+
+        Integer sessionCount = jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.user_sessions WHERE user_id = ?",
+                Integer.class,
+                fixture.userId());
+        assertThat(sessionCount).isZero();
+    }
+
     private Fixture insertFixture() {
         UUID userId = UUID.randomUUID();
         UUID otherOwnerId = UUID.randomUUID();
