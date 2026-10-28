@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 15:04 IST
+Last verified: 2026-10-28 15:57 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -208,3 +208,17 @@ Last verified: 2026-10-28 15:04 IST
 - [ ] This is identity introspection only: there is still no HTTP login/session-issuance endpoint, and workspace membership is not enforced on the protected schema/SQL endpoints. Keep durable sessions disabled until schema approval, least-privilege database grants, and end-to-end authorization are complete.
 - [ ] Draft PR #7 remains unmerged and unapplied to Neon `main`; explicit user approval is required before any production schema change. Render auto-deploy reliability remains unresolved.
 - [x] No credentials, paid resources, production environment changes, production database writes, or migrations were introduced.
+
+
+## Gated durable login and session issuance — PR #9 (not merged)
+- [x] Re-read `PROGRESS.md` on `main` and the active feature branch; inspected PRs #7 and #9, the current authentication/session code, the dedicated Neon project/branches/database, Vercel project/deployments, and Render workspace/service/deploy history before choosing this milestone.
+- [x] Added `JdbcAccountRepository` with parameterized lookup by normalized email. It only returns accounts whose status is `ACTIVE` and whose `email_verified_at` is set; unknown, disabled, and unverified accounts are not eligible to log in.
+- [x] Added `DurableLoginService`: BCrypt password verification, dummy-hash comparison for unknown accounts, fail-closed handling of invalid password input or malformed stored hashes, per-email rate limiting using the existing bounded process-local limiter, and session issuance through the fixed 12-hour lifecycle service.
+- [x] Added gated `POST /api/auth/login`. Successful responses return the bearer token once with `Cache-Control: no-store` and `Pragma: no-cache`; invalid credentials return a generic 401, and rate-limited attempts return 429 with `Retry-After`. The durable-session flag must be enabled for this controller to exist.
+- [x] Added service/controller tests and real JDBC account-lookup integration tests. GitHub Actions run #91 (`40672680083`) passed: backend Maven verification (89 tests, 0 failures/errors, 6 PostgreSQL-dependent tests skipped in the default job), PostgreSQL 17 integration job (6 passed, 0 failures/errors), and frontend production build. Production smoke was skipped as expected for this unmerged feature branch.
+- [x] Vercel preview for code commit `0e3c4d5d7268993a8b4b9131f2dd6a2906b30b11` reports `READY`.
+- [x] Read-only Neon verification: project `neurosql` (`lingering-dew-88806235`) is free-tier, Singapore, PostgreSQL 17; production database `neurosql_db` on `main` is PostgreSQL 17.11 with zero non-system tables/views. Temporary branch `neurosql-auth-owner-invariant-20261028` contains the four proposed `neurosql_app` tables. No Neon writes or migrations were performed.
+- [x] Vercel project `neurosql` remains linked to the NexusOps repository; latest feature preview is `READY`. Render service `neurosql-api` is verified on the free plan, linked to `plDilipkumar/NexusOps` branch `main`, with auto-deploy configured; latest live deployment remains commit `746d58d`. No backend deployment was triggered for unmerged feature work.
+- [ ] Durable-auth schema remains draft PR #7, unapproved and unapplied to Neon `main`. Do not enable durable sessions in production until the schema is approved and a least-privileged runtime database role/grants are configured and verified.
+- [ ] Login currently supports only pre-provisioned active, email-verified accounts. Registration, email verification/reset, workspace lifecycle, and workspace membership enforcement on protected schema/SQL routes remain unfinished. The rate limiter is process-local and is not sufficient for a multi-instance deployment.
+- [x] No credentials were committed, no production environment settings changed, and no production schema migrations were applied.
