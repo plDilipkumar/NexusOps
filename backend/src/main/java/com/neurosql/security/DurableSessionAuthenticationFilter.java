@@ -20,7 +20,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Resolves opaque bearer sessions for the currently protected metadata and SQL routes.
+ * Resolves opaque bearer sessions for protected metadata, SQL, and logout routes.
  *
  * <p>This filter is registered only when durable sessions are explicitly enabled.
  * It grants only ROLE_USER, never ROLE_OWNER; workspace-specific authorization must
@@ -61,7 +61,9 @@ public final class DurableSessionAuthenticationFilter extends OncePerRequestFilt
                     ? requestUri.substring(contextPath.length())
                     : requestUri;
         }
-        return !(isWithin(path, "/api/schema") || isWithin(path, "/api/sql"));
+        return !(isWithin(path, "/api/schema")
+                || isWithin(path, "/api/sql")
+                || "/api/auth/logout".equals(path));
     }
 
     @Override

@@ -121,8 +121,12 @@ public class SecurityConfig {
         CorsConfiguration validationCors = new CorsConfiguration(readOnlyCors);
         validationCors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
 
+        CorsConfiguration authCors = new CorsConfiguration(readOnlyCors);
+        authCors.setAllowedMethods(List.of("POST", "OPTIONS"));
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        // Register the more-specific route first so POST is not allowed on unrelated API paths.
+        // Register the more-specific paths so POST is not allowed on unrelated API routes.
+        source.registerCorsConfiguration("/api/auth/**", authCors);
         source.registerCorsConfiguration("/api/sql/**", validationCors);
         source.registerCorsConfiguration("/api/**", readOnlyCors);
         return source;
