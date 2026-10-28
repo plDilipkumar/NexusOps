@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 23:04 IST
+Last verified: 2026-10-28 23:56 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -326,3 +326,18 @@ Last verified: 2026-10-28 23:04 IST
 - [ ] Draft PR #7 remains unmerged and unapplied to Neon `main`; explicit user approval is required before any production schema change. A least-privileged runtime role and explicit grants remain prerequisites.
 - [ ] Login rate limiting remains process-local; do not enable durable authentication in production until its multi-instance and account-lockout denial-of-service trade-offs are addressed.
 - [x] No credentials were committed, no paid resources were introduced, no production environment settings were changed, and no production database writes or migrations were performed.
+
+
+## HTTP-to-PostgreSQL durable-auth lifecycle integration — PR #9 (not merged)
+- [x] Re-read this tracker on both `main` and `feature/session-token-codec-main`, inspected the current authentication controllers/repositories and CI workflow, and rechecked the dedicated Neon project/database, Vercel linkage/deployments, and Render service/deploy history before choosing this milestone.
+- [x] Added `DurableAuthHttpPostgresIntegrationTest`, a real Spring Boot random-port test gated to a loopback JDBC URL for the disposable `neurosql_test` database only. It overrides datasource settings from CI environment variables and refuses non-loopback hosts/database names; it must never be pointed at Neon or production.
+- [x] The test uses the real Spring Security filter chain, HTTP controllers, BCrypt encoder, JDBC account/session/workspace repositories, and PostgreSQL. It verifies login, `/api/auth/me`, active workspace discovery, denial of a workspace without membership, authorized schema metadata, logout, and rejection of the revoked session.
+- [x] The test fixture uses unique IDs and non-destructive `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements; it does not drop or truncate objects. It creates both workspaces and their owner memberships in one transaction to remain compatible with the proposed deferred owner invariant.
+- [x] Initial CI run #132 failed at application-context startup: `SessionLifecycleService` had multiple constructors and no explicitly selected Spring constructor. Added `@Autowired` to the production constructors of both `SessionLifecycleService` and `DurableLoginService`, then reran CI.
+- [x] GitHub Actions run #133 (`40745750274`) passed. Backend `mvn -B verify`: 103 tests, 0 failures/errors, 10 skipped because PostgreSQL-only tests are separately gated; the dedicated PostgreSQL 17 job passed 10 tests, 0 failures/errors/skips, including the new HTTP-to-database lifecycle test. Frontend validation tests and production build passed. Production API smoke was skipped as expected for an unmerged PR.
+- [x] Vercel preview for commit `7efbd2131fe94c3ba11c01562b8e63d79f995381` reports `READY`: https://neurosql-p9m9dz7eb-dilips-projects-d0ae994d.vercel.app. This is a preview, not a production release.
+- [x] Current infrastructure check: Neon project `neurosql` remains on the free tier in Singapore, PostgreSQL 17.11; `neurosql_db` on main still has no application tables. The isolated temporary branch `neurosql-auth-owner-invariant-20261028` still contains the four proposed auth/workspace tables. No Neon writes were performed.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on Hobby; production deployment for main commit `6425ab4` remains `READY`. Render `neurosql-api` remains on the free plan linked to repository branch `main`; latest live deployment remains commit `746d58d`. No backend deployment or environment change was triggered.
+- [ ] This is the first HTTP-to-JDBC integration test against disposable CI PostgreSQL, not the actual Neon temporary branch and not a production test. Draft PR #7 remains unapproved/unmerged; do not apply its schema to Neon main without explicit user approval.
+- [ ] A least-privileged runtime database role and verified grants remain prerequisites. Login throttling is still process-local; registration, password recovery, and workspace administration are unfinished.
+- [x] No credentials were committed, no paid resources were introduced, no production environment settings changed, and no production database writes/migrations were performed.
