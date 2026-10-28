@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 (IST)
+Last verified: 2026-10-29 02:03 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -354,3 +354,18 @@ Last verified: 2026-10-29 (IST)
 - [ ] Durable auth remains disabled in production. Draft PR #7 is still unapproved/unmerged; its proposed schema has not been applied to Neon `main`. A least-privileged runtime role and explicit grants must be verified before production activation.
 - [ ] The process-local login limiter is not distributed; account registration, password recovery, and workspace lifecycle administration remain unfinished. Render's earlier missed auto-deploy remains unresolved.
 - [x] No credentials were committed, no paid resources were introduced, and no production environment settings or database schemas were changed.
+
+
+## Least-privilege durable-auth runtime grants — draft PR #7
+- [x] Re-read `PROGRESS.md` on `main` and the feature branch, inspected PRs #7/#9, the proposed schema SQL, the durable-auth JDBC repository queries, the dedicated Neon project/database/branches, Vercel project/deployments, and Render service/deploy history before selecting this step.
+- [x] Added proposed-only `docs/database/proposed/V2__durable_auth_runtime_grants.sql` to draft PR #7. It creates a `NOLOGIN`, non-superuser `neurosql_auth_runtime` group role with column-scoped reads for login/workspace authorization, session insert/read, and update permission for `user_sessions.revoked_at` only. The file remains outside any application migration-runner path.
+- [x] Added `test-auth-runtime-grants.sql` and extended the schema-contract workflow to apply V1 + V2 and test both schema constraints and runtime privileges against disposable PostgreSQL 17 only.
+- [x] Applied the equivalent V2 role/grants to the existing temporary Neon branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) in project `neurosql`, database `neurosql_db`; no SQL writes were made to Neon `main`.
+- [x] A rolled-back temporary transaction successfully switched to `neurosql_auth_runtime` and exercised account lookup, workspace-membership lookup, session insert/read, and session revocation. Privilege checks verified no schema CREATE, no access to unrelated account/workspace columns, no update of session token hashes, no session DELETE, and no membership INSERT. Read-only follow-up confirmed zero test users, workspaces, or sessions remained.
+- [x] Read-only role verification on the temporary branch confirmed `rolcanlogin=false`, `rolsuper=false`, `rolcreatedb=false`, `rolcreaterole=false`, `rolreplication=false`, `rolbypassrls=false`, and `rolinherit=false`.
+- [x] GitHub Actions run #142 (`40764757043`) passed the backend tests, frontend production build, and the new proposed-schema/runtime-grant contract job. All steps in the schema job passed, including applying both SQL files and running the schema and least-privilege tests. Production smoke was skipped because this is a draft PR.
+- [x] Updated draft PR #7's description and schema review document with the tested grant boundary and explicit production approval requirements.
+- [x] Infrastructure recheck: Neon `main` (`br-empty-credit-b360dmpc`) still has zero visible application tables/views; Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` with production deployment for main commit `6425ab4` reporting `READY`; Render `neurosql-api` remains free-tier, linked to branch `main`, and its latest live deployment is still `746d58d`.
+- [ ] Production is not ready to enable durable auth: PR #7 remains draft/unmerged, PR #9 remains open/unmerged, and the proposed schema/grants have not been applied to Neon `main`. A separate production LOGIN role must be created and granted membership only after explicit approval; its credential must be stored in Render environment settings, never in GitHub.
+- [ ] The current login rate limiter remains process-local; registration, password recovery, and workspace lifecycle administration remain unfinished. Render auto-deploy reliability remains an open operational issue.
+- [x] No credentials were committed, no paid resources were introduced, no Render environment variables changed, no production deployment was triggered, and no production schema changes were made.
