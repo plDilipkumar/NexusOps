@@ -2,7 +2,10 @@ package com.neurosql.security;
 
 import java.util.List;
 
+import org.springframework.beans.factory.ObjectProvider;
+
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -28,7 +31,8 @@ public class SecurityConfig {
     SecurityFilterChain apiSecurity(
             HttpSecurity http,
             @Value("${neurosql.auth.enabled:false}") boolean authEnabled,
-            BasicAuthAttemptRateLimiter attemptRateLimiter) throws Exception {
+            BasicAuthAttemptRateLimiter attemptRateLimiter,
+            ObjectProvider<DurableSessionAuthenticationFilter> durableSessionFilter) throws Exception {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
@@ -51,7 +55,27 @@ public class SecurityConfig {
                     BasicAuthenticationFilter.class);
             http.httpBasic(Customizer.withDefaults());
         }
+
+        DurableSessionAuthenticationFilter sessionFilter = durableSessionFilter.getIfAvailable();
+        if (sessionFilter != null) {
+            if (authEnabled) {
+                // Keep bearer-session parsing ahead of the Basic-auth rate limiter.
+                http.addFilterBefore(sessionFilter, BasicAuthRateLimitFilter.class);
+            } else {
+                http.addFilterBefore(sessionFilter, BasicAuthenticationFilter.class);
+            }
+        }
         return http.build();
+    }
+
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "neurosql.auth",
+            name = "durable-sessions-enabled",
+            havingValue = "true")
+    DurableSessionAuthenticationFilter durableSessionAuthenticationFilter(
+            SessionLifecycleService sessionLifecycleService) {
+        return new DurableSessionAuthenticationFilter(sessionLifecycleService);
     }
 
     @Bean
