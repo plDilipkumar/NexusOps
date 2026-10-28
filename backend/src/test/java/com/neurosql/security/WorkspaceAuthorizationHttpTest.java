@@ -209,8 +209,7 @@ class WorkspaceAuthorizationHttpTest {
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"email\\":\\"alice@example.test\\",\\"password\\":\\""
-                                + password + "\\"}"))
+                        .content("{\"email\":\"alice@example.test\",\"password\":\"" + password + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
                 .andExpect(jsonPath("$.token").value(TOKEN))
