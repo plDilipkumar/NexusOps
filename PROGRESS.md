@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 12:05 IST
+Last verified: 2026-10-28 13:03 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -165,3 +165,17 @@ Last verified: 2026-10-28 12:05 IST
 - [ ] Draft PR #7 still contains the proposed durable-auth schema. It has not been merged or applied to Neon `main`; explicit approval is required before that production schema change.
 - [ ] Render's prior missed auto-deploy after the last production merge remains unresolved.
 - [x] No credentials, paid resources, production environment changes, or production database modifications were introduced.
+
+
+## Gated bearer session authentication filter — PR #9 (not merged)
+- [x] Added `DurableSessionAuthenticationFilter` and wired it into `SecurityConfig` only when `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=true`. The filter is constructed directly in the Spring Security chain rather than exposed as a servlet-container filter bean, avoiding duplicate filter registration.
+- [x] The filter handles only `/api/schema/**` and `/api/sql/**`, skips OPTIONS and unrelated/public paths, rejects malformed or unknown bearer tokens with HTTP 401, `WWW-Authenticate: Bearer realm="NeuroSQL"`, and `Cache-Control: no-store`, and builds a principal containing only user/session IDs and expiry.
+- [x] A valid durable session receives `ROLE_USER` only; it is never mapped to `ROLE_OWNER`. MockMvc coverage verifies an invalid token is rejected before the schema controller and a valid user session still receives 403 for the existing owner-only schema route.
+- [x] Added five filter unit tests for absent/valid/invalid/malformed bearer headers, the non-privileged authority set, and skipping OPTIONS/unprotected routes. Initial run #78 exposed two MockMvc failures because the bearer filter was not taking effect (Basic-auth 401 instead of the expected bearer response/403). The filter was moved into the Spring Security chain without a servlet-container filter bean, and path matching gained a request-URI fallback.
+- [x] GitHub Actions run #79 (`40651401194`) passed for code commit `a9e719e9580bde98bdfa0ae459e2c7e3ac72415f`: backend `mvn -B verify` reported 69 tests, 0 failures, 0 errors, 4 skipped (the database-only integration classes are run separately); PostgreSQL 17 integration job passed 4 tests with 0 failures/errors/skips; frontend production build passed.
+- [x] Vercel preview for code commit `a9e719e9580bde98bdfa0ae459e2c7e3ac72415f` reports `READY`. Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on Hobby/free.
+- [x] Re-inspected Neon project `neurosql` (`lingering-dew-88806235`), PostgreSQL 17.11 database `neurosql_db`: production `main` still has zero visible application tables/views; temporary branch `neurosql-auth-owner-invariant-20261028` contains the four proposed `neurosql_app` tables. Only read-only queries were run.
+- [x] Render service `neurosql-api` remains on the free plan in the confirmed Dilip Kumar workspace, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy configured. Latest listed live deployment remains commit `746d58d`; no deployment was triggered for this unmerged feature work.
+- [ ] Production smoke test was skipped as expected for the pull request. This filter remains disabled in production, no login/session-issuance endpoint is wired, and workspace membership authorization is still not enforced by HTTP endpoints.
+- [ ] Draft PR #7 still contains the proposed durable-auth schema. It has not been merged or applied to Neon `main`; explicit user approval is required before any production migration.
+- [x] No credentials, paid resources, production environment changes, or database writes were introduced.
