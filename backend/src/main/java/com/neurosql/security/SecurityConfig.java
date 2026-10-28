@@ -46,6 +46,11 @@ public class SecurityConfig {
                         // Sensitive metadata and SQL guardrails must fail closed if auth is off.
                         auth.requestMatchers("/api/schema/**", "/api/sql/**").denyAll();
                     }
+                    if (durableSessionsEnabled) {
+                        auth.requestMatchers("/api/auth/me", "/api/auth/logout").authenticated();
+                    } else {
+                        auth.requestMatchers("/api/auth/me", "/api/auth/logout").denyAll();
+                    }
                     auth.anyRequest().permitAll();
                 });
 
@@ -122,7 +127,7 @@ public class SecurityConfig {
         validationCors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
 
         CorsConfiguration authCors = new CorsConfiguration(readOnlyCors);
-        authCors.setAllowedMethods(List.of("POST", "OPTIONS"));
+        authCors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         // Register the more-specific paths so POST is not allowed on unrelated API routes.
