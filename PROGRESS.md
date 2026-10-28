@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 05:09 IST
+Last verified: 2026-10-29 05:12 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -407,9 +407,19 @@ Last verified: 2026-10-29 05:09 IST
 - [x] Added HMAC tests and disposable PostgreSQL integration coverage for concurrent failures across two limiter instances, normalized identity sharing, the 10,000-identity cap, active-block preservation, and bounded cleanup. The existing HTTP login-throttling test now exercises the JDBC limiter.
 - [x] Initial CI run #153 (`40788705829`) caught a malformed test-fixture insertion; corrected the fixture and committed `f865adb9c14e44d14fad38dc746edb665aebd25c`.
 - [x] GitHub Actions run #154 (`40788818913`) passed: backend Maven verification reported 113 tests, 0 failures/errors and 14 database-only skips in the standard job; the dedicated PostgreSQL 17 integration job passed 14 tests with 0 failures/errors/skips; frontend validation tests and production build passed. Production smoke was skipped as expected for this unmerged PR.
-- [x] Vercel preview for code commit `f865adb9c14e44d14fad38dc746edb665aebd25c` reports `READY`: https://neurosql-bhf27jt91-dilips-projects-d0ae994d.vercel.app. This is a preview, not production.
+- [x] Vercel preview for latest code commit `2a323cfd62f3c9de450f20a54fc5e3739782cef7` reports `READY`: https://neurosql-r4kpzqobn-dilips-projects-d0ae994d.vercel.app. This is a preview, not production.
 - [x] Rechecked infrastructure: Neon project `neurosql` remains free-tier PostgreSQL 17 in Singapore. Production branch `br-empty-credit-b360dmpc`, database `neurosql_db`, still has zero application tables. Temporary branch `br-sweet-sky-b38kd7rm` has the five proposed auth/rate-limit tables including V3; this run made no Neon writes.
 - [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps`. Render `neurosql-api` remains free-tier, linked to branch `main`, with live deployment still on commit `746d58d`. No backend deployment or production environment change was triggered.
 - [ ] Production remains gated: draft PR #7 is still unapproved/unmerged, V1/V2/V3 are not applied to Neon `main`, and the production LOGIN role plus HMAC secret have not been configured. Do not enable shared durable auth until the schema is approved and the runtime grants/credentials are verified.
-- [ ] Next: review failure/availability behavior under an exhausted table and add a safe operational check for the shared limiter before any production enablement. Registration, recovery, and workspace lifecycle administration remain unfinished.
+- [x] Added an exhausted-capacity integration test: when all 10,000 tracked identities are actively blocked, the limiter returns HTTP 503, inserts no new identity, and preserves every active block. GitHub Actions run #156 (`40789147710`) passed backend Maven verification (114 tests, 0 failures/errors, 15 database-only skips in the standard job), the disposable PostgreSQL 17 integration job (15 passed, 0 failures/errors/skips), and frontend tests/build. Production smoke was skipped as expected for this unmerged PR.
+- [x] Rechecked the Neon temporary branch read-only after tests: users, workspaces, memberships, sessions, and rate-limit rows are all zero. No Neon writes were performed during this run.
+- [ ] Next: add a safe operational readiness check for the shared limiter before production enablement. Registration, recovery, and workspace lifecycle administration remain unfinished.
 - [x] No credentials were committed, no paid resources were introduced, and no production database, environment settings, or backend deployment was changed.
+
+
+## Latest verification update — shared PostgreSQL login throttling (2026-10-29)
+- Code commit `2a323cfd62f3c9de450f20a54fc5e3739782cef7` adds the exhausted-capacity regression test. GitHub Actions run #156 (https://github.com/plDilipkumar/NexusOps/actions/runs/40789147710) passed: backend Maven verification (114 tests, 0 failures/errors, 15 DB-only tests skipped in the standard job), disposable PostgreSQL 17 integration (15 tests, 0 failures/errors/skips), and frontend validation tests/build. Production API smoke was skipped as expected for the unmerged PR.
+- The integration suite verifies concurrent failures across two limiter instances, the 10,000-identity cap without evicting an active block, a fail-closed HTTP 503 when every tracked identity is blocked, and cleanup capped at 100 stale rows per batch.
+- Vercel preview for commit `2a323cfd62f3c9de450f20a54fc5e3739782cef7` reports READY: https://neurosql-r4kpzqobn-dilips-projects-d0ae994d.vercel.app. This is a preview, not production.
+- Production remains unchanged: Neon `neurosql_db` on `main` still has zero application tables; the five proposed tables exist only on temporary branch `br-sweet-sky-b38kd7rm`, whose application tables contain zero rows. Render `neurosql-api` remains on free plan/branch `main`, live commit `746d58d`; no backend deployment or environment changes were made.
+- Draft PR #7 remains unapproved/unmerged, so V1/V2/V3 are not applied to Neon `main`; no production LOGIN role or HMAC secret is configured. Durable auth and shared rate limiting remain disabled in production.
