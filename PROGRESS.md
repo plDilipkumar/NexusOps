@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 10:00 IST
+Last verified: 2026-10-28 10:58 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -115,7 +115,7 @@ Last verified: 2026-10-28 10:00 IST
 - [x] Vercel preview for the tested commit `b8f26b1905770c1907f6587096de68364b7076c3` reports `READY`.
 - [x] Direct infrastructure inspection confirmed Neon project `neurosql`, PostgreSQL 17, database `neurosql_db`; the production `main` branch still has zero application tables. No migration was applied and no production rows/schema were changed.
 - [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby plan. Render service `neurosql-api` remains on the free plan, linked to repository branch `main`, with the last listed live deployment on commit `746d58d`. No Render deploy or environment change was triggered for this feature-branch-only work.
-- [ ] This repository adapter is not wired to login, HTTP authentication, or a session controller, and its SQL has not yet been integration-tested against the temporary Neon schema branch. It remains gated off until the schema proposal in draft PR #7 is approved and a least-privileged runtime database role is configured.
+- [x] The adapter SQL now has real PostgreSQL 17 integration coverage in CI using a disposable fixture schema matching the proposed session columns; this did not apply or run the proposed migration against Neon itself. The repository is still not wired to login/HTTP authentication and remains gated off pending approval of draft PR #7 and least-privileged grants.
 - [ ] Render's prior missed auto-deploy remains unresolved. No production smoke test was expected for this pull-request-only change.
 - [x] No credentials, paid resources, or production database changes were introduced.
 
@@ -130,8 +130,22 @@ Last verified: 2026-10-28 10:00 IST
 - [x] Vercel preview for test commit `e2699e3bfbb0140e07e12fd452648c9ae633d6ee` reports `READY`; the Vercel project is linked to `plDilipkumar/NexusOps`.
 - [x] Neon project `neurosql` is the dedicated free-tier PostgreSQL 17 project in Singapore. Production branch `main` (`br-empty-credit-b360dmpc`) and database `neurosql_db` are ready; a fresh table listing returned no application tables. The separate temporary branch `neurosql-auth-owner-invariant` contains the four proposed `neurosql_app` tables and owner-invariant function for migration testing. No SQL writes or schema changes were performed in this run.
 - [x] Render service `neurosql-api` is in the confirmed Dilip Kumar workspace, on the free plan in Singapore, linked to `plDilipkumar/NexusOps` branch `main`, with auto-deploy configured. The latest listed live deployment remains commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; no backend deployment was triggered for this unmerged feature branch.
-- [ ] The lifecycle service tests use a mocked repository. JDBC statements have not yet been integration-tested against the temporary Neon schema branch; add an isolated PostgreSQL integration test before wiring the service to HTTP authentication.
+- [x] Added a separate PostgreSQL 17 disposable-container integration job for the JDBC repository. The lifecycle orchestration unit tests still use a mocked repository, and no HTTP authentication wiring has been added.
 - [ ] Draft PR #7 still contains the proposed durable-auth/workspace schema. It has not been merged or applied to Neon `main`; explicit approval is required before that production schema change.
 - [ ] Authentication remains disabled in production. Registration, account-status management, workspace authorization, and a least-privileged runtime database role are not complete.
 - [ ] Render's earlier missed auto-deploy remains unresolved; this run did not modify `main` or trigger a backend deployment.
 - [x] No credentials, paid resources, production environment changes, or production database modifications were introduced.
+
+
+## PostgreSQL integration coverage for JDBC session repository — PR #9 (not merged)
+- [x] Re-read the current progress tracker on `main` and `feature/session-token-codec-main`, inspected PRs #7/#9 and the session repository, and checked Neon, Vercel, and Render before implementing this step.
+- [x] Added `JdbcSessionRepositoryPostgresIntegrationTest`, enabled only when `NEUROSQL_TEST_JDBC_URL` is supplied. It uses a disposable PostgreSQL 17 service in CI and creates a minimal test-only `neurosql_app` fixture; it is not a migration and must not point at production or a shared database.
+- [x] Integration test verifies real JDBC insert/read of the token digest, active-session mapping, idempotent revocation, clock-skew-safe revocation timestamp, and rejection of expired, future-issued, inactive-user, unknown-token, and overlong sessions.
+- [x] Added CI job `Session repository integration tests (PostgreSQL 17)`. GitHub Actions run #69 (`40638126536`) passed backend Maven verification, frontend production build, and the PostgreSQL integration job. Integration result: 2 tests, 0 failures, 0 errors, 0 skipped. Production smoke was skipped for this pull-request event as expected.
+- [x] Vercel preview for workflow commit `97685026692275c1887292d6571c7ff74164c981` reports `READY`; the Vercel project remains linked to `plDilipkumar/NexusOps` on the Hobby plan.
+- [x] Inspected Neon project `neurosql` (free tier, Singapore, PostgreSQL 17). Read-only query on production branch `main`, database `neurosql_db`, returned no non-system tables. The existing temporary branch `neurosql-auth-owner-invariant` contains the four proposed `neurosql_app` tables; the schema proposal remains isolated there. No Neon schema writes were performed in this run.
+- [x] Render service `neurosql-api` is in the confirmed Dilip Kumar workspace, free plan, Singapore, linked to `plDilipkumar/NexusOps` branch `main`, with commit auto-deploy configured. Latest listed live deployment remains commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; this unmerged feature branch does not change production runtime behavior, so no Render deployment was triggered.
+- [ ] The integration fixture validates adapter SQL against PostgreSQL 17 but does not apply the full proposed migration or test against Neon itself. The schema proposal in draft PR #7 remains unapproved and unapplied to Neon `main`.
+- [ ] `JdbcSessionRepository` and `SessionLifecycleService` remain gated and are not wired to HTTP login/logout, authentication filters, account registration, or workspace authorization. A least-privileged database role and explicit grants are still required before activation.
+- [ ] Render auto-deploy reliability remains unresolved from the prior production merge; no new backend deployment was needed in this run.
+- [x] No credentials, paid resources, production environment changes, or production database changes were introduced.
