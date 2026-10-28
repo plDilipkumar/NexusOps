@@ -243,6 +243,19 @@ class WorkspaceAuthorizationHttpTest {
         verify(sessions, org.mockito.Mockito.times(5)).validateSession(eq(TOKEN), any(Instant.class));
     }
 
+    @Test
+    void invalidLoginPayloadIsNotCacheableEvenWhenValidationFailsBeforeController() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"not-an-email\",\"password\":\"Correct-Horse-Battery-2026\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache"))
+                .andExpect(header().string(HttpHeaders.EXPIRES, "0"));
+
+        org.mockito.Mockito.verifyNoInteractions(loginService);
+    }
+
     private void authenticateSession() {
         when(sessions.validateSession(eq(TOKEN), any(Instant.class))).thenReturn(Optional.of(
                 new JdbcSessionRepository.StoredSession(
