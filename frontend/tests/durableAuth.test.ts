@@ -27,6 +27,25 @@ test("rejects malformed, missing, or expired login sessions", () => {
   assert.throws(() => parseIssuedSession(null, now), /invalid session response/);
 });
 
+test("rejects impossible calendar/time values but accepts leap days and timezone offsets", () => {
+  const invalidInstants = [
+    "2027-02-29T13:00:00.000Z",
+    "2027-02-30T13:00:00.000Z",
+    "2027-13-01T13:00:00.000Z",
+    "2027-10-28T25:00:00.000Z",
+    "2027-10-28T13:61:00.000Z",
+    "2027-10-28T13:00:61.000Z",
+    "2027-10-28T13:00:00+24:00",
+    "2027-10-28T13:00:00+01:60",
+  ];
+  for (const expiresAt of invalidInstants) {
+    assert.throws(() => parseIssuedSession({ token, expiresAt }, now), /invalid session response/);
+  }
+
+  const leapDay = "2028-02-29T13:00:00+01:00";
+  assert.deepEqual(parseIssuedSession({ token, expiresAt: leapDay }, now), { token, expiresAt: leapDay });
+});
+
 test("accepts only UUID identity fields and a future expiry", () => {
   assert.deepEqual(
     parseSessionIdentity({ userId, sessionId, expiresAt: future }, now),
