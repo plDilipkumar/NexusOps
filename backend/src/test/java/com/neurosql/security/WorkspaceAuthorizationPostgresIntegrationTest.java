@@ -42,7 +42,8 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS neurosql_app.workspaces (
                     workspace_id UUID PRIMARY KEY,
-                    name VARCHAR(120) NOT NULL
+                    name VARCHAR(120) NOT NULL,
+                    slug VARCHAR(120) NOT NULL
                 )
                 """);
         jdbc.execute("""
@@ -86,6 +87,26 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         assertThat(authorization.hasMinimumRole(suspendedUser, workspaceId, null)).isFalse();
     }
 
+    @Test
+    void listsOnlyActiveWorkspaceMembershipsForActiveAccounts() {
+        UUID activeUser = insertUser("ACTIVE");
+        UUID inactiveUser = insertUser("DISABLED");
+        UUID activeWorkspace = insertWorkspace("team-a");
+        UUID suspendedWorkspace = insertWorkspace("team-b");
+        insertMembership(activeWorkspace, activeUser, "ADMIN", "ACTIVE");
+        insertMembership(suspendedWorkspace, activeUser, "VIEWER", "SUSPENDED");
+        insertMembership(activeWorkspace, inactiveUser, "OWNER", "ACTIVE");
+
+        var visible = authorization.listActiveWorkspaces(activeUser);
+        assertThat(visible).hasSize(1);
+        assertThat(visible.get(0).workspaceId()).isEqualTo(activeWorkspace);
+        assertThat(visible.get(0).name()).isEqualTo("team-a");
+        assertThat(visible.get(0).slug()).startsWith("team-a-");
+        assertThat(visible.get(0).role()).isEqualTo(WorkspaceRole.ADMIN);
+        assertThat(authorization.listActiveWorkspaces(inactiveUser)).isEmpty();
+        assertThat(authorization.listActiveWorkspaces(null)).isEmpty();
+    }
+
     private UUID insertUser(String status) {
         UUID userId = UUID.randomUUID();
         jdbc.update("INSERT INTO neurosql_app.app_users (user_id, status) VALUES (?, ?)", userId, status);
@@ -94,10 +115,12 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
 
     private UUID insertWorkspace(String name) {
         UUID workspaceId = UUID.randomUUID();
+        String slug = name + "-" + UUID.randomUUID().toString().substring(0, 8);
         jdbc.update(
-                "INSERT INTO neurosql_app.workspaces (workspace_id, name) VALUES (?, ?)",
+                "INSERT INTO neurosql_app.workspaces (workspace_id, name, slug) VALUES (?, ?, ?)",
                 workspaceId,
-                name);
+                name,
+                slug);
         return workspaceId;
     }
 
