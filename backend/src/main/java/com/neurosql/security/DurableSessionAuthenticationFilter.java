@@ -65,7 +65,8 @@ public final class DurableSessionAuthenticationFilter extends OncePerRequestFilt
                 || isWithin(path, "/api/sql")
                 || "/api/auth/login".equals(path)
                 || "/api/auth/me".equals(path)
-                || "/api/auth/logout".equals(path));
+                || "/api/auth/logout".equals(path)
+                || "/api/auth/workspaces".equals(path));
     }
 
     @Override
