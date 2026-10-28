@@ -29,7 +29,7 @@ public class DurableLoginService {
     private final JdbcAccountRepository accounts;
     private final PasswordEncoder passwordEncoder;
     private final SessionLifecycleService sessions;
-    private final BasicAuthAttemptRateLimiter attemptRateLimiter;
+    private final DurableLoginAttemptRateLimiter attemptRateLimiter;
     private final Clock clock;
     private final String dummyPasswordHash;
 
@@ -38,7 +38,7 @@ public class DurableLoginService {
             JdbcAccountRepository accounts,
             PasswordEncoder passwordEncoder,
             SessionLifecycleService sessions,
-            BasicAuthAttemptRateLimiter attemptRateLimiter) {
+            DurableLoginAttemptRateLimiter attemptRateLimiter) {
         this(accounts, passwordEncoder, sessions, attemptRateLimiter,
                 Clock.systemUTC(), passwordEncoder.encode(DUMMY_CANDIDATE));
     }
@@ -47,7 +47,7 @@ public class DurableLoginService {
             JdbcAccountRepository accounts,
             PasswordEncoder passwordEncoder,
             SessionLifecycleService sessions,
-            BasicAuthAttemptRateLimiter attemptRateLimiter,
+            DurableLoginAttemptRateLimiter attemptRateLimiter,
             Clock clock,
             String dummyPasswordHash) {
         this.accounts = Objects.requireNonNull(accounts, "accounts");
@@ -72,11 +72,9 @@ public class DurableLoginService {
 
         String normalizedEmail = normalizeEmail(email);
         String rateLimitIdentity = normalizedEmail == null ? INVALID_IDENTITY : normalizedEmail;
-        if (attemptRateLimiter.isBlocked(rateLimitIdentity)) {
-            long retryAfter = attemptRateLimiter.retryAfterSeconds(rateLimitIdentity);
-            if (retryAfter > 0) {
-                return LoginAttempt.rateLimited(retryAfter);
-            }
+        long retryAfter = attemptRateLimiter.retryAfterSeconds(rateLimitIdentity);
+        if (retryAfter > 0) {
+            return LoginAttempt.rateLimited(retryAfter);
         }
 
         Optional<JdbcAccountRepository.LoginAccount> account = normalizedEmail == null

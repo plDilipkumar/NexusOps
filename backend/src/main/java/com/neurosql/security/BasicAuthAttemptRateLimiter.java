@@ -17,7 +17,7 @@ import java.util.Objects;
  * a distributed limiter. A future multi-instance or multi-user deployment should move
  * this state to a shared store and review account-lockout denial-of-service trade-offs.</p>
  */
-final class BasicAuthAttemptRateLimiter {
+final class BasicAuthAttemptRateLimiter implements DurableLoginAttemptRateLimiter {
     static final int MAX_FAILED_ATTEMPTS = 5;
     static final Duration FAILURE_WINDOW = Duration.ofMinutes(15);
     static final Duration BLOCK_DURATION = Duration.ofMinutes(15);
@@ -58,7 +58,8 @@ final class BasicAuthAttemptRateLimiter {
         return false;
     }
 
-    synchronized void recordFailure(String identity) {
+    @Override
+    public synchronized void recordFailure(String identity) {
         String key = normalizeIdentity(identity);
         Instant now = clock.instant();
         AttemptState state = states.get(key);
@@ -84,11 +85,13 @@ final class BasicAuthAttemptRateLimiter {
         }
     }
 
-    synchronized void recordSuccess(String identity) {
+    @Override
+    public synchronized void recordSuccess(String identity) {
         states.remove(normalizeIdentity(identity));
     }
 
-    synchronized long retryAfterSeconds(String identity) {
+    @Override
+    public synchronized long retryAfterSeconds(String identity) {
         AttemptState state = states.get(normalizeIdentity(identity));
         if (state == null || state.blockedUntil == null) {
             return 0;
