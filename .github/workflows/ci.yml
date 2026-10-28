@@ -81,7 +81,7 @@ jobs:
           NEUROSQL_TEST_JDBC_URL: jdbc:postgresql://localhost:5432/neurosql_test
           NEUROSQL_TEST_DB_USERNAME: postgres
           NEUROSQL_TEST_DB_PASSWORD: postgres
-        run: mvn -B -Dtest=JdbcSessionRepositoryPostgresIntegrationTest test
+        run: mvn -B -Dtest=JdbcSessionRepositoryPostgresIntegrationTest,WorkspaceAuthorizationPostgresIntegrationTest test
 
   production-smoke:
     name: Production API and database smoke test
