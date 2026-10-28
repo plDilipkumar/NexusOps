@@ -48,6 +48,19 @@ public final class DurableSessionAuthenticationFilter extends OncePerRequestFilt
             return true;
         }
         String path = request.getServletPath();
+        if (path == null || path.isBlank()) {
+            String requestUri = request.getRequestURI();
+            String contextPath = request.getContextPath();
+            if (requestUri == null) {
+                return true;
+            }
+            path = contextPath != null
+                    && !contextPath.isEmpty()
+                    && !"/".equals(contextPath)
+                    && requestUri.startsWith(contextPath)
+                    ? requestUri.substring(contextPath.length())
+                    : requestUri;
+        }
         return !(isWithin(path, "/api/schema") || isWithin(path, "/api/sql"));
     }
 

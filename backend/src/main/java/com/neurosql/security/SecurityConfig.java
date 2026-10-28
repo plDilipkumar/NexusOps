@@ -5,7 +5,6 @@ import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -32,7 +31,8 @@ public class SecurityConfig {
             HttpSecurity http,
             @Value("${neurosql.auth.enabled:false}") boolean authEnabled,
             BasicAuthAttemptRateLimiter attemptRateLimiter,
-            ObjectProvider<DurableSessionAuthenticationFilter> durableSessionFilter) throws Exception {
+            @Value("${neurosql.auth.durable-sessions-enabled:false}") boolean durableSessionsEnabled,
+            ObjectProvider<SessionLifecycleService> sessionLifecycleService) throws Exception {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
@@ -56,7 +56,16 @@ public class SecurityConfig {
             http.httpBasic(Customizer.withDefaults());
         }
 
-        DurableSessionAuthenticationFilter sessionFilter = durableSessionFilter.getIfAvailable();
+        DurableSessionAuthenticationFilter sessionFilter = null;
+        if (durableSessionsEnabled) {
+            SessionLifecycleService lifecycle = sessionLifecycleService.getIfAvailable();
+            if (lifecycle == null) {
+                throw new IllegalStateException(
+                        "Durable sessions are enabled but the lifecycle service is unavailable.");
+            }
+            // Keep the filter inside Spring Security; do not expose it as a servlet-container filter bean.
+            sessionFilter = new DurableSessionAuthenticationFilter(lifecycle);
+        }
         if (sessionFilter != null) {
             if (authEnabled) {
                 // Keep bearer-session parsing ahead of the Basic-auth rate limiter.
@@ -66,16 +75,6 @@ public class SecurityConfig {
             }
         }
         return http.build();
-    }
-
-    @Bean
-    @ConditionalOnProperty(
-            prefix = "neurosql.auth",
-            name = "durable-sessions-enabled",
-            havingValue = "true")
-    DurableSessionAuthenticationFilter durableSessionAuthenticationFilter(
-            SessionLifecycleService sessionLifecycleService) {
-        return new DurableSessionAuthenticationFilter(sessionLifecycleService);
     }
 
     @Bean
