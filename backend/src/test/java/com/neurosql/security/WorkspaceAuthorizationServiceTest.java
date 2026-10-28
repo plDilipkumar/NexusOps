@@ -59,4 +59,17 @@ class WorkspaceAuthorizationServiceTest {
         assertThat(WorkspaceRole.fromDatabase(null)).isEmpty();
         assertThat(WorkspaceRole.fromDatabase("OWNER")).contains(WorkspaceRole.OWNER);
     }
+
+    @Test
+    void viewerCannotMeetMemberMinimumAndOwnerMeetsOwnerMinimum() {
+        when(memberships.findActiveRole(USER_ID, WORKSPACE_ID)).thenReturn(Optional.of(WorkspaceRole.VIEWER));
+
+        assertThat(service.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER)).isTrue();
+        assertThat(service.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.MEMBER)).isFalse();
+
+        when(memberships.findActiveRole(USER_ID, WORKSPACE_ID)).thenReturn(Optional.of(WorkspaceRole.OWNER));
+        assertThat(service.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.OWNER)).isTrue();
+
+        verify(memberships, org.mockito.Mockito.times(3)).findActiveRole(USER_ID, WORKSPACE_ID);
+    }
 }
