@@ -20,6 +20,17 @@ import org.springframework.stereotype.Repository;
         name = "durable-sessions-enabled",
         havingValue = "true")
 public class JdbcWorkspaceAuthorizationRepository {
+    static final String LIST_ACTIVE_WORKSPACES_SQL = """
+            SELECT w.workspace_id, w.name, w.slug, m.role
+            FROM neurosql_app.workspace_memberships m
+            JOIN neurosql_app.workspaces w ON w.workspace_id = m.workspace_id
+            JOIN neurosql_app.app_users u ON u.user_id = m.user_id
+            WHERE m.user_id = ?
+              AND m.status = 'ACTIVE'
+              AND u.status = 'ACTIVE'
+            ORDER BY lower(w.name), w.workspace_id
+            """;
+
     static final String FIND_ACTIVE_ROLE_SQL = """
             SELECT m.role
             FROM neurosql_app.workspace_memberships m
@@ -36,6 +47,30 @@ public class JdbcWorkspaceAuthorizationRepository {
 
     public JdbcWorkspaceAuthorizationRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * Lists only active workspaces where the supplied account has an active
+     * membership. Unknown stored roles are omitted rather than exposed.
+     */
+    public List<ActiveWorkspace> listActiveWorkspaces(UUID userId) {
+        if (userId == null) {
+            return List.of();
+        }
+
+        List<Optional<ActiveWorkspace>> rows = jdbcTemplate.query(
+                LIST_ACTIVE_WORKSPACES_SQL,
+                (resultSet, rowNumber) -> WorkspaceRole.fromDatabase(resultSet.getString("role"))
+                        .map(role -> new ActiveWorkspace(
+                                resultSet.getObject("workspace_id", UUID.class),
+                                resultSet.getString("name"),
+                                resultSet.getString("slug"),
+                                role)),
+                userId);
+        return rows.stream().flatMap(Optional::stream).toList();
+    }
+
+    public record ActiveWorkspace(UUID workspaceId, String name, String slug, WorkspaceRole role) {
     }
 
     /**
