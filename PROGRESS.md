@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 23:56 IST
+Last verified: 2026-10-29 (IST)
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -341,3 +341,16 @@ Last verified: 2026-10-28 23:56 IST
 - [ ] This is the first HTTP-to-JDBC integration test against disposable CI PostgreSQL, not the actual Neon temporary branch and not a production test. Draft PR #7 remains unapproved/unmerged; do not apply its schema to Neon main without explicit user approval.
 - [ ] A least-privileged runtime database role and verified grants remain prerequisites. Login throttling is still process-local; registration, password recovery, and workspace administration are unfinished.
 - [x] No credentials were committed, no paid resources were introduced, no production environment settings changed, and no production database writes/migrations were performed.
+
+
+## Durable-auth response cache prevention — PR #9 (not merged)
+- [x] Re-read the current main/feature progress trackers and inspected the auth controller, Spring Security filter chain, existing HTTP lifecycle tests, Neon project/database/branches, Vercel linkage/deployments, and Render service/deploy history before choosing this step.
+- [x] Added `AuthResponseHeadersFilter`, registered only when `neurosql.auth.durable-sessions-enabled=true`. It applies `Cache-Control: no-store`, `Pragma: no-cache`, and `Expires: 0` to `/api/auth/**` responses before controller handling, including framework-generated request validation errors.
+- [x] Added a MockMvc test proving an invalid login email is rejected with HTTP 400, all three anti-cache headers are present, and the login service is not invoked.
+- [x] GitHub Actions run #138 (`40754879326`) passed all required jobs for code commit `da682d758a9804e17f28b5fc348bc447d0bdf71f`: backend Maven verification, frontend durable-auth tests, frontend production build, and the PostgreSQL 17 HTTP/JDBC integration job. The production API/database smoke job was skipped as expected for an unmerged feature branch.
+- [x] Vercel preview for code commit `da682d758a9804e17f28b5fc348bc447d0bdf71f` reports `READY`: https://neurosql-g8ehdbw8g-dilips-projects-d0ae994d.vercel.app. This is a preview build, not a production release.
+- [x] Read-only Neon inspection: dedicated project `neurosql` (`lingering-dew-88806235`) remains on the free tier in Singapore, PostgreSQL 17. Production database `neurosql_db` on branch `main` (`br-empty-credit-b360dmpc`) has no visible application tables; the temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) contains the four proposed `neurosql_app` tables. No Neon writes or migrations were performed.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby plan; production alias `neurosql.vercel.app` is configured. Render `neurosql-api` remains on the free plan in Singapore, linked to repository branch `main`, Docker context `backend`, with commit auto-deploy configured. Latest listed live deployment remains commit `746d58d`; no backend deployment or environment change was made.
+- [ ] Durable auth remains disabled in production. Draft PR #7 is still unapproved/unmerged; its proposed schema has not been applied to Neon `main`. A least-privileged runtime role and explicit grants must be verified before production activation.
+- [ ] The process-local login limiter is not distributed; account registration, password recovery, and workspace lifecycle administration remain unfinished. Render's earlier missed auto-deploy remains unresolved.
+- [x] No credentials were committed, no paid resources were introduced, and no production environment settings or database schemas were changed.
