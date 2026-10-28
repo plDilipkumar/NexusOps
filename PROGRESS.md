@@ -1,12 +1,12 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 05:58 IST
+Last verified: 2026-10-28 06:59 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
 - [x] Vercel project `neurosql` is linked to GitHub repository `plDilipkumar/NexusOps` and uses the Hobby/free plan. Production deployment for commit `746d58d` reports `READY` and is aliased to `neurosql.vercel.app`.
 - [x] Neon project `neurosql` is on the free organization in Singapore, using PostgreSQL 17. The `main` branch is ready.
-- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. Current read-only inspection found zero visible application tables/views; the existing `public.show_db_tree` helper function is present. No production schema changes have been made.
+- [x] Dedicated Neon database `neurosql_db` is PostgreSQL 17.11. A direct read-only query on 2026-10-28 found zero visible application tables, zero views, and zero `public.show_db_tree` functions. No production schema changes have been made.
 - [x] React + TypeScript + Vite frontend and Spring Boot 3 / Java 21 backend are present.
 - [x] Render service `neurosql-api` is configured in the confirmed workspace on the free plan, Singapore region, repository `plDilipkumar/NexusOps`, branch `main`, and Docker context `backend`; auto-deploy is configured for commits.
 - [x] Render deployment `dep-dbgfqe6gekts738l9eng` is live for commit `746d58d`. It was manually triggered after no automatic deployment appeared following the merge.
@@ -74,3 +74,15 @@ Last verified: 2026-10-28 05:58 IST
 - [ ] The session lifetime policy is a tested utility only; it is not wired to login, HTTP authentication, or database persistence. Durable authentication remains blocked on review/approval of draft PR #7 and implementation of the session lifecycle, authorization, rate limiting, and least-privileged database access.
 - [ ] Render's earlier missed auto-deploy remains unresolved. No new backend deployment or production smoke test was expected for this pull-request-only change.
 - [x] No secrets, paid resources, production environment changes, or database migrations were introduced.
+
+
+## Configured-owner password policy — PR #9 (not merged)
+- [x] Re-read this tracker and inspected the current security configuration, open PRs, Neon project/branches/database, Vercel project/deployments, and the Render service/deploy history before choosing this step.
+- [x] Added PasswordPolicy, applied when the environment-configured owner account is enabled: minimum 12 Unicode code points, maximum 72 UTF-8 bytes to avoid BCrypt input truncation ambiguity, and no ISO control characters. Passwords are not trimmed or normalized.
+- [x] Added tests for short/missing values, the BCrypt byte boundary (72 accepted, 74 rejected), control characters, and configured-owner BCrypt hashing/weak-password rejection.
+- [ ] This is a configuration guard only; there is still no registration, password-reset, or multi-user login endpoint. Authentication remains disabled in production.
+- [x] Current direct Neon main-branch read-only query reports database neurosql_db, PostgreSQL 17.11, zero visible tables/views, and zero public.show_db_tree functions; this corrects the earlier progress statement that the helper function existed.
+- [x] Vercel project neurosql is linked to the NexusOps repo; latest listed deployment for PR #9 head ab09c993 reports READY. Production alias remains neurosql.vercel.app.
+- [x] Render service neurosql-api is in the confirmed Dilip Kumar workspace, free plan, Singapore, linked to repo plDilipkumar/NexusOps branch main, auto-deploy trigger commit; latest listed live deploy remains 746d58d. No backend code on main changed in this run, so no Render deployment was triggered.
+- [ ] Render auto-deploy reliability remains unresolved: previous feature merge required manual deployment despite the setting being enabled.
+- [ ] PR #7 durable-auth schema is still draft and unapproved. No schema migration was applied to Neon main; no credentials, paid resources, or production environment changes were introduced.
