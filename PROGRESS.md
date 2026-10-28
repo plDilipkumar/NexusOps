@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 15:02 IST
+Last verified: 2026-10-28 15:04 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -201,7 +201,7 @@ Last verified: 2026-10-28 15:02 IST
 - [x] Extended the durable-session filter to validate bearer tokens on `/api/auth/me`; added a fail-closed security matcher when the feature is disabled and scoped CORS GET permission to `/api/auth/**`.
 - [x] Added MockMvc tests for identity response/no-token leakage, missing and invalid bearer credentials, rejection of Basic-owner credentials, and browser GET preflight.
 - [x] Initial CI run #86 caught two test expectation failures: Spring Security's default cache-control header includes additional directives, and its Basic-auth entry point intercepted missing credentials before the controller. Adjusted the route boundary so the conditional controller returns a Bearer challenge when durable sessions are enabled, and made the cache-control assertions check for `no-store`.
-- [x] GitHub Actions run #88 (`40664956039`) passed: backend Maven verification (79 tests, zero failures/errors, four database-dependent tests skipped in this job), PostgreSQL 17 integration job passed, and frontend production build passed. Production smoke test was skipped as expected for the unmerged feature branch.
+- [x] GitHub Actions run #88 (`40664956039`) passed for code commit `1ab0336a1844938614788bd2301780f8949e0db0`: backend Maven verification (79 tests, zero failures/errors, four database-dependent tests skipped in this job), PostgreSQL 17 integration job passed, and frontend production build passed. Follow-up run #89 (`40665157804`) also passed all three jobs for the latest progress-tracker commit `821192c8e9bb70c05088ef06ba927cc1491484b1`. Production smoke tests were skipped as expected for the unmerged feature branch.
 - [x] Vercel preview for code commit `1ab0336a1844938614788bd2301780f8949e0db0` reports `READY`.
 - [x] Read-only Neon inspection confirms project `neurosql` (`lingering-dew-88806235`) is on the free tier in Singapore, PostgreSQL 17.11. Production database `neurosql_db` on `main` still has no visible application tables; temporary branch `neurosql-auth-owner-invariant-20261028` contains the four proposed `neurosql_app` tables. No Neon writes or migrations were performed.
 - [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby plan. Render service `neurosql-api` remains on the free plan, linked to repository branch `main`, with latest listed live deployment still commit `746d58d`. No backend deployment was triggered for unmerged feature work.
