@@ -1,6 +1,6 @@
-import {useEffect,useState,type FormEvent} from "react";
+import {useEffect,useRef,useState,type FormEvent} from "react";
 import {Activity,ArrowRight,Braces,CheckCircle2,ChevronDown,Clock3,Database,FileCode2,Gauge,History,Layers3,LockKeyhole,Play,Plus,Search,Settings2,ShieldCheck,Sparkles,Table2,TerminalSquare,WandSparkles,Zap} from "lucide-react";
-import {buildDurableSchemaHeaders,parseIssuedSession,parseSessionIdentity,parseWorkspaceList,type DurableWorkspace} from "./durableAuth.ts";
+import {buildDurableSchemaHeaders,createRequestGuard,parseIssuedSession,parseSessionIdentity,parseWorkspaceList,type DurableWorkspace} from "./durableAuth.ts";
 const example="SELECT customer_id, COUNT(*) AS order_count\nFROM orders\nWHERE created_at >= CURRENT_DATE - INTERVAL '30 days'\nGROUP BY customer_id\nORDER BY order_count DESC\nLIMIT 20;";
 type DatabaseHealth = { status: string; database?: string; postgresVersion?: string; timestamp?: string };
 type SchemaCredentials = { username: string; password: string };
@@ -34,30 +34,38 @@ const [durablePassword,setDurablePassword]=useState("");
 const [durableSession,setDurableSession]=useState<DurableSession|null>(null);
 const [durableWorkspaces,setDurableWorkspaces]=useState<DurableWorkspace[]>([]);
 const [selectedWorkspaceId,setSelectedWorkspaceId]=useState("");
-const [durableAuthLoading,setDurableAuthLoading]=useState(false);
+const [durableAuthLoading,setDurableAuthLoading]=useState(false);const durableSchemaRequests=useRef(createRequestGuard());
 const loadSchema=async(credentials:SchemaCredentials)=>{setSchemaLoading(true);setSchemaError("");try{const response=await fetch(API_BASE_URL+"/api/schema",{headers:{Accept:"application/json",Authorization:basicAuthorization(credentials.username,credentials.password)}});if(response.status===401)throw new Error("Sign-in failed. Check the owner username and password.");if(response.status===403)throw new Error("Schema access is disabled on the API or this account is not authorized.");if(response.status===404)throw new Error("The schema browser endpoint is not enabled on the API.");if(!response.ok)throw new Error("Schema request failed (HTTP "+response.status+").");const payload=(await response.json()) as SchemaResponse;if(!payload||!Array.isArray(payload.schemas)||typeof payload.tableCount!=="number")throw new Error("The API returned an unexpected schema response.");setSchemaData(payload);setSchemaCredentials(credentials);setSchemaPassword("");}catch(error){setSchemaData(null);setSchemaCredentials(null);setSchemaError(error instanceof Error?error.message:"Unable to load schema.");}finally{setSchemaLoading(false);}};
 const loadDurableSchema=async(token:string,workspaceId:string)=>{
+  const requestId=durableSchemaRequests.current.begin();
   setSchemaLoading(true);setSchemaError("");setSchemaCredentials(null);
   try{
     if(!workspaceId)throw new Error("Choose an active workspace before browsing schema.");
     const response=await fetch(API_BASE_URL+"/api/schema",{headers:buildDurableSchemaHeaders(token,workspaceId),cache:"no-store"});
+    if(!durableSchemaRequests.current.isCurrent(requestId))return;
     if(response.status===401){setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");throw new Error("Your session is invalid or expired. Sign in again.");}
     if(response.status===400)throw new Error("The selected workspace identifier was rejected.");
     if(response.status===403)throw new Error("This account does not have permission to browse that workspace.");
     if(response.status===404)throw new Error("Schema browsing is not enabled on the API.");
     if(!response.ok)throw new Error("Schema request failed (HTTP "+response.status+").");
     const payload=(await response.json()) as SchemaResponse;
+    if(!durableSchemaRequests.current.isCurrent(requestId))return;
     if(!payload||!Array.isArray(payload.schemas)||typeof payload.tableCount!=="number")throw new Error("The API returned an unexpected schema response.");
     setSchemaData(payload);
-  }catch(error){setSchemaData(null);setSchemaError(error instanceof Error?error.message:"Unable to load schema.");}
-  finally{setSchemaLoading(false);}
+  }catch(error){
+    if(durableSchemaRequests.current.isCurrent(requestId)){
+      setSchemaData(null);setSchemaError(error instanceof Error?error.message:"Unable to load schema.");
+    }
+  }finally{
+    if(durableSchemaRequests.current.isCurrent(requestId))setSchemaLoading(false);
+  }
 };
 const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
   event.preventDefault();
   const email=durableEmail.trim().toLowerCase();
   const password=durablePassword;
   if(!email||!password){setSchemaError("Enter your email and password.");return;}
-  setDurableAuthLoading(true);setSchemaError("");setSchemaData(null);
+  durableSchemaRequests.current.invalidate();setSchemaLoading(false);setDurableAuthLoading(true);setSchemaError("");setSchemaData(null);
   let issuedToken:string|null=null;
   try{
     const response=await fetch(API_BASE_URL+"/api/auth/login",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({email,password}),cache:"no-store"});
@@ -88,19 +96,21 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
   }finally{setDurableAuthLoading(false);}
 };
 const logoutDurable=async()=>{
+  durableSchemaRequests.current.invalidate();setSchemaLoading(false);
   const token=durableSession?.token;
   let revocationConfirmed=!token;
   if(token){try{const response=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store"});revocationConfirmed=response.status===204||response.status===401;}catch{/* The local token is still cleared; surface that server revocation was not confirmed. */}}
   setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setDurableEmail("");setDurablePassword("");setSchemaData(null);setSchemaError(revocationConfirmed?"":"Signed out locally, but the server could not confirm session revocation. The session may remain valid until it expires.");setExpandedTables({});
 };
 const selectDurableWorkspace=(workspaceId:string)=>{
+  durableSchemaRequests.current.invalidate();setSchemaLoading(false);
   setSelectedWorkspaceId(workspaceId);setSchemaData(null);setExpandedTables({});setSchemaError("");
   if(durableSession&&workspaceId)void loadDurableSchema(durableSession.token,workspaceId);
 };
 const handleSchemaLogin=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const username=schemaUsername.trim();if(!username||!schemaPassword){setSchemaError("Enter both the owner username and password.");return;}await loadSchema({username,password:schemaPassword});};
 const logoutSchema=()=>{setSchemaCredentials(null);setSchemaData(null);setSchemaUsername("");setSchemaPassword("");setSchemaError("");setExpandedTables({});};
 
-useEffect(()=>{if(!durableSession)return;const expire=()=>{setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setSchemaError("Your session expired. Sign in again.");};const remaining=Date.parse(durableSession.expiresAt)-Date.now();if(!Number.isFinite(remaining)||remaining<=0){expire();return;}const timer=window.setTimeout(expire,remaining);return()=>window.clearTimeout(timer);},[durableSession?.expiresAt]);
+useEffect(()=>{if(!durableSession)return;const expire=()=>{durableSchemaRequests.current.invalidate();setSchemaLoading(false);setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setSchemaError("Your session expired. Sign in again.");};const remaining=Date.parse(durableSession.expiresAt)-Date.now();if(!Number.isFinite(remaining)||remaining<=0){expire();return;}const timer=window.setTimeout(expire,remaining);return()=>window.clearTimeout(timer);},[durableSession?.expiresAt]);
 useEffect(()=>{let cancelled=false;const check=async()=>{try{const response=await fetch(`${API_BASE_URL}/api/health/database`,{headers:{Accept:"application/json"}});if(!response.ok)throw new Error(`HTTP ${response.status}`);const payload=(await response.json()) as DatabaseHealth;if(payload.status!=="UP")throw new Error("Database reported unavailable");if(!cancelled){setDatabaseHealth(payload);setHealthError("");setHealthCheckedAt(new Date().toLocaleTimeString());}}catch(error){if(!cancelled){setDatabaseHealth(null);setHealthError(error instanceof Error?error.message:"Unable to reach API");setHealthCheckedAt(new Date().toLocaleTimeString());}}finally{if(!cancelled)setHealthLoading(false);}};void check();const timer=window.setInterval(()=>void check(),60000);return()=>{cancelled=true;window.clearInterval(timer);};},[]);
 const nav=[["Workspace",TerminalSquare],["Schema explorer",Database],["Query history",History],["Performance lab",Gauge]] as const;
 const selectedWorkspace=durableWorkspaces.find(workspace=>workspace.workspaceId===selectedWorkspaceId);
