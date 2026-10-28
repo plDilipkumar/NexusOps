@@ -15,12 +15,13 @@ import org.springframework.stereotype.Service;
 /**
  * Authenticates pre-provisioned, active, email-verified accounts and issues
  * fixed-lifetime opaque sessions. Registration and email verification are
- * deliberately outside this service.
+ * deliberately outside this service. The bean requires the shared PostgreSQL
+ * limiter; it must not silently fall back to process-local throttling.
  */
 @Service
 @ConditionalOnProperty(
         prefix = "neurosql.auth",
-        name = "durable-sessions-enabled",
+        name = {"durable-sessions-enabled", "shared-rate-limit-enabled"},
         havingValue = "true")
 public class DurableLoginService {
     static final String DUMMY_CANDIDATE = "NeuroSQL login timing dummy password 2026";
