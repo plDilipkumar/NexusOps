@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 07:00 IST
+Last verified: 2026-10-28 08:03 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -87,3 +87,17 @@ Last verified: 2026-10-28 07:00 IST
 - [x] Render service neurosql-api is in the confirmed Dilip Kumar workspace, free plan, Singapore, linked to repo plDilipkumar/NexusOps branch main, auto-deploy trigger commit; latest listed live deploy remains 746d58d. No backend code on main changed in this run, so no Render deployment was triggered.
 - [ ] Render auto-deploy reliability remains unresolved: previous feature merge required manual deployment despite the setting being enabled.
 - [ ] PR #7 durable-auth schema is still draft and unapproved. No schema migration was applied to Neon main; no credentials, paid resources, or production environment changes were introduced.
+
+## Basic-auth brute-force rate limit — PR #9 (not merged)
+- [x] Re-read the default-branch progress tracker and inspected the current feature branch, open PR #9, Neon project/branches/database, Vercel repository linkage/deployments, and Render service/deploy history before selecting this step.
+- [x] Added a bounded, process-local Basic-auth attempt limiter: five failed credentials for the same normalized username within a rolling 15-minute window trigger a 15-minute block. Blocked requests return HTTP 429 with a Retry-After header and a non-cacheable generic error response.
+- [x] Wired the limiter into the Spring Security chain only when `neurosql.auth.enabled=true`, and only for `/api/schema/**` and `/api/sql/**`. Requests without a Basic Authorization header are not counted. Forwarded client-IP headers are not trusted; this avoids treating a shared reverse-proxy IP as one global identity.
+- [x] The in-memory state is capped at 10,000 identities and successful authentication clears that username's prior failures. This is defense-in-depth for the current single-instance configuration, not a distributed limiter; it resets on restart and must be reviewed before multi-user/multi-instance use.
+- [x] Added deterministic unit tests for the rolling window, threshold, retry delay, success reset, and lockout expiry, plus a MockMvc test that verifies repeated invalid Basic credentials return 401 and then 429.
+- [x] GitHub Actions run #58 (`40621859681`) passed backend `mvn -B verify` and frontend production build. The production API/database smoke test was skipped as expected for a pull-request run.
+- [x] Vercel preview for commit `8c3f70881d309a197a03606a3c236cd618bba2dc` reports `READY`; the project query filtered by the GitHub repository returned the `neurosql` project linked to `plDilipkumar/NexusOps`.
+- [x] Render service `neurosql-api` remains on the free plan, linked to `plDilipkumar/NexusOps` branch `main`, with commit auto-deploy configured. Latest listed live deployment remains commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; no backend deployment was triggered for this unmerged feature branch.
+- [x] Neon project `neurosql` remains on the free tier in Singapore, PostgreSQL 17. Production branch `main` is ready and database `neurosql_db` exists. A fresh table listing returned no tables; the branch tree currently shows the existing `public.show_db_tree` helper. No schema changes or migration were made.
+- [ ] The limiter is not enabled in production because owner authentication remains disabled. It is username-based and process-local; before enabling durable multi-user auth, revisit account-lockout abuse, shared/distributed rate limits, and durable session lifecycle.
+- [ ] Draft PR #7 still contains the unapproved durable-auth schema proposal. It has not been merged or applied to Neon `main`.
+- [ ] Render auto-deploy reliability remains unresolved; the current run did not change `main` or trigger a backend deployment.
