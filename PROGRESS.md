@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 19:56 IST
+Last verified: 2026-10-28 21:06 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -286,4 +286,14 @@ Last verified: 2026-10-28 19:56 IST
 - [x] Render service neurosql-api was verified in the previously confirmed workspace: free plan, Singapore, repository plDilipkumar/NexusOps, branch main, Docker context backend, auto-deploy configured. Latest listed live deployment remains commit 746d58d; no backend deployment was triggered for this frontend-only feature-branch change.
 - [ ] This is frontend race-condition protection, not end-to-end authentication proof. Durable auth remains disabled in production; login/schema integration is still blocked on schema approval and least-privileged runtime database grants.
 - [ ] Draft PR #7 remains unmerged/unapproved; the proposed migration has not been applied to Neon main. Registration, password recovery, workspace lifecycle administration, and a shared multi-instance login rate limiter remain unfinished. Render's prior missed auto-deploy issue remains unresolved.
+- [x] No credentials, paid resources, production environment changes, or production database schema changes were introduced.
+
+## Strict durable-auth timestamp validation — PR #9 (not merged)
+- [x] Re-read the default-branch and feature-branch progress trackers, reviewed the current durable-auth payload parser and tests, and inspected the dedicated Neon project/database, Vercel project/deployments, and Render service before selecting this step.
+- [x] Hardened `frontend/src/durableAuth.ts`: ISO expiry strings are now checked for real calendar dates and valid hour/minute/second and timezone-offset ranges before relying on `Date.parse`. This rejects timestamps such as non-leap-year February 29/30, month 13, hour 25, minute/second 61, and invalid timezone offsets instead of accepting JavaScript date normalization.
+- [x] Added a frontend test covering eight impossible timestamp examples and a valid leap-day timestamp with a timezone offset. GitHub Actions run #121 (`40717318563`) passed all jobs for test commit `f5d7a0432e2906f0135113a9674f4c37e04add8a`: backend `mvn -B verify` passed; frontend tests passed 9/9; `tsc -b && vite build` passed; disposable PostgreSQL 17 integration tests passed 7/7 with zero failures/errors/skips. The production smoke test was skipped as expected for an unmerged feature branch.
+- [x] Vercel preview for `f5d7a0432e2906f0135113a9674f4c37e04add8a` reports `READY` at `https://neurosql-mbd6mioxp-dilips-projects-d0ae994d.vercel.app`. The `neurosql` project remains linked to `plDilipkumar/NexusOps` on the Hobby plan; no production deployment was triggered.
+- [x] Read-only Neon checks: project `neurosql` (`lingering-dew-88806235`), free tier, Singapore, PostgreSQL 17.11. Production database `neurosql_db` on `main` (`br-empty-credit-b360dmpc`) has zero non-system tables/views. Temporary branch `neurosql-auth-owner-invariant-20261028` (`br-sweet-sky-b38kd7rm`) contains the four proposed `neurosql_app` tables (`app_users`, `user_sessions`, `workspace_memberships`, `workspaces`). No Neon writes or migrations were performed.
+- [x] Render service `neurosql-api` was re-inspected in the confirmed Dilip Kumar workspace: free plan, Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, commit auto-deploy enabled. No backend deployment was triggered for this feature-branch-only change; the previously listed live deployment remains commit `746d58d`.
+- [ ] This is stricter frontend response validation, not end-to-end authentication proof. Durable auth remains disabled in production; draft PR #7 remains unmerged/unapproved, and its schema has not been applied to Neon `main`. A least-privileged runtime role/grants and isolated end-to-end login/workspace/schema/logout testing are still required before activation.
 - [x] No credentials, paid resources, production environment changes, or production database schema changes were introduced.
