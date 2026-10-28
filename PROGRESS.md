@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-28 14:02 IST
+Last verified: 2026-10-28 15:02 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -193,3 +193,18 @@ Last verified: 2026-10-28 14:02 IST
 - [ ] This endpoint is not production-ready by itself: there is still no HTTP login/session-issuance endpoint, no workspace membership enforcement on protected endpoints, and the proposed schema/runtime grants remain unapproved. The feature flag must remain off until schema approval and end-to-end security verification.
 - [ ] Draft PR #7 remains unmerged and unapplied to Neon `main`; user approval is required before any production schema change. Render's previously observed missed auto-deploy remains unresolved.
 - [x] No credentials, paid resources, production environment changes, production database writes, or schema migrations were introduced.
+
+
+## Durable-session identity endpoint — PR #9 (not merged)
+- [x] Re-read this tracker and inspected the latest PR #9 source, open PRs, Neon project/branches/database, Vercel linkage/deployments, and Render service/deploy history before choosing this step.
+- [x] Added feature-gated `GET /api/auth/me` to `DurableSessionController`. It returns only the authenticated durable session's user ID, session ID, and expiry; it never returns the bearer token or database metadata.
+- [x] Extended the durable-session filter to validate bearer tokens on `/api/auth/me`; added a fail-closed security matcher when the feature is disabled and scoped CORS GET permission to `/api/auth/**`.
+- [x] Added MockMvc tests for identity response/no-token leakage, missing and invalid bearer credentials, rejection of Basic-owner credentials, and browser GET preflight.
+- [x] Initial CI run #86 caught two test expectation failures: Spring Security's default cache-control header includes additional directives, and its Basic-auth entry point intercepted missing credentials before the controller. Adjusted the route boundary so the conditional controller returns a Bearer challenge when durable sessions are enabled, and made the cache-control assertions check for `no-store`.
+- [x] GitHub Actions run #88 (`40664956039`) passed: backend Maven verification (79 tests, zero failures/errors, four database-dependent tests skipped in this job), PostgreSQL 17 integration job passed, and frontend production build passed. Production smoke test was skipped as expected for the unmerged feature branch.
+- [x] Vercel preview for code commit `1ab0336a1844938614788bd2301780f8949e0db0` reports `READY`.
+- [x] Read-only Neon inspection confirms project `neurosql` (`lingering-dew-88806235`) is on the free tier in Singapore, PostgreSQL 17.11. Production database `neurosql_db` on `main` still has no visible application tables; temporary branch `neurosql-auth-owner-invariant-20261028` contains the four proposed `neurosql_app` tables. No Neon writes or migrations were performed.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby plan. Render service `neurosql-api` remains on the free plan, linked to repository branch `main`, with latest listed live deployment still commit `746d58d`. No backend deployment was triggered for unmerged feature work.
+- [ ] This is identity introspection only: there is still no HTTP login/session-issuance endpoint, and workspace membership is not enforced on the protected schema/SQL endpoints. Keep durable sessions disabled until schema approval, least-privilege database grants, and end-to-end authorization are complete.
+- [ ] Draft PR #7 remains unmerged and unapplied to Neon `main`; explicit user approval is required before any production schema change. Render auto-deploy reliability remains unresolved.
+- [x] No credentials, paid resources, production environment changes, production database writes, or migrations were introduced.
