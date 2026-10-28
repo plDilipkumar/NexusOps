@@ -62,6 +62,7 @@ public class SecurityConfig {
             throw new IllegalStateException(
                     "NEUROSQL_AUTH_USERNAME and NEUROSQL_AUTH_PASSWORD must be configured when API auth is enabled.");
         }
+        PasswordPolicy.validate(password);
         return new InMemoryUserDetailsManager(
                 User.withUsername(username)
                         .password(passwordEncoder.encode(password))
