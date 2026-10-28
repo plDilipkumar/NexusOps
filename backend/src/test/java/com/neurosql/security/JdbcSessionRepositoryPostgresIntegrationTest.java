@@ -94,12 +94,14 @@ class JdbcSessionRepositoryPostgresIntegrationTest {
         UUID inactiveUser = insertUser("DISABLED");
 
         Instant expiredIssue = NOW.minusSeconds(3600);
+        String expiredDigest = newDigest();
         repository.createSession(
-                activeUser, newDigest(), expiredIssue, NOW.minusSeconds(1));
+                activeUser, expiredDigest, expiredIssue, NOW.minusSeconds(1));
 
         Instant futureIssue = NOW.plusSeconds(60);
+        String futureDigest = newDigest();
         repository.createSession(
-                activeUser, newDigest(), futureIssue, futureIssue.plusSeconds(3600));
+                activeUser, futureDigest, futureIssue, futureIssue.plusSeconds(3600));
 
         Instant inactiveIssue = NOW.minusSeconds(60);
         String inactiveDigest = newDigest();
@@ -120,10 +122,8 @@ class JdbcSessionRepositoryPostgresIntegrationTest {
                 Timestamp.from(overlongIssue.plusSeconds(13 * 60 * 60)));
 
         assertThat(repository.findActiveByTokenHash(newDigest(), NOW)).isEmpty();
-        assertThat(repository.findActiveByTokenHash(
-                digestFor(expiredIssue), NOW)).isEmpty();
-        assertThat(repository.findActiveByTokenHash(
-                digestFor(futureIssue), NOW)).isEmpty();
+        assertThat(repository.findActiveByTokenHash(expiredDigest, NOW)).isEmpty();
+        assertThat(repository.findActiveByTokenHash(futureDigest, NOW)).isEmpty();
         assertThat(repository.findActiveByTokenHash(inactiveDigest, NOW)).isEmpty();
         assertThat(repository.findActiveByTokenHash(overlongDigest, NOW)).isEmpty();
     }
@@ -138,18 +138,7 @@ class JdbcSessionRepositoryPostgresIntegrationTest {
     }
 
     private static String newDigest() {
-        return digestFor(Instant.now());
-    }
-
-    private static String digestFor(Instant seed) {
-        // Test-only canonical 64-character lowercase hexadecimal fixture.
-        return java.util.HexFormat.of().formatHex(
-                java.nio.ByteBuffer.allocate(16)
-                        .putLong(seed.getEpochSecond())
-                        .putLong(UUID.randomUUID().getLeastSignificantBits())
-                        .array())
-                + java.util.HexFormat.of().formatHex(
-                        UUID.randomUUID().toString().replace("-", "").getBytes(java.nio.charset.StandardCharsets.US_ASCII))
-                        .substring(0, 32);
+        return UUID.randomUUID().toString().replace("-", "")
+                + UUID.randomUUID().toString().replace("-", "");
     }
 }
