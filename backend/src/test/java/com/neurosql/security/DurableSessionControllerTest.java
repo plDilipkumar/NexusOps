@@ -53,6 +53,9 @@ class DurableSessionControllerTest {
     @MockBean
     private DurableLoginService loginService;
 
+    @MockBean
+    private WorkspaceAuthorizationService workspaceAuthorizationService;
+
     @Test
     void activeBearerSessionCanReadItsOwnIdentityWithoutReturningToken() throws Exception {
         Instant expiresAt = Instant.now().plusSeconds(3600);
