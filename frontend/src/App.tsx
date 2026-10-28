@@ -1,5 +1,6 @@
 import {useEffect,useState,type FormEvent} from "react";
 import {Activity,ArrowRight,Braces,CheckCircle2,ChevronDown,Clock3,Database,FileCode2,Gauge,History,Layers3,LockKeyhole,Play,Plus,Search,Settings2,ShieldCheck,Sparkles,Table2,TerminalSquare,WandSparkles,Zap} from "lucide-react";
+import {buildDurableSchemaHeaders,parseIssuedSession,parseSessionIdentity,parseWorkspaceList,type DurableWorkspace} from "./durableAuth.ts";
 const example="SELECT customer_id, COUNT(*) AS order_count\nFROM orders\nWHERE created_at >= CURRENT_DATE - INTERVAL '30 days'\nGROUP BY customer_id\nORDER BY order_count DESC\nLIMIT 20;";
 type DatabaseHealth = { status: string; database?: string; postgresVersion?: string; timestamp?: string };
 type SchemaCredentials = { username: string; password: string };
@@ -7,7 +8,6 @@ type SchemaColumn = { name: string; dataType: string; nullable: boolean; ordinal
 type SchemaTable = { name: string; type: string; columns: SchemaColumn[] };
 type SchemaInfo = { name: string; tables: SchemaTable[] };
 type SchemaResponse = { database: string; schemas: SchemaInfo[]; tableCount: number; timestamp: string };
-type DurableWorkspace = { workspaceId: string; name: string; slug: string; role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER" };
 type DurableSession = { token: string; email: string; userId: string; sessionId: string; expiresAt: string };
 const DURABLE_AUTH_ENABLED = import.meta.env.VITE_DURABLE_AUTH_ENABLED === "true";
 const SCHEMA_LOGIN_ENABLED = import.meta.env.VITE_SCHEMA_LOGIN_ENABLED === "true";
@@ -40,7 +40,7 @@ const loadDurableSchema=async(token:string,workspaceId:string)=>{
   setSchemaLoading(true);setSchemaError("");setSchemaCredentials(null);
   try{
     if(!workspaceId)throw new Error("Choose an active workspace before browsing schema.");
-    const response=await fetch(API_BASE_URL+"/api/schema",{headers:{Accept:"application/json",Authorization:"Bearer "+token,"X-NeuroSQL-Workspace-Id":workspaceId},cache:"no-store"});
+    const response=await fetch(API_BASE_URL+"/api/schema",{headers:buildDurableSchemaHeaders(token,workspaceId),cache:"no-store"});
     if(response.status===401){setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");throw new Error("Your session is invalid or expired. Sign in again.");}
     if(response.status===400)throw new Error("The selected workspace identifier was rejected.");
     if(response.status===403)throw new Error("This account does not have permission to browse that workspace.");
@@ -64,25 +64,17 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
     if(response.status===401)throw new Error("Invalid email or password.");
     if(response.status===429){const retryAfter=response.headers.get("Retry-After");throw new Error(retryAfter?"Too many login attempts. Try again in "+retryAfter+" seconds.":"Too many login attempts. Try again later.");}
     if(!response.ok)throw new Error("Login failed (HTTP "+response.status+").");
-    const loginPayload=(await response.json()) as {token?:unknown;expiresAt?:unknown};
-    if(typeof loginPayload.token!=="string"||!/^[A-Za-z0-9_-]{43}$/.test(loginPayload.token)||typeof loginPayload.expiresAt!=="string"||!Number.isFinite(Date.parse(loginPayload.expiresAt))||Date.parse(loginPayload.expiresAt)<=Date.now())throw new Error("The API returned an invalid session response.");
-    issuedToken=loginPayload.token;
+    const issued=parseIssuedSession(await response.json());
+    issuedToken=issued.token;
     const authHeaders={Accept:"application/json",Authorization:"Bearer "+issuedToken};
     const identityResponse=await fetch(API_BASE_URL+"/api/auth/me",{headers:authHeaders,cache:"no-store"});
     if(identityResponse.status===401)throw new Error("The new session could not be validated. Please sign in again.");
     if(!identityResponse.ok)throw new Error("Unable to verify session identity (HTTP "+identityResponse.status+").");
-    const identity=(await identityResponse.json()) as {userId?:unknown;sessionId?:unknown;expiresAt?:unknown};
-    if(typeof identity.userId!=="string"||typeof identity.sessionId!=="string"||typeof identity.expiresAt!=="string"||!Number.isFinite(Date.parse(identity.expiresAt))||Date.parse(identity.expiresAt)<=Date.now())throw new Error("The API returned an invalid session identity.");
+    const identity=parseSessionIdentity(await identityResponse.json());
     const workspaceResponse=await fetch(API_BASE_URL+"/api/auth/workspaces",{headers:authHeaders,cache:"no-store"});
     if(workspaceResponse.status===401)throw new Error("The session was rejected while loading workspaces.");
     if(!workspaceResponse.ok)throw new Error("Unable to load workspaces (HTTP "+workspaceResponse.status+").");
-    const rawWorkspaces=(await workspaceResponse.json()) as unknown;
-    if(!Array.isArray(rawWorkspaces)||!rawWorkspaces.every((item:unknown)=>{
-      if(typeof item!=="object"||item===null)return false;
-      const workspace=item as Record<string,unknown>;
-      return typeof workspace.workspaceId==="string"&&typeof workspace.name==="string"&&typeof workspace.slug==="string"&&["OWNER","ADMIN","MEMBER","VIEWER"].includes(String(workspace.role));
-    }))throw new Error("The API returned an unexpected workspace list.");
-    const workspaces=rawWorkspaces as DurableWorkspace[];
+    const workspaces=parseWorkspaceList(await workspaceResponse.json());
     setDurableSession({token:issuedToken,email,userId:identity.userId,sessionId:identity.sessionId,expiresAt:identity.expiresAt});
     setDurableWorkspaces(workspaces);setDurablePassword("");
     if(workspaces.length===0){setSelectedWorkspaceId("");setSchemaError("Signed in, but no active workspace membership is assigned to this account.");return;}
