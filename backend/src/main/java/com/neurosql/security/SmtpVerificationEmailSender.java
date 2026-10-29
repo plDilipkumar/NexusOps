@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -22,11 +22,11 @@ import org.springframework.web.util.UriComponentsBuilder;
  * or provider exception details to clients or logs.</p>
  */
 @Service
-@ConditionalOnProperty(
-        prefix = "neurosql.auth",
-        name = {"durable-sessions-enabled", "shared-rate-limit-enabled", "email.enabled"},
-        havingValue = "true")
-@ConditionalOnProperty(prefix = "spring.mail", name = "host")
+@ConditionalOnExpression(
+        "'${neurosql.auth.durable-sessions-enabled:false}' == 'true' and "
+                + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true' and "
+                + "'${neurosql.auth.email.enabled:false}' == 'true' and "
+                + "'${spring.mail.host:}' != ''")
 public class SmtpVerificationEmailSender implements VerificationEmailSender {
     private static final Pattern TOKEN_PATTERN = Pattern.compile("[A-Za-z0-9_-]{43}");
 
