@@ -98,7 +98,7 @@ public final class TrustedClientAddressResolver {
         return List.copyOf(parsed);
     }
 
-    private static String canonicalAddress(String value) {
+    static String canonicalAddress(String value) {
         InetAddress address = parseIpLiteral(value);
         return address == null ? "unknown" : address.getHostAddress();
     }
