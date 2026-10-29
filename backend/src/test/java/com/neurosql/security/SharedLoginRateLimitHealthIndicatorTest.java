@@ -31,6 +31,7 @@ class SharedLoginRateLimitHealthIndicatorTest {
         verify(jdbc).queryForMap(org.mockito.ArgumentMatchers.argThat(sql ->
                 sql.startsWith("SELECT")
                         && sql.contains("current_database()")
+                        && sql.contains("session_user = current_user")
                         && sql.contains("has_column_privilege")
                         && sql.contains("has_table_privilege")
                         && sql.contains("pg_roles")
@@ -102,6 +103,16 @@ class SharedLoginRateLimitHealthIndicatorTest {
     }
 
     @Test
+    void reportsDownWhenSessionIdentityDiffersFromTheActiveRole() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object> result = readyRow(EXPECTED_DATABASE);
+        result.put("session_identity_matches_current_role", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(result);
+
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
     void reportsDownWhenRuntimeRoleCanCreateObjectsOrOwnsDatabase() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         Map<String, Object> schemaCreate = readyRow(EXPECTED_DATABASE);
@@ -166,6 +177,7 @@ class SharedLoginRateLimitHealthIndicatorTest {
         return new HashMap<>(Map.ofEntries(
                 Map.entry("database_name", databaseName),
                 Map.entry("table_exists", true),
+                Map.entry("session_identity_matches_current_role", true),
                 Map.entry("schema_usage", true),
                 Map.entry("schema_create_denied", true),
                 Map.entry("not_database_owner", true),
