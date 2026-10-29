@@ -109,6 +109,25 @@ class JdbcAccountRepositoryPostgresIntegrationTest {
     }
 
     @Test
+    void findsOnlyActiveUnverifiedAccountsAndNormalizesEmailForResend() {
+        String suffix = UUID.randomUUID().toString();
+        String pendingEmail = "pending-" + suffix + "@example.test";
+        UUID pendingUser = insertAccount(pendingEmail, "ACTIVE", null);
+        insertAccount("verified-" + suffix + "@example.test", "ACTIVE",
+                Instant.parse("2026-10-28T10:00:00Z"));
+        insertAccount("disabled-" + suffix + "@example.test", "DISABLED", null);
+
+        assertThat(repository.findActiveUnverifiedByEmailForUpdate(
+                "  " + pendingEmail.toUpperCase(Locale.ROOT) + "  "))
+                .contains(new JdbcAccountRepository.UnverifiedAccount(pendingUser, pendingEmail));
+        assertThat(repository.findActiveUnverifiedByEmailForUpdate(
+                "verified-" + suffix + "@example.test")).isEmpty();
+        assertThat(repository.findActiveUnverifiedByEmailForUpdate(
+                "disabled-" + suffix + "@example.test")).isEmpty();
+        assertThat(repository.findActiveUnverifiedByEmailForUpdate("not-an-email")).isEmpty();
+    }
+
+    @Test
     void rejectsInvalidAccountFieldsBeforeIssuingInsert() {
         String passwordHash = "$2a$10$" + "x".repeat(53);
 

@@ -119,11 +119,7 @@ public class SmtpVerificationEmailSender implements VerificationEmailSender {
         return uri;
     }
 
-    public static final class DeliveryFailedException extends RuntimeException {
+    public static final class DeliveryFailedException extends VerificationEmailSender.DeliveryFailedException {
         private static final long serialVersionUID = 1L;
-
-        public DeliveryFailedException() {
-            super("Verification email delivery failed.");
-        }
     }
 }

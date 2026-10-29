@@ -63,6 +63,14 @@ public class JdbcAccountActionTokenRepository {
             SELECT user_id FROM verified
             """;
 
+    static final String CONSUME_OUTSTANDING_TOKENS_SQL = """
+            UPDATE neurosql_app.account_action_tokens
+               SET consumed_at = now()
+             WHERE user_id = ?
+               AND purpose = ?
+               AND consumed_at IS NULL
+            """;
+
     private static final Pattern TOKEN_HASH_PATTERN = Pattern.compile("[0-9a-f]{64}");
 
     private final JdbcTemplate jdbcTemplate;
@@ -116,6 +124,19 @@ public class JdbcAccountActionTokenRepository {
                 tokenHash,
                 purpose.name());
         return users.stream().findFirst();
+    }
+
+    /**
+     * Invalidates every outstanding token for one user and purpose before a replacement
+     * is issued. The database trigger makes this transition irreversible.
+     *
+     * @return the number of tokens invalidated
+     */
+    public int consumeOutstandingTokens(UUID userId, AccountActionTokenService.Purpose purpose) {
+        if (userId == null || purpose == null) {
+            throw new IllegalArgumentException("A user and account-action purpose are required.");
+        }
+        return jdbcTemplate.update(CONSUME_OUTSTANDING_TOKENS_SQL, userId, purpose.name());
     }
 
     /**

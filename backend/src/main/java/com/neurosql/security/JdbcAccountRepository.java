@@ -36,6 +36,17 @@ public class JdbcAccountRepository {
             RETURNING user_id
             """;
 
+    static final String FIND_ACTIVE_UNVERIFIED_ACCOUNT_FOR_UPDATE_SQL = """
+            SELECT user_id, email
+            FROM neurosql_app.app_users
+            WHERE lower(email) = ?
+              AND status = 'ACTIVE'
+              AND email_verified_at IS NULL
+            ORDER BY user_id
+            LIMIT 1
+            FOR UPDATE
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public JdbcAccountRepository(JdbcTemplate jdbcTemplate) {
@@ -98,6 +109,32 @@ public class JdbcAccountRepository {
         return normalized;
     }
 
+    /**
+     * Finds an active, unverified account while locking its row for token rotation.
+     * Invalid addresses intentionally behave like an absent account for resend flows.
+     * Call this from a transaction so the lock is held through replacement-token issuance.
+     */
+    public Optional<UnverifiedAccount> findActiveUnverifiedByEmailForUpdate(String email) {
+        if (email == null || email.isBlank() || email.length() > 254) {
+            return Optional.empty();
+        }
+
+        final String normalizedEmail;
+        try {
+            normalizedEmail = normalizeRegistrationEmail(email);
+        } catch (IllegalArgumentException invalidEmail) {
+            return Optional.empty();
+        }
+
+        List<UnverifiedAccount> matches = jdbcTemplate.query(
+                FIND_ACTIVE_UNVERIFIED_ACCOUNT_FOR_UPDATE_SQL,
+                (resultSet, rowNumber) -> new UnverifiedAccount(
+                        resultSet.getObject("user_id", UUID.class),
+                        resultSet.getString("email")),
+                normalizedEmail);
+        return matches.stream().findFirst();
+    }
+
     public Optional<LoginAccount> findActiveVerifiedByEmail(String email) {
         if (email == null || email.isBlank() || email.length() > 254) {
             return Optional.empty();
@@ -114,6 +151,9 @@ public class JdbcAccountRepository {
                         resultSet.getString("password_hash")),
                 normalizedEmail);
         return matches.stream().findFirst();
+    }
+
+    public record UnverifiedAccount(UUID userId, String email) {
     }
 
     public record LoginAccount(UUID userId, String passwordHash) {

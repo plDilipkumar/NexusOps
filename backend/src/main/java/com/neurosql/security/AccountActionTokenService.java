@@ -58,6 +58,19 @@ public class AccountActionTokenService {
     }
 
     /**
+     * Invalidates existing tokens of the same purpose and issues a replacement.
+     * Call within a transaction that locks the account row when used for resends.
+     */
+    @Transactional
+    public IssuedActionToken replaceOutstandingToken(UUID userId, Purpose purpose) {
+        if (userId == null || purpose == null) {
+            throw new IllegalArgumentException("A user and account-action purpose are required.");
+        }
+        tokens.consumeOutstandingTokens(userId, purpose);
+        return issueToken(userId, purpose);
+    }
+
+    /**
      * Consumes a token only if its digest, purpose, and database-side expiry
      * match. An invalid token is indistinguishable from an absent/expired token.
      *

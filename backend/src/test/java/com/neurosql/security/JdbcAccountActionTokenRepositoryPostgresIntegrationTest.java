@@ -106,6 +106,34 @@ class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
     }
 
     @Test
+    void invalidatesOnlyOutstandingTokensForTheSelectedUserAndPurpose() {
+        UUID userId = insertUser();
+        UUID otherUserId = insertUser();
+        String emailDigest = codec.hashToken(codec.issueToken());
+        String resetDigest = codec.hashToken(codec.issueToken());
+        String otherDigest = codec.hashToken(codec.issueToken());
+
+        repository.createToken(userId, AccountActionTokenService.Purpose.EMAIL_VERIFICATION,
+                emailDigest, Duration.ofHours(24).getSeconds());
+        repository.createToken(userId, AccountActionTokenService.Purpose.PASSWORD_RESET,
+                resetDigest, Duration.ofMinutes(30).getSeconds());
+        repository.createToken(otherUserId, AccountActionTokenService.Purpose.EMAIL_VERIFICATION,
+                otherDigest, Duration.ofHours(24).getSeconds());
+
+        assertThat(repository.consumeOutstandingTokens(
+                userId, AccountActionTokenService.Purpose.EMAIL_VERIFICATION)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT consumed_at IS NOT NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Boolean.class, emailDigest)).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT consumed_at IS NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Boolean.class, resetDigest)).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT consumed_at IS NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Boolean.class, otherDigest)).isTrue();
+    }
+
+    @Test
     void refusesExpiredTokensWithoutMarkingThemConsumed() {
         UUID userId = insertUser();
         String digest = codec.hashToken(codec.issueToken());

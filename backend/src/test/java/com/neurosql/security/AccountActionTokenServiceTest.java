@@ -79,6 +79,27 @@ class AccountActionTokenServiceTest {
     }
 
     @Test
+    void replacementInvalidatesPreviousTokensBeforeIssuingNewDigest() {
+        when(tokens.createToken(
+                eq(USER_ID),
+                eq(AccountActionTokenService.Purpose.EMAIL_VERIFICATION),
+                anyString(),
+                eq(86_400L))).thenReturn(EXPIRES_AT);
+
+        AccountActionTokenService.IssuedActionToken issued =
+                service.replaceOutstandingToken(USER_ID, AccountActionTokenService.Purpose.EMAIL_VERIFICATION);
+
+        verify(tokens).consumeOutstandingTokens(USER_ID, AccountActionTokenService.Purpose.EMAIL_VERIFICATION);
+        verify(tokens).createToken(
+                eq(USER_ID),
+                eq(AccountActionTokenService.Purpose.EMAIL_VERIFICATION),
+                anyString(),
+                eq(86_400L));
+        assertThat(issued.token()).matches("[A-Za-z0-9_-]{43}");
+        assertThat(issued.toString()).doesNotContain(issued.token());
+    }
+
+    @Test
     void consumesByDigestAndExpectedPurpose() {
         String rawToken = codec.issueToken();
         when(tokens.consumeToken(
