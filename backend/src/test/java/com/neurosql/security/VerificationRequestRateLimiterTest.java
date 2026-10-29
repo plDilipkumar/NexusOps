@@ -2,83 +2,116 @@ package com.neurosql.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-@ExtendWith(MockitoExtension.class)
 class VerificationRequestRateLimiterTest {
-    @Mock
-    private DurableLoginAttemptRateLimiter sharedLimiter;
+    private static final String HMAC_KEY = "test-only-verification-hmac-key-32-bytes";
+    private static final Instant NOW = Instant.parse("2026-10-29T11:30:00Z");
 
+    private MutableClock clock;
     private VerificationRequestRateLimiter limiter;
 
     @BeforeEach
     void setUp() {
-        limiter = new VerificationRequestRateLimiter(sharedLimiter);
+        clock = new MutableClock(NOW);
+        limiter = new VerificationRequestRateLimiter(HMAC_KEY, clock);
     }
 
     @Test
-    void normalizesEmailAndRecordsRegistrationRequestInItsOwnNamespace() {
-        when(sharedLimiter.retryAfterSeconds("account-action:registration:alice@example.test"))
-                .thenReturn(0);
+    void normalizesEmailAndBlocksAfterFiveRegistrationRequests() {
+        for (int attempt = 0; attempt < VerificationRequestRateLimiter.MAX_ATTEMPTS; attempt++) {
+            String email = attempt == 0 ? " Alice@Example.test " : "alice@example.test";
+            VerificationRequestRateLimiter.Decision decision =
+                    limiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, email);
+            assertThat(decision.permitted()).isTrue();
+            assertThat(decision.retryAfterSeconds()).isZero();
+        }
 
-        VerificationRequestRateLimiter.Decision decision =
-                limiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, " Alice@Example.test ");
+        VerificationRequestRateLimiter.Decision blocked =
+                limiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, "ALICE@example.test");
 
-        assertThat(decision.permitted()).isTrue();
-        assertThat(decision.retryAfterSeconds()).isZero();
-        verify(sharedLimiter).recordFailure("account-action:registration:alice@example.test");
+        assertThat(blocked.permitted()).isFalse();
+        assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
     }
 
     @Test
-    void throttledResendDoesNotRecordAnotherRequest() {
-        when(sharedLimiter.retryAfterSeconds("account-action:resend:alice@example.test"))
-                .thenReturn(217);
+    void registrationAndResendHaveIndependentQuotas() {
+        for (int attempt = 0; attempt < VerificationRequestRateLimiter.MAX_ATTEMPTS; attempt++) {
+            limiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, "alice@example.test");
+        }
 
-        VerificationRequestRateLimiter.Decision decision =
+        VerificationRequestRateLimiter.Decision resend =
                 limiter.acquire(VerificationRequestRateLimiter.Purpose.RESEND, "alice@example.test");
 
-        assertThat(decision.permitted()).isFalse();
-        assertThat(decision.retryAfterSeconds()).isEqualTo(217);
-        verify(sharedLimiter, never()).recordFailure("account-action:resend:alice@example.test");
+        assertThat(resend.permitted()).isTrue();
     }
 
     @Test
-    void registrationAndResendUseSeparateRateLimitIdentities() {
-        when(sharedLimiter.retryAfterSeconds("account-action:registration:alice@example.test"))
-                .thenReturn(0);
-        when(sharedLimiter.retryAfterSeconds("account-action:resend:alice@example.test"))
-                .thenReturn(0);
+    void expiredBlockStartsANewWindow() {
+        for (int attempt = 0; attempt < VerificationRequestRateLimiter.MAX_ATTEMPTS; attempt++) {
+            limiter.acquire(VerificationRequestRateLimiter.Purpose.RESEND, "alice@example.test");
+        }
+        assertThat(limiter.acquire(VerificationRequestRateLimiter.Purpose.RESEND, "alice@example.test")
+                .permitted()).isFalse();
 
-        limiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, "alice@example.test");
-        limiter.acquire(VerificationRequestRateLimiter.Purpose.RESEND, "alice@example.test");
+        clock.advanceSeconds(900);
 
-        verify(sharedLimiter).recordFailure("account-action:registration:alice@example.test");
-        verify(sharedLimiter).recordFailure("account-action:resend:alice@example.test");
+        VerificationRequestRateLimiter.Decision afterExpiry =
+                limiter.acquire(VerificationRequestRateLimiter.Purpose.RESEND, "alice@example.test");
+        assertThat(afterExpiry.permitted()).isTrue();
     }
 
     @Test
-    void invalidEmailIsRejectedBeforeTouchingSharedLimiter() {
+    void invalidEmailIsRejected() {
         assertThatThrownBy(() -> limiter.acquire(
                 VerificationRequestRateLimiter.Purpose.RESEND, "not-an-email"))
                 .isInstanceOf(IllegalArgumentException.class);
-
-        verifyNoInteractions(sharedLimiter);
     }
 
     @Test
-    void missingPurposeIsRejectedBeforeTouchingSharedLimiter() {
+    void missingPurposeIsRejected() {
         assertThatThrownBy(() -> limiter.acquire(null, "alice@example.test"))
                 .isInstanceOf(NullPointerException.class);
+    }
 
-        verifyNoInteractions(sharedLimiter);
+    @Test
+    void hmacKeyMustMeetTheExistingMinimumLengthPolicy() {
+        assertThatThrownBy(() -> new VerificationRequestRateLimiter("too-short", clock))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("32 UTF-8 bytes");
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        void advanceSeconds(long seconds) {
+            instant = instant.plusSeconds(seconds);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
     }
 }
