@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 08:08 IST
+Last verified: 2026-10-29 09:00 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -484,3 +484,15 @@ Last verified: 2026-10-29 08:08 IST
 - [x] GitHub Actions run #168 passed the backend, frontend, and PostgreSQL 17 integration jobs. Vercel preview for code commit `7afc692e2af2649289f138ed46402be7faa582f1` is READY; the later progress-only preview was still BUILDING at the last check.
 - [x] Render remains linked to `plDilipkumar/NexusOps` branch `main` on the free plan, and the live backend remains on commit `746d58d`. No backend deployment or environment changes were made.
 - [x] No production schema or data changes were made, no credentials were committed, and no paid resources were introduced.
+
+## Restricted-login readiness integration test — PR #9 (not merged)
+- [x] Added `SharedLoginRateLimitHealthIndicatorPostgresIntegrationTest`. It connects to the disposable PostgreSQL 17 CI database through a separately authenticated, non-superuser LOGIN role that inherits only `neurosql_auth_runtime`; the role password is generated at test runtime and is not stored in source control.
+- [x] The test executes the actual readiness SQL through that restricted connection and verifies the indicator reports UP. A second test confirms the database administrator connection is rejected as not ready.
+- [x] Updated the PostgreSQL integration workflow to include the new test class. GitHub Actions run #173 (ID `40812356423`) passed: backend Maven verification reported 128 tests, 0 failures/errors and 17 database-gated skips in the standard job; the disposable PostgreSQL 17 integration job passed 17 tests with 0 failures/errors/skips; frontend validation tests and production build passed.
+- [x] Vercel preview for workflow commit `a5e12fa32f295742d8ce0ade1b83e44041f1e83d` reports READY: https://neurosql-r2scb8zlp-dilips-projects-d0ae994d.vercel.app. This is a preview, not production.
+- [x] Rechecked the dedicated Neon project `neurosql` and database `neurosql_db`: PostgreSQL 17.11; production `main` still has zero visible application tables. The temporary branch `br-sweet-sky-b38kd7rm` still has the five proposed auth/rate-limit tables, with zero rows in all five tables. This test did not connect to or write to Neon.
+- [x] Rechecked Vercel project `neurosql` linkage to `plDilipkumar/NexusOps`. Render service `neurosql-api` remains on the free plan, linked to `main`, with live deployment commit `746d58d`; no backend deployment or environment changes were triggered.
+- [ ] The readiness SQL has not yet been executed through a restricted LOGIN connection on Neon itself. The earlier Neon connector path rejected a SQL-created role with `invalid role OID`; CI now proves the query with a real restricted login on disposable PostgreSQL. Continue with a supported Neon credential/connection path; do not use an elevated role or weaken the checks.
+- [ ] Draft PR #7 remains unapproved/unmerged. Proposed V1/V2/V3 migrations are not applied to Neon `main`; no production LOGIN role or HMAC secret is configured. Durable authentication and shared rate limiting remain disabled in production.
+- [x] No production database writes, schema changes, environment updates, or Render deployments were made. No credentials were committed and no paid resources were introduced.
+
