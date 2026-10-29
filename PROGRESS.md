@@ -474,3 +474,13 @@ Last verified: 2026-10-29 06:57 IST
 - [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps`; Render service `neurosql-api` remains on the free plan, linked to branch `main`, Docker context `backend`. Latest live backend remains commit `746d58d`; no backend deployment or environment change was triggered.
 - [ ] Draft PR #7 remains unapproved/unmerged. Do not apply V1/V2/V3 to Neon `main` without explicit user approval. Durable authentication and shared rate limiting remain disabled in production.
 - [x] No credentials were committed, no paid resources were introduced, no production environment settings changed, and no production schema changes were made.
+
+
+## Temporary Neon LOGIN identity probe — follow-up
+- [x] Confirmed the Neon role-provisioning API-created probe role was unsuitable for runtime testing because it inherited `neon_superuser` and elevated attributes; that role was deleted after confirming it owned no objects.
+- [x] Tried a second, restricted probe created with SQL on temporary branch `br-sweet-sky-b38kd7rm`: role attributes were non-elevated and its only membership was `neurosql_auth_runtime`. The Neon MCP `run_sql(role_name=...)` connection path rejected this SQL-created role with `invalid role OID`; the owner connection also could not `SET ROLE` because the role membership did not include the required SET option. The probe was deleted afterward.
+- [x] Final read-only verification shows only `neurosql_owner` and the NOLOGIN `neurosql_auth_runtime` role remain on the temporary branch; all five proposed application tables contain zero rows. Production `neurosql_db` on `main` still has zero visible application tables.
+- [ ] The intended readiness query has not yet been executed as a real, least-privileged LOGIN session against Neon. Use a supported provisioning/connection path or a disposable PostgreSQL integration fixture that can authenticate directly as the restricted role; do not weaken role checks or use an elevated Neon-created role.
+- [x] GitHub Actions run #168 passed the backend, frontend, and PostgreSQL 17 integration jobs. Vercel preview for code commit `7afc692e2af2649289f138ed46402be7faa582f1` is READY; the later progress-only preview was still BUILDING at the last check.
+- [x] Render remains linked to `plDilipkumar/NexusOps` branch `main` on the free plan, and the live backend remains on commit `746d58d`. No backend deployment or environment changes were made.
+- [x] No production schema or data changes were made, no credentials were committed, and no paid resources were introduced.
