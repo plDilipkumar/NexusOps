@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 14:00 IST
+Last verified: 2026-10-29 15:06 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -568,3 +568,19 @@ Last verified: 2026-10-29 14:00 IST
 - [ ] Registration is service-layer groundwork only. No email provider is configured, so no verification email is delivered and no public registration/verification endpoint is exposed. Do not enable registration until a delivery provider is configured and public responses remain generic for new and duplicate emails.
 - [ ] Draft PR #7 remains unapproved/unmerged. Proposed V1–V4 migrations are not applied to Neon `main`; a restricted production LOGIN role and HMAC secret are not configured. Durable authentication and shared rate limiting remain disabled in production.
 - [x] No credentials were committed, no paid resources were introduced, and no production database, environment settings, or Render deployment was changed.
+
+
+## Gated SMTP verification-email adapter — PR #9 (2026-10-29)
+- [x] Re-read the current feature progress tracker and inspected registration/token code, CI workflow, the open schema/runtime PRs, the dedicated Neon project and both database branches, Vercel project linkage/deployments, and the confirmed Render service before selecting this milestone.
+- [x] Added the VerificationEmailSender boundary and SmtpVerificationEmailSender. The adapter is available only when durable sessions, shared rate limiting, NEUROSQL_AUTH_EMAIL_ENABLED, and a non-empty spring.mail.host are configured. It is not an HTTP endpoint and is not yet wired into registration.
+- [x] Added spring-boot-starter-mail and non-secret environment-backed settings for the sender address and HTTPS verification URL. SMTP authentication and STARTTLS are required by default, with bounded connection/read/write timeouts; provider credentials remain external environment variables.
+- [x] The sender validates recipient normalization, sender address, HTTPS URL shape (no userinfo/query/fragment), token format, and EMAIL_VERIFICATION purpose. The raw token appears only in the email link; SMTP failures are converted to a generic exception without provider details or the token.
+- [x] Added four unit tests for successful message composition, recipient normalization, purpose rejection, unsafe URL rejection, and sanitized provider failures.
+- [x] GitHub Actions run #200 (https://github.com/plDilipkumar/NexusOps/actions/runs/40850766921) passed on code commit 3ba43a34b9f2948dd74daa21488adf682ec95331: backend Maven verification reported 152 tests, 0 failures/errors, 27 database-gated skips; disposable PostgreSQL 17 integration passed 27 tests with 0 failures/errors/skips; frontend tests and production build passed. Production API/database smoke was skipped as expected for the unmerged feature branch.
+- [x] Two early runs failed during compilation because Spring Boot's ConditionalOnProperty is not repeatable; replaced the repeated annotations with one combined expression condition. A URL assertion typo was corrected. Run #200 verified the corrected code and configuration.
+- [x] Read-only Neon checks confirmed project neurosql (lingering-dew-88806235) remains free-tier/Singapore/PostgreSQL 17.11; production neurosql_db on main (br-empty-credit-b360dmpc) has zero visible non-system tables, while temporary branch br-sweet-sky-b38kd7rm has six proposed tables. No Neon writes or migrations were performed.
+- [x] Vercel project neurosql remains linked to plDilipkumar/NexusOps on Hobby/free. No deployment exists for code commit 3ba43a34b9f2948dd74daa21488adf682ec95331; production-target deployments for main commits 6425ab4 and 746d58d report READY. Preview suppression remains not independently readable from the project API, so no preview-setting success is claimed.
+- [x] Render neurosql-api remains on the free plan, linked to plDilipkumar/NexusOps branch main, Docker context backend, auto-deploy on commit. The last listed live deployment remains commit 746d58d; no backend deployment or environment change was triggered.
+- [ ] This is an SMTP adapter only: no SMTP provider/credentials are configured, no email was sent, and registration does not yet call this adapter. Do not expose registration until delivery retry/resend behavior is designed so transient provider failures do not strand unverified accounts or reveal whether an email exists.
+- [ ] Draft PR #7 remains unapproved/unmerged. Proposed V1–V4 have not been applied to Neon main; no production LOGIN role, HMAC secret, or SMTP credentials are configured. Durable authentication and shared rate limiting remain disabled in production.
+- [x] No credentials were committed, no paid resources were introduced, and no production database schema, environment setting, or backend deployment was changed.
