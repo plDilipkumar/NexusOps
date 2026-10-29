@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
     private static final String CHECK_SQL = """
             SELECT current_database() AS database_name,
+                   session_user = current_user AS session_identity_matches_current_role,
                    to_regclass('neurosql_app.auth_login_rate_limits') IS NOT NULL AS table_exists,
                    has_schema_privilege(current_user, 'neurosql_app', 'USAGE') AS schema_usage,
                    NOT has_schema_privilege(current_user, 'neurosql_app', 'CREATE') AS schema_create_denied,
@@ -69,6 +70,7 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
 
     private static final List<String> REQUIRED_TRUE_COLUMNS = List.of(
             "table_exists",
+            "session_identity_matches_current_role",
             "schema_usage",
             "schema_create_denied",
             "not_database_owner",
