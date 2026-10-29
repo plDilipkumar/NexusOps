@@ -32,6 +32,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
     private JdbcTemplate jdbc;
     private JdbcAccountActionTokenRepository repository;
+    private AccountActionTokenService service;
     private final SessionTokenCodec codec = new SessionTokenCodec();
 
     @BeforeEach
@@ -54,6 +55,7 @@ class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
         jdbc.execute("ALTER TABLE neurosql_app.app_users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)");
         jdbc.execute("ALTER TABLE neurosql_app.app_users ADD COLUMN IF NOT EXISTS display_name VARCHAR(120)");
         jdbc.execute("ALTER TABLE neurosql_app.app_users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ");
+        jdbc.execute("ALTER TABLE neurosql_app.app_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()");
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS neurosql_app.account_action_tokens (
                     token_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -68,6 +70,7 @@ class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
                 )
                 """);
         repository = new JdbcAccountActionTokenRepository(jdbc);
+        service = new AccountActionTokenService(codec, repository);
     }
 
     @Test
@@ -174,6 +177,53 @@ class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
                 "SELECT count(*) FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
                 Integer.class,
                 digest)).isZero();
+    }
+
+    @Test
+    void verifiesEmailAndConsumesMatchingTokenAtomically() {
+        UUID userId = insertUser();
+        String rawToken = codec.issueToken();
+        String digest = codec.hashToken(rawToken);
+        repository.createToken(
+                userId,
+                AccountActionTokenService.Purpose.EMAIL_VERIFICATION,
+                digest,
+                Duration.ofHours(24).getSeconds());
+
+        assertThat(service.verifyEmail(rawToken)).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT email_verified_at IS NOT NULL FROM neurosql_app.app_users WHERE user_id = ?",
+                Boolean.class,
+                userId)).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT consumed_at IS NOT NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Boolean.class,
+                digest)).isTrue();
+
+        assertThat(service.verifyEmail(rawToken)).isFalse();
+    }
+
+    @Test
+    void wrongPurposeAndMalformedTokensCannotVerifyAnAccount() {
+        UUID userId = insertUser();
+        String rawToken = codec.issueToken();
+        String digest = codec.hashToken(rawToken);
+        repository.createToken(
+                userId,
+                AccountActionTokenService.Purpose.PASSWORD_RESET,
+                digest,
+                Duration.ofMinutes(30).getSeconds());
+
+        assertThat(service.verifyEmail("not-a-token")).isFalse();
+        assertThat(service.verifyEmail(rawToken)).isFalse();
+        assertThat(jdbc.queryForObject(
+                "SELECT email_verified_at IS NULL FROM neurosql_app.app_users WHERE user_id = ?",
+                Boolean.class,
+                userId)).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT consumed_at IS NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Boolean.class,
+                digest)).isTrue();
     }
 
     private UUID insertUser() {
