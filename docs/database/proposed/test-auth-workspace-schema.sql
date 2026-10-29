@@ -11,12 +11,12 @@ DECLARE
     workspace_a UUID;
 BEGIN
     IF (SELECT count(*) FROM information_schema.tables
-        WHERE table_schema = 'neurosql_app' AND table_type = 'BASE TABLE') <> 5 THEN
-        RAISE EXCEPTION 'Expected exactly five proposed application tables';
+        WHERE table_schema = 'neurosql_app' AND table_type = 'BASE TABLE') <> 6 THEN
+        RAISE EXCEPTION 'Expected exactly six proposed application tables';
     END IF;
 
-    IF (SELECT count(*) FROM pg_indexes WHERE schemaname = 'neurosql_app') <> 12 THEN
-        RAISE EXCEPTION 'Expected exactly twelve proposed indexes';
+    IF (SELECT count(*) FROM pg_indexes WHERE schemaname = 'neurosql_app') <> 16 THEN
+        RAISE EXCEPTION 'Expected exactly sixteen proposed indexes';
     END IF;
 
     IF (SELECT count(*)
@@ -134,7 +134,9 @@ BEGIN
     IF EXISTS (SELECT 1 FROM neurosql_app.app_users)
        OR EXISTS (SELECT 1 FROM neurosql_app.workspaces)
        OR EXISTS (SELECT 1 FROM neurosql_app.workspace_memberships)
-       OR EXISTS (SELECT 1 FROM neurosql_app.user_sessions) THEN
+       OR EXISTS (SELECT 1 FROM neurosql_app.user_sessions)
+       OR EXISTS (SELECT 1 FROM neurosql_app.auth_login_rate_limits)
+       OR EXISTS (SELECT 1 FROM neurosql_app.account_action_tokens) THEN
         RAISE EXCEPTION 'Schema contract test left fixture rows behind';
     END IF;
 END
