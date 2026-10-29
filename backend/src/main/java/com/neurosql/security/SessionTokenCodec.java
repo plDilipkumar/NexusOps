@@ -7,10 +7,10 @@ import java.util.Base64;
 import java.util.HexFormat;
 
 /**
- * Creates opaque bearer tokens for the proposed durable-session flow.
+ * Creates opaque 256-bit URL-safe tokens for the proposed durable-session and account-action flows.
  *
- * <p>Only {@link #hashToken(String)} output belongs in the database. Keep the
- * raw token in the response to the client and never log or persist it.</p>
+ * <p>Only {@link #hashToken(String)} output belongs in the relevant token-hash column. Keep
+ * raw tokens only long enough to deliver them to the intended caller; never log or persist them.</p>
  *
  * <p>This primitive is intentionally not wired into HTTP authentication until
  * the durable-auth schema is approved and the session lifecycle controls are ready.</p>
@@ -38,8 +38,7 @@ public final class SessionTokenCodec {
     }
 
     /**
-     * Returns the lowercase SHA-256 hex digest suitable for the proposed
-     * neurosql_app.user_sessions.token_hash column.
+     * Returns the lowercase SHA-256 hex digest suitable for a proposed token-hash column.
      *
      * @throws IllegalArgumentException if the input is not a canonical token
      */
