@@ -33,6 +33,11 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
                        (SELECT datdba FROM pg_database WHERE datname = current_database()),
                        'MEMBER'
                    ) AS not_database_owner_member,
+                   EXISTS (
+                       SELECT 1 FROM pg_roles role_info
+                       WHERE role_info.rolname = current_user AND role_info.rolcanlogin
+                   ) AS current_role_can_login,
+                   pg_has_role(current_user, 'neurosql_auth_runtime', 'MEMBER') AS runtime_group_membership,
                    NOT EXISTS (
                        SELECT 1 FROM pg_roles role_info
                        WHERE role_info.rolname = current_user
@@ -41,12 +46,11 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
                               OR role_info.rolbypassrls)
                    ) AS safe_role_attributes,
                    NOT EXISTS (
-                       SELECT 1 FROM pg_roles privileged_role
-                       WHERE (privileged_role.rolsuper OR privileged_role.rolcreatedb
-                              OR privileged_role.rolcreaterole OR privileged_role.rolreplication
-                              OR privileged_role.rolbypassrls)
-                         AND pg_has_role(current_user, privileged_role.oid, 'MEMBER')
-                   ) AS no_elevated_role_membership,
+                       SELECT 1 FROM pg_roles other_role
+                       WHERE other_role.rolname <> current_user
+                         AND other_role.rolname <> 'neurosql_auth_runtime'
+                         AND pg_has_role(current_user, other_role.oid, 'MEMBER')
+                   ) AS no_unexpected_role_membership,
                    has_column_privilege(current_user, 'neurosql_app.auth_login_rate_limits', 'identity_hash', 'SELECT') AS can_select_identity_hash,
                    has_column_privilege(current_user, 'neurosql_app.auth_login_rate_limits', 'failure_timestamps', 'SELECT') AS can_select_failure_timestamps,
                    has_column_privilege(current_user, 'neurosql_app.auth_login_rate_limits', 'blocked_until', 'SELECT') AS can_select_blocked_until,
@@ -69,8 +73,10 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
             "schema_create_denied",
             "not_database_owner",
             "not_database_owner_member",
+            "current_role_can_login",
+            "runtime_group_membership",
             "safe_role_attributes",
-            "no_elevated_role_membership",
+            "no_unexpected_role_membership",
             "can_select_identity_hash",
             "can_select_failure_timestamps",
             "can_select_blocked_until",
