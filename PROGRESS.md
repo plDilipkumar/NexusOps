@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 17:02 IST
+Last verified: 2026-10-29 17:56 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -619,3 +619,17 @@ Last verified: 2026-10-29 17:02 IST
 - [ ] Draft PR #7 remains unapproved and unmerged. Proposed V1–V4 migrations are not applied to Neon `main`; the restricted production LOGIN role, HMAC secret, and SMTP provider credentials are not configured. Durable authentication and shared rate limiting remain disabled in production.
 - [ ] Vercel's earlier free-tier deployment-quota warning remains a constraint; preview suppression is not independently readable through the project API.
 - [x] No credentials were committed, no paid resources were introduced, and no production schema, environment setting, or backend deployment was changed.
+
+
+## Trusted-proxy client address resolution — PR #9 (2026-10-29)
+- [x] Re-read PROGRESS.md on main and feature/session-token-codec-main, inspected the verification-request limiter and Spring Security configuration, and rechecked the dedicated Neon project/database/branches, Vercel deployment metadata, and confirmed Render service before selecting this step.
+- [x] Added TrustedClientAddressResolver as a fail-safe building block for upcoming registration/verification HTTP endpoints. It ignores X-Forwarded-For unless the direct peer matches an explicitly configured trusted-proxy CIDR, validates forwarded values as numeric IPv4/IPv6 literals without hostname resolution, caps header size/hop count, rejects repeated or malformed forwarding headers, and walks trusted proxy chains from right to left to ignore spoofed prefixes.
+- [x] Default behavior is safe: with no neurosql.security.trusted-proxy-cidrs configured, the resolver uses only the direct peer address. Invalid trusted CIDR configuration fails at startup rather than silently trusting it.
+- [x] Added seven unit tests covering untrusted peers, the empty trust list, a multi-hop chain with a spoofed prefix, malformed and repeated headers, IPv6 ranges, and invalid CIDR configuration.
+- [x] GitHub Actions run #212 (https://github.com/plDilipkumar/NexusOps/actions/runs/40873564215) passed all required jobs for test commit 2cae21d8b9e35cec6bc2ea934c708a5ffe2369a5: backend Maven verification, frontend validation tests, frontend production build, and the disposable PostgreSQL 17 integration job. The production API/database smoke job was skipped as expected for the unmerged feature branch.
+- [x] No database migration was needed. Read-only Neon checks confirmed project neurosql (lingering-dew-88806235) remains on the free tier in Singapore; production neurosql_db on main (br-empty-credit-b360dmpc) still has no visible application tables. The existing isolated branch br-sweet-sky-b38kd7rm retains the six proposed auth/workspace tables; this run made no Neon SQL writes.
+- [x] Vercel project neurosql still exposes neurosql.vercel.app and deployment metadata identifies plDilipkumar/NexusOps; the latest inspected READY deployment is from work/account-action-token-schema, not this feature commit. No deployment for this change was found and no deployment was triggered. The repo-filtered project-list query still returned no match, so linkage through that filter is not independently confirmed.
+- [x] Render service neurosql-api remains on the free plan in the confirmed Dilip Kumar workspace, linked to plDilipkumar/NexusOps branch main with Docker context backend. Latest listed live deployment remains commit 746d58d; no deployment or environment change was triggered.
+- [ ] The resolver is not yet wired into a public controller or the verification quota. Do not expose registration/verification/resend endpoints until this resolver is connected, trusted proxy ranges are explicitly confirmed for the deployment, and email/IP limits and generic HTTP responses are tested end-to-end.
+- [ ] Draft PR #7 remains unapproved/unmerged. Proposed V1–V4 have not been applied to Neon main; the production LOGIN role, HMAC secret, and SMTP credentials remain unconfigured. Durable authentication and shared rate limiting remain disabled in production.
+- [x] No credentials were committed, no paid resources were introduced, and no production database, environment setting, or backend deployment was changed.
