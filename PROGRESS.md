@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 16:08 IST
+Last verified: 2026-10-29 17:02 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -603,3 +603,19 @@ Last verified: 2026-10-29 16:08 IST
 - [ ] Draft PR #7 remains unapproved/unmerged; proposed V1–V4 have not been applied to Neon `main`. The restricted production LOGIN role and HMAC secret are not configured, so durable authentication and shared rate limiting remain disabled in production.
 - [ ] Vercel preview suppression is not independently verifiable, and Render's prior missed-auto-deploy issue remains unresolved.
 - [x] No credentials were committed, no paid resources were introduced, and no production database writes/migrations, environment changes, or backend deployments were performed.
+
+
+## Verification-request quota groundwork — PR #9 (2026-10-29)
+- [x] Re-read the default and feature-branch progress trackers, inspected the current registration/email workflow, login limiter and security configuration, and rechecked the dedicated Neon project/database/branches, Vercel project/deployment metadata, and the confirmed Render workspace/service/deploy history.
+- [x] Added `VerificationRequestRateLimiter`, a bounded process-local quota for registration and verification-resend attempts. It normalizes email addresses, stores only HMAC digests in memory, separates registration and resend buckets, and applies the existing five-attempt/15-minute policy. It is gated on durable sessions and the shared-rate-limit feature flag and uses the configured HMAC key.
+- [x] Added six deterministic tests for email normalization, the five-attempt boundary and 15-minute block, independent purpose buckets, expiry/reset, invalid email rejection, and HMAC-key length validation.
+- [x] Final GitHub Actions run #209 (https://github.com/plDilipkumar/NexusOps/actions/runs/40866076898) passed on final code/test commit `f5944fa81f7a4d8deac9bdac511050e10dd0a8af`: backend Maven verification, disposable PostgreSQL 17 integration job, frontend validation tests, and frontend production build passed. Production API/database smoke was skipped as expected for the unmerged feature branch.
+- [x] Two intermediate CI runs failed while the service and test signatures were being revised across sequential commits (#207 and #208); the service was changed to a bounded HMAC-keyed local limiter, the tests were updated to match, and final run #209 passed.
+- [x] Read-only Neon query on production branch `br-empty-credit-b360dmpc` confirmed database `neurosql_db`, PostgreSQL 17.11, zero visible non-system tables, and zero visible non-system views. Temporary branch `br-sweet-sky-b38kd7rm` contains the six proposed `neurosql_app` tables; a read-only count confirmed zero users, workspaces, memberships, sessions, login-rate-limit rows, and account-action tokens. No SQL writes or migrations were performed.
+- [x] Neon project `neurosql` (`lingering-dew-88806235`) remains on the free tier in Singapore. No new Neon branch or paid resource was created.
+- [x] Render workspace `Dilip kumar's workspace` was confirmed. Service `neurosql-api` (`srv-dbgb6vt9fdbs73da93n0`) remains on the free plan, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy enabled, and preview generation disabled. Latest listed live deployment remains commit `746d58d`; no backend deployment or environment change was triggered.
+- [x] Vercel project `neurosql` remains on Hobby/free with `neurosql.vercel.app` attached. Deployment metadata confirms GitHub repo `plDilipkumar/NexusOps`; the project-list query filtered by repository returned no row, so direct linkage through that filter is not independently confirmed. The latest listed READY deployment belongs to `work/account-action-token-schema` commit `789f3ec`, not this feature branch. No deployment was found for the new limiter commits, and no new Vercel deployment was triggered.
+- [ ] This is only a process-local, email-keyed defense-in-depth quota. It is not distributed, does not yet rate-limit by trusted client IP, and must not be described as sufficient production abuse protection. Public registration/verification/resend controllers are still not exposed.
+- [ ] Draft PR #7 remains unapproved and unmerged. Proposed V1–V4 migrations are not applied to Neon `main`; the restricted production LOGIN role, HMAC secret, and SMTP provider credentials are not configured. Durable authentication and shared rate limiting remain disabled in production.
+- [ ] Vercel's earlier free-tier deployment-quota warning remains a constraint; preview suppression is not independently readable through the project API.
+- [x] No credentials were committed, no paid resources were introduced, and no production schema, environment setting, or backend deployment was changed.
