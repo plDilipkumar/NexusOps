@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 04:03 IST
+Last verified: 2026-10-29 10:04 IST
 
 ## Verified — main branch and production baseline
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -76,3 +76,17 @@ Last verified: 2026-10-29 04:03 IST
 - [ ] This is the shared-state schema proposal and its contract test only; the JDBC limiter is not yet implemented or wired. Next, add a validated HMAC key configuration, transactional row-locking operations and bounded stale-row cleanup, then test concurrent requests against disposable PostgreSQL. Keep the legacy Basic-auth limiter separate.
 - [ ] Draft PR #7 remains unapproved/unmerged. Do not apply V3 or any other proposed auth migration to Neon `main` without explicit user approval. Durable auth remains disabled in production.
 - [x] No credentials were committed, no paid resources were introduced, and no production environment settings or schema were changed.
+
+
+## Proposed account verification and password-reset token schema — draft PR #7 (2026-10-29)
+- [x] Added proposed-only `docs/database/proposed/V4__account_action_tokens.sql` with `account_action_tokens`, a purpose allowlist (`EMAIL_VERIFICATION`, `PASSWORD_RESET`), SHA-256-hex token digests only, expiry/consumption constraints, a single-use trigger that prevents resetting `consumed_at`, and indexes for user/purpose history and expired-token maintenance.
+- [x] Added least-privilege grants for the runtime group: it can create an unverified account without setting `email_verified_at`, update only password/verification/timestamp fields, read/insert action-token fields, and update only `consumed_at`. It cannot update token hashes or directly delete action tokens.
+- [x] Added `test-auth-account-tokens.sql` and wired V4 plus its contract test into the schema-contract CI job. Updated the schema contract to expect six application tables and sixteen indexes after V4.
+- [x] GitHub Actions run #175 (https://github.com/plDilipkumar/NexusOps/actions/runs/40818857840) passed backend Maven verification, frontend production build, and all proposed-schema contract steps on disposable PostgreSQL 17, including V4 privilege, constraint, single-use, and fixture-rollback checks. Production smoke was skipped for the unmerged draft PR.
+- [x] Applied the additive V4 proposal only to temporary Neon branch `br-sweet-sky-b38kd7rm`, database `neurosql_db`. Read-only checks confirmed six application tables, sixteen indexes, one single-use trigger, expected runtime grants, and zero remaining users/action-token/rate-limit test rows. A direct temporary-branch transaction exercised token consumption and rejection of reactivation, unsupported purpose, and expired tokens.
+- [x] Rechecked Neon `main` (`br-empty-credit-b360dmpc`): `neurosql_db` remains PostgreSQL 17.11 with zero visible application tables. No production SQL writes or migrations were performed.
+- [x] Rechecked Vercel project `neurosql` linkage to `plDilipkumar/NexusOps` and Render service `neurosql-api`: Render remains on the free plan, linked to branch `main`, with live deployment commit `746d58d`. No backend deployment or environment change was triggered.
+- [ ] Vercel reports a build-rate-limit failure for the SQL/CI-only commit `789f3ec`; no successful preview for this schema commit is claimed. The latest previously ready feature preview is not a production release.
+- [ ] PR #7 remains draft/unapproved/unmerged. Do not apply V1–V4 to Neon `main` without explicit user approval. Durable auth is still disabled in production; no production LOGIN role or HMAC key has been configured.
+- [ ] V4 is schema groundwork only: registration, email delivery, verification/reset token issuance and redemption endpoints, token cleanup policy, and workspace lifecycle administration remain unfinished.
+- [x] No credentials were committed, no paid resources were introduced, and no production environment settings, data, schema, or backend deployment were changed.
