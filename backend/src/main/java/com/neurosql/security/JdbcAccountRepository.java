@@ -29,10 +29,73 @@ public class JdbcAccountRepository {
             LIMIT 1
             """;
 
+    static final String CREATE_UNVERIFIED_ACCOUNT_SQL = """
+            INSERT INTO neurosql_app.app_users (email, password_hash, display_name)
+            VALUES (?, ?, ?)
+            ON CONFLICT (lower(email)) DO NOTHING
+            RETURNING user_id
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public JdbcAccountRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * Creates an active-but-unverified account using only the columns granted to
+     * the proposed runtime role. A case-insensitive duplicate email is a no-op;
+     * callers must return the same public response for both outcomes.
+     *
+     * @return the new user id, or empty when the email already exists
+     */
+    public Optional<UUID> createUnverifiedAccount(String email, String passwordHash, String displayName) {
+        String normalizedEmail = normalizeRegistrationEmail(email);
+        String normalizedDisplayName = normalizeDisplayName(displayName);
+        if (passwordHash == null || passwordHash.length() < 50 || passwordHash.length() > 255) {
+            throw new IllegalArgumentException("A supported encoded password hash is required.");
+        }
+
+        List<UUID> createdUsers = jdbcTemplate.query(
+                CREATE_UNVERIFIED_ACCOUNT_SQL,
+                (resultSet, rowNumber) -> resultSet.getObject("user_id", UUID.class),
+                normalizedEmail,
+                passwordHash,
+                normalizedDisplayName);
+        return createdUsers.stream().findFirst();
+    }
+
+    private static String normalizeRegistrationEmail(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("A valid email address is required.");
+        }
+        String normalized = email.strip().toLowerCase(Locale.ROOT);
+        int at = normalized.indexOf('@');
+        if (normalized.length() > 254
+                || at <= 0
+                || at > 64
+                || at != normalized.lastIndexOf('@')
+                || at == normalized.length() - 1
+                || !normalized.substring(at + 1).contains(".")
+                || normalized.startsWith(".")
+                || normalized.endsWith(".")
+                || normalized.contains("..")
+                || normalized.chars().anyMatch(Character::isWhitespace)) {
+            throw new IllegalArgumentException("A valid email address is required.");
+        }
+        return normalized;
+    }
+
+    private static String normalizeDisplayName(String displayName) {
+        if (displayName == null) {
+            throw new IllegalArgumentException("A display name is required.");
+        }
+        String normalized = displayName.strip();
+        int length = normalized.codePointCount(0, normalized.length());
+        if (length < 1 || length > 120 || normalized.codePoints().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("A display name of 1 to 120 printable characters is required.");
+        }
+        return normalized;
     }
 
     public Optional<LoginAccount> findActiveVerifiedByEmail(String email) {
