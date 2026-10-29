@@ -21,7 +21,7 @@ class SharedLoginRateLimitHealthIndicatorTest {
     private static final String EXPECTED_DATABASE = "neurosql_db";
 
     @Test
-    void reportsUpWhenExpectedDatabaseAndAllRequiredLeastPrivilegeGrantsArePresent() {
+    void reportsUpWhenDedicatedDatabaseAndAllLeastPrivilegeChecksPass() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForMap(anyString())).thenReturn(readyRow(EXPECTED_DATABASE));
 
@@ -33,6 +33,8 @@ class SharedLoginRateLimitHealthIndicatorTest {
                         && sql.contains("current_database()")
                         && sql.contains("has_column_privilege")
                         && sql.contains("has_table_privilege")
+                        && sql.contains("pg_roles")
+                        && sql.contains("pg_has_role")
                         && !sql.contains("INSERT INTO")
                         && !sql.contains("UPDATE ")
                         && !sql.contains("DELETE FROM")));
@@ -52,12 +54,55 @@ class SharedLoginRateLimitHealthIndicatorTest {
     }
 
     @Test
-    void reportsDownWhenRuntimeRoleCanModifyIdentityHashOrTruncateTable() {
+    void reportsDownWhenRuntimeRoleCanModifyIdentityHash() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         Map<String, Object> result = readyRow(EXPECTED_DATABASE);
         result.put("identity_hash_update_denied", false);
         when(jdbc.queryForMap(anyString())).thenReturn(result);
 
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void reportsDownWhenRuntimeRoleCanTruncateRateLimitState() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object> result = readyRow(EXPECTED_DATABASE);
+        result.put("truncate_denied", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(result);
+
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void reportsDownWhenRuntimeRoleHasElevatedAttributesOrMembership() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object> elevatedAttributes = readyRow(EXPECTED_DATABASE);
+        elevatedAttributes.put("safe_role_attributes", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(elevatedAttributes);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+
+        Map<String, Object> elevatedMembership = readyRow(EXPECTED_DATABASE);
+        elevatedMembership.put("no_elevated_role_membership", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(elevatedMembership);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void reportsDownWhenRuntimeRoleCanCreateObjectsOrOwnsDatabase() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object> schemaCreate = readyRow(EXPECTED_DATABASE);
+        schemaCreate.put("schema_create_denied", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(schemaCreate);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+
+        Map<String, Object> databaseOwner = readyRow(EXPECTED_DATABASE);
+        databaseOwner.put("not_database_owner", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(databaseOwner);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+
+        Map<String, Object> ownerMember = readyRow(EXPECTED_DATABASE);
+        ownerMember.put("not_database_owner_member", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(ownerMember);
         assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
     }
 
@@ -108,6 +153,11 @@ class SharedLoginRateLimitHealthIndicatorTest {
                 Map.entry("database_name", databaseName),
                 Map.entry("table_exists", true),
                 Map.entry("schema_usage", true),
+                Map.entry("schema_create_denied", true),
+                Map.entry("not_database_owner", true),
+                Map.entry("not_database_owner_member", true),
+                Map.entry("safe_role_attributes", true),
+                Map.entry("no_elevated_role_membership", true),
                 Map.entry("can_select_identity_hash", true),
                 Map.entry("can_select_failure_timestamps", true),
                 Map.entry("can_select_blocked_until", true),
