@@ -108,6 +108,49 @@ class VerificationRequestRateLimiterTest {
     }
 
     @Test
+    void canonicalizesEquivalentIpv6AddressesToTheSameIpQuota() {
+        for (int attempt = 0; attempt < VerificationRequestRateLimiter.MAX_IP_ATTEMPTS; attempt++) {
+            String address = attempt % 2 == 0 ? "2001:db8::1" : "2001:0db8:0:0:0:0:0:1";
+            VerificationRequestRateLimiter.Decision decision = limiter.acquire(
+                    VerificationRequestRateLimiter.Purpose.REGISTRATION,
+                    "ipv6-person" + attempt + "@example.test",
+                    address);
+            assertThat(decision.permitted()).isTrue();
+        }
+
+        VerificationRequestRateLimiter.Decision blocked = limiter.acquire(
+                VerificationRequestRateLimiter.Purpose.RESEND,
+                "ipv6-another@example.test",
+                "2001:db8::1");
+        assertThat(blocked.permitted()).isFalse();
+        assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
+    }
+
+    @Test
+    void malformedEmailAttemptsStillConsumeTheClientIpQuota() {
+        assertThatThrownBy(() -> limiter.acquire(
+                VerificationRequestRateLimiter.Purpose.REGISTRATION,
+                "not-an-email",
+                "203.0.113.50"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        for (int attempt = 0; attempt < VerificationRequestRateLimiter.MAX_IP_ATTEMPTS - 1; attempt++) {
+            VerificationRequestRateLimiter.Decision decision = limiter.acquire(
+                    VerificationRequestRateLimiter.Purpose.REGISTRATION,
+                    "valid" + attempt + "@example.test",
+                    "203.0.113.50");
+            assertThat(decision.permitted()).isTrue();
+        }
+
+        VerificationRequestRateLimiter.Decision blocked = limiter.acquire(
+                VerificationRequestRateLimiter.Purpose.REGISTRATION,
+                "last@example.test",
+                "203.0.113.50");
+        assertThat(blocked.permitted()).isFalse();
+        assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
+    }
+
+    @Test
     void rejectsInvalidClientAddressesInsteadOfSharingAnUnknownIpBucket() {
         assertThatThrownBy(() -> limiter.acquire(
                 VerificationRequestRateLimiter.Purpose.REGISTRATION,

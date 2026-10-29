@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 17:56 IST
+Last verified: 2026-10-29 19:00 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -633,3 +633,19 @@ Last verified: 2026-10-29 17:56 IST
 - [ ] The resolver is not yet wired into a public controller or the verification quota. Do not expose registration/verification/resend endpoints until this resolver is connected, trusted proxy ranges are explicitly confirmed for the deployment, and email/IP limits and generic HTTP responses are tested end-to-end.
 - [ ] Draft PR #7 remains unapproved/unmerged. Proposed V1–V4 have not been applied to Neon main; the production LOGIN role, HMAC secret, and SMTP credentials remain unconfigured. Durable authentication and shared rate limiting remain disabled in production.
 - [x] No credentials were committed, no paid resources were introduced, and no production database, environment setting, or backend deployment was changed.
+
+
+## Client-IP-aware verification request quota — PR #9 (2026-10-29)
+- [x] Re-read the feature-branch progress tracker, inspected the current verification-email workflow, limiter, trusted-proxy resolver and Spring Security configuration, and rechecked the dedicated Neon project/database, Vercel linkage/deployments, and confirmed Render service/deploy history.
+- [x] Extended `VerificationRequestRateLimiter` with a client-IP-aware overload. Each normalized email keeps the five-attempt/15-minute purpose-specific quota; each canonical client IP shares a 30-attempt/15-minute quota across registration and resend purposes.
+- [x] Reused the resolver's numeric IPv4/IPv6 canonicalization so equivalent IPv6 forms share a quota. Forwarding headers are not accepted by the limiter; the future HTTP boundary must pass only the address returned by `TrustedClientAddressResolver`.
+- [x] Malformed email attempts consume the IP quota before email validation. At the 10,000-entry memory cap, the limiter now fails closed for new identities rather than evicting live quotas or active blocks; it removes only expired blocks or windows whose failures have aged out.
+- [x] Added tests for shared IP quotas across emails/purposes, email quotas across distinct IPs, equivalent IPv6 forms, malformed-email IP accounting, invalid IP rejection, and capacity exhaustion while preserving an existing active block.
+- [ ] GitHub Actions verification for the new quota tests is pending for the latest code commit; no CI result is claimed until the run is observed.
+- [x] Read-only Neon main-branch query confirmed `neurosql_db`, PostgreSQL 17.11, zero visible non-system tables and zero visible non-system views. The dedicated project `neurosql` remains on the free tier in Singapore; no SQL writes or migrations were performed.
+- [x] Neon branch listing shows the production `main` branch and two isolated schema-check branches. The proposed authentication schema remains on the temporary branch only; no changes were applied to `main`.
+- [x] Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` on Hobby/free and has `neurosql.vercel.app` attached. The latest inspected READY deployment belongs to `work/account-action-token-schema`, not this feature commit. No new deployment was triggered; the earlier deployment-quota warning remains a constraint.
+- [x] Render workspace `Dilip kumar's workspace` was selected by prior user confirmation. Service `neurosql-api` remains on the free plan, linked to repository branch `main` with Docker context `backend`; the latest listed live deployment remains commit `746d58d`. No backend deployment or environment change was triggered.
+- [ ] The limiter remains process-local and is not sufficient alone for multi-instance production abuse protection. It is not yet connected to an HTTP controller; trusted proxy ranges must be deliberately configured before the resolver is used to derive a client IP.
+- [ ] Draft PR #7 remains unapproved/unmerged. Proposed V1–V4 migrations are not applied to Neon `main`; production LOGIN role, HMAC secret, and SMTP credentials remain unconfigured. Durable authentication and shared rate limiting remain disabled in production.
+- [x] No credentials were committed, no paid resources were introduced, and no production schema, environment setting, or backend deployment was changed.

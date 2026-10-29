@@ -70,22 +70,20 @@ public class VerificationRequestRateLimiter {
         }
 
         Instant now = clock.instant();
-        Decision emailDecision = acquireEmail(purpose, email, now);
         String ipKey = "ip:" + identityHasher.hash("ip:" + canonicalClientAddress);
         Decision ipDecision = acquireBucket(ipKey, MAX_IP_ATTEMPTS, now);
-
-        if (emailDecision.permitted() && ipDecision.permitted()) {
-            return Decision.permit();
+        if (!ipDecision.permitted()) {
+            return ipDecision;
         }
-        return Decision.throttled(Math.max(
-                emailDecision.permitted() ? 0 : emailDecision.retryAfterSeconds(),
-                ipDecision.permitted() ? 0 : ipDecision.retryAfterSeconds()));
+
+        // Count malformed-email attempts against the IP before validating the email.
+        return acquireEmail(purpose, email, now);
     }
 
     private Decision acquireEmail(Purpose purpose, String email, Instant now) {
         Objects.requireNonNull(purpose, "purpose");
         String normalizedEmail = JdbcAccountRepository.normalizeRegistrationEmail(email);
-        String identityKey = "email:" + purpose.key() + ":" + identityHasher.hash("email:" + normalizedEmail);
+        String identityKey = "email:" + purpose.key() + ":" + identityHasher.hash(normalizedEmail);
         return acquireBucket(identityKey, MAX_ATTEMPTS, now);
     }
 
