@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 11:08 IST
+Last verified: 2026-10-29 11:10 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -516,8 +516,8 @@ Last verified: 2026-10-29 11:08 IST
 - [x] Added a feature-gated JDBC repository for neurosql_app.account_action_tokens with PostgreSQL-clock-based expiry and an atomic UPDATE ... WHERE consumed_at IS NULL AND expires_at > now() RETURNING user_id consume operation. A mismatched purpose, malformed digest, expired token, or replay returns no user.
 - [x] Added AccountActionTokenService for 256-bit URL-safe single-use tokens. Only lowercase SHA-256 digests are persisted; email-verification tokens expire after 24 hours and password-reset tokens after 30 minutes. The raw token is redacted from toString() and the service is not exposed through HTTP/email delivery yet.
 - [x] Added unit tests for digest-only persistence, both lifetimes, expected-purpose consumption, malformed-token rejection, required inputs, and token redaction. Added disposable PostgreSQL 17 integration tests for digest storage, purpose mismatch, expiry, one-time use, and concurrent consumers. The integration test refuses non-loopback URLs and databases other than neurosql_test.
-- [x] Updated the CI integration test list to execute the new PostgreSQL test class. The previous baseline run #179 passed all existing backend, frontend, and PostgreSQL jobs; verification for this commit is pending.
+- [x] GitHub Actions run #180 (ID 40824500544) passed: backend Maven verification 136 tests, 0 failures/errors and 20 database-gated skips in the standard job; PostgreSQL 17 integration job 20 tests, 0 failures/errors/skips; frontend validation tests and production build passed. Production smoke was skipped as expected for the unmerged feature branch.
 - [ ] This is repository/service groundwork only. Registration, email delivery, verification/reset HTTP endpoints, generic password-reset request handling, and transactional password/verification updates remain unfinished. Do not expose raw action tokens in HTTP responses or logs.
 - [ ] Proposed V4 remains in draft PR #7 and has not been applied to Neon main. The new adapter is feature-gated and must not be enabled until V1–V4 and runtime grants are approved and provisioned.
-- [x] After the Vercel free-tier deployment-limit notice, the project update API accepted previewDeploymentsDisabled=true for neurosql. The API read-back does not expose that setting directly; the existing neurosql.vercel.app domain remains attached and the latest production deployment for main commit 6425ab4 remains READY. Verify preview suppression against this feature commit before treating the quota mitigation as confirmed.
+- [x] After the Vercel free-tier deployment-limit notice, the project update API accepted previewDeploymentsDisabled=true for neurosql. Deployment lookup for code commit 7a5825251c898c1166541139bcf933a2c0c1b719 returned zero deployments; neurosql.vercel.app remains attached and the latest production deployment for main commit 6425ab4 remains READY. The project read API does not expose the preview-disable flag, and the existing quota block could also explain the absence of a preview, so the setting itself is not independently confirmed.
 - [x] Neon neurosql remains on the free tier in Singapore/PostgreSQL 17. neurosql_db on main still has zero visible application tables; six proposed tables exist only on temporary branch br-sweet-sky-b38kd7rm. Render neurosql-api remains on the free plan and main, live deployment commit 746d58d. No Neon main writes, environment changes, backend deployments, credentials, or paid resources were introduced.
