@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 05:15 IST
+Last verified: 2026-10-29 06:02 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -424,3 +424,17 @@ Last verified: 2026-10-29 05:15 IST
 - Vercel preview for commit `2a323cfd62f3c9de450f20a54fc5e3739782cef7` reports READY: https://neurosql-r4kpzqobn-dilips-projects-d0ae994d.vercel.app. This is a preview, not production.
 - Production remains unchanged: Neon `neurosql_db` on `main` still has zero application tables; the five proposed tables exist only on temporary branch `br-sweet-sky-b38kd7rm`, whose application tables contain zero rows. Render `neurosql-api` remains on free plan/branch `main`, live commit `746d58d`; no backend deployment or environment changes were made.
 - Draft PR #7 remains unapproved/unmerged, so V1/V2/V3 are not applied to Neon `main`; no production LOGIN role or HMAC secret is configured. Durable auth and shared rate limiting remain disabled in production.
+
+
+## Shared limiter operational readiness indicator — PR #9 (not merged)
+- [x] Re-read this progress tracker, inspected the durable-login limiter/configuration, checked both PRs, and reverified the dedicated Neon project/database/branches, Vercel linkage/deployments, and Render service before selecting this step.
+- [x] Added `SharedLoginRateLimitHealthIndicator`, a read-only Spring Boot health contributor named `sharedLoginRateLimit`, included in `/actuator/health/readiness`. With both durable-session and shared-limiter flags off it reports UP without touching the database; inconsistent flags report DOWN. When both are on, it checks the configured expected database (defaults to `neurosql_db`), table/schema presence, required column-level SELECT/INSERT/UPDATE permissions, DELETE permission, and the least-privilege boundaries that the runtime role must not update `identity_hash` or TRUNCATE the table. It returns only health status and does not expose SQL/connection errors.
+- [x] Added explicit `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED` and `NEUROSQL_AUTH_EXPECTED_DATABASE` properties with safe defaults. Health detail exposure is disabled; the HMAC key remains an environment-only secret.
+- [x] Added seven unit tests for healthy grants, missing required grants, excessive privileges, wrong database, database failure redaction, disabled flags without database access, and inconsistent flags.
+- [x] GitHub Actions run #160 (ID `40794742920`) passed backend tests, frontend production build, and the PostgreSQL 17 HTTP/JDBC integration job. Production API/database smoke was skipped as expected for an unmerged feature branch.
+- [x] Vercel preview for code commit `d9c8b88050d5430a7647de7d0384fbde06e2634c` reports READY: https://neurosql-4n3vcmi3c-dilips-projects-d0ae994d.vercel.app. This is a preview, not production.
+- [x] Read-only Neon checks: production branch `br-empty-credit-b360dmpc` / database `neurosql_db` still has zero application tables. Temporary branch `br-sweet-sky-b38kd7rm` contains the five proposed auth/rate-limit tables. A read-only privilege query on that temporary branch confirmed the expected database, schema usage, required column SELECT/INSERT/UPDATE grants, DELETE permission, and denial of identity-hash UPDATE and TRUNCATE for `neurosql_auth_runtime`. No rows were written and no schema changes were made in this run.
+- [x] Render service `neurosql-api` was rechecked in the confirmed Dilip Kumar workspace: free plan, Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`; latest listed live deployment remains commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`. No backend deployment or environment change was triggered.
+- [ ] This indicator is implemented and CI-tested but is not enabled against production: draft PR #7 remains unapproved/unmerged; V1/V2/V3 are not applied to Neon `main`, and no dedicated production LOGIN role or HMAC key has been configured.
+- [ ] Next: after explicit schema approval, configure the dedicated least-privileged LOGIN identity and runtime HMAC secret securely, then verify the readiness endpoint using that identity on the isolated Neon branch before any production activation.
+- [x] No credentials were committed, no paid resources were introduced, no production environment settings changed, no backend deployment was triggered, and no production database writes or migrations were performed.
