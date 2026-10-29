@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 11:12 IST
+Last verified: 2026-10-29 11:57 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -523,3 +523,17 @@ Last verified: 2026-10-29 11:12 IST
 - [ ] Proposed V4 remains in draft PR #7 and has not been applied to Neon main. The new adapter is feature-gated and must not be enabled until V1–V4 and runtime grants are approved and provisioned.
 - [x] After the Vercel free-tier deployment-limit notice, the project update API accepted previewDeploymentsDisabled=true for neurosql. Deployment lookups for code commits 7a5825251c898c1166541139bcf933a2c0c1b719 and 847db1a89ab19be3a10dec426f8c53e2d41b5be1 returned zero deployments; neurosql.vercel.app remains attached and the latest production deployment for main commit 6425ab4 remains READY. The project read API does not expose the preview-disable flag, and the quota block could also explain the absence of previews, so the setting itself is not independently confirmed.
 - [x] Neon neurosql remains on the free tier in Singapore/PostgreSQL 17. neurosql_db on main still has zero visible application tables; six proposed tables exist only on temporary branch br-sweet-sky-b38kd7rm. Render neurosql-api remains on the free plan and main, live deployment commit 746d58d. No Neon main writes, environment changes, backend deployments, credentials, or paid resources were introduced.
+
+## Atomic email verification persistence — PR #9 (not merged; schema remains draft)
+- [x] Re-read this progress tracker and inspected the current account-action token service/repository, PRs #7/#9, the dedicated Neon project/database/branches, Vercel project/deployments, and the Render service/deploy history before selecting this step.
+- [x] Added `AccountActionTokenService.verifyEmail`, which hashes the supplied opaque token and returns a generic boolean result; malformed, wrong-purpose, expired, replayed, already-verified, or inactive-account cases do not disclose account identity.
+- [x] Added a single PostgreSQL data-modifying CTE that consumes a valid `EMAIL_VERIFICATION` token and marks the corresponding active, not-yet-verified account's `email_verified_at` and `updated_at` in the same SQL statement. A token is not consumed when its digest is malformed, expired, already consumed, or for the password-reset purpose.
+- [x] Extended the existing disposable PostgreSQL 17 integration suite to verify successful email verification, token consumption, replay denial, malformed-token denial, and wrong-purpose denial. No migration was added; this uses the already proposed V4 schema only.
+- [x] GitHub Actions run #186 (ID `40829612443`) passed: backend Maven verification reported 139 tests, 0 failures/errors and 23 database-only tests skipped in the standard job; the disposable PostgreSQL 17 integration job passed 23 tests with 0 failures/errors/skips; frontend durable-auth tests and production build passed. Production API/database smoke was skipped as expected for the unmerged feature branch.
+- [x] Read-only Neon verification: project `neurosql` (`lingering-dew-88806235`), PostgreSQL 17.11, production database `neurosql_db` on `main` (`br-empty-credit-b360dmpc`) still has zero visible application tables/views. Temporary branch `br-sweet-sky-b38kd7rm` contains the six proposed `neurosql_app` tables; current counts for users, account-action tokens, and rate-limit rows are zero. No Neon writes were performed in this run.
+- [x] Vercel project `neurosql` remains associated with `plDilipkumar/NexusOps`; latest inspected production deployments remain `READY` for main commits `6425ab4` and `746d58d`. No deployment was found for code commit `9332c365492a0b93107d62f50990025b0152f410`, so no preview for this change is claimed. The API does not expose the preview-deployments-disabled flag for independent verification.
+- [x] Render service `neurosql-api` remains on the free plan, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy on commit; latest listed live deployment is still `746d58d`. No backend deployment or environment change was triggered.
+- [ ] This is the persistence operation only. Registration, email delivery, a public verification endpoint, password-reset workflow, and workspace lifecycle administration remain unfinished. Do not return raw tokens in HTTP responses or log them.
+- [ ] Draft PR #7 still contains proposed V1–V4 and remains unapproved/unmerged. No proposed migration has been applied to Neon `main`; explicit user approval is required before any production schema change. Durable authentication and shared rate limiting remain disabled in production.
+- [x] No credentials were committed, no paid resources were introduced, and no production environment settings or database schemas were changed.
+
