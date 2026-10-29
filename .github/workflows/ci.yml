@@ -96,6 +96,14 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: neurosql_test
         run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V3__shared_login_rate_limits.sql
+      - name: Apply proposed account action token schema
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V4__account_action_tokens.sql
       - name: Verify schema constraints and fixture cleanup
         env:
           PGHOST: localhost
@@ -120,6 +128,14 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: neurosql_test
         run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-auth-login-rate-limits.sql
+      - name: Verify account action token schema and least-privilege grants
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-auth-account-tokens.sql
 
   production-smoke:
     name: Production API and database smoke test
