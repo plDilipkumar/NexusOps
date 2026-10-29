@@ -69,6 +69,85 @@ class VerificationRequestRateLimiterTest {
     }
 
     @Test
+    void ipQuotaIsSharedAcrossEmailsAndPurposes() {
+        for (int attempt = 0; attempt < VerificationRequestRateLimiter.MAX_IP_ATTEMPTS; attempt++) {
+            VerificationRequestRateLimiter.Purpose purpose = attempt % 2 == 0
+                    ? VerificationRequestRateLimiter.Purpose.REGISTRATION
+                    : VerificationRequestRateLimiter.Purpose.RESEND;
+            VerificationRequestRateLimiter.Decision decision = limiter.acquire(
+                    purpose, "person" + attempt + "@example.test", "203.0.113.7");
+            assertThat(decision.permitted()).isTrue();
+        }
+
+        VerificationRequestRateLimiter.Decision blocked = limiter.acquire(
+                VerificationRequestRateLimiter.Purpose.REGISTRATION,
+                "another@example.test",
+                "203.0.113.7");
+
+        assertThat(blocked.permitted()).isFalse();
+        assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
+    }
+
+    @Test
+    void emailQuotaStillAppliesAcrossDifferentClientAddresses() {
+        for (int attempt = 1; attempt <= VerificationRequestRateLimiter.MAX_ATTEMPTS; attempt++) {
+            VerificationRequestRateLimiter.Decision decision = limiter.acquire(
+                    VerificationRequestRateLimiter.Purpose.RESEND,
+                    "alice@example.test",
+                    "198.51.100." + attempt);
+            assertThat(decision.permitted()).isTrue();
+        }
+
+        VerificationRequestRateLimiter.Decision blocked = limiter.acquire(
+                VerificationRequestRateLimiter.Purpose.RESEND,
+                "alice@example.test",
+                "198.51.100.6");
+
+        assertThat(blocked.permitted()).isFalse();
+        assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
+    }
+
+    @Test
+    void rejectsInvalidClientAddressesInsteadOfSharingAnUnknownIpBucket() {
+        assertThatThrownBy(() -> limiter.acquire(
+                VerificationRequestRateLimiter.Purpose.REGISTRATION,
+                "alice@example.test",
+                "untrusted-proxy.example"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("valid client IP");
+
+        assertThatThrownBy(() -> limiter.acquire(
+                VerificationRequestRateLimiter.Purpose.REGISTRATION,
+                "alice@example.test",
+                "203.0.113.7, 10.0.0.1"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void capacityFailsClosedWithoutEvictingAnActiveEmailBlock() {
+        for (int attempt = 0; attempt < VerificationRequestRateLimiter.MAX_ATTEMPTS; attempt++) {
+            limiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, "blocked@example.test");
+        }
+        clock.advanceSeconds(60);
+
+        VerificationRequestRateLimiter.Decision lastCapacityAttempt = null;
+        for (int index = 0; index < VerificationRequestRateLimiter.MAX_TRACKED_IDENTITIES; index++) {
+            lastCapacityAttempt = limiter.acquire(
+                    VerificationRequestRateLimiter.Purpose.REGISTRATION,
+                    "filler" + index + "@example.test");
+        }
+
+        assertThat(lastCapacityAttempt).isNotNull();
+        assertThat(lastCapacityAttempt.permitted()).isFalse();
+        assertThat(lastCapacityAttempt.retryAfterSeconds()).isEqualTo(900);
+
+        VerificationRequestRateLimiter.Decision existingBlock =
+                limiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, "blocked@example.test");
+        assertThat(existingBlock.permitted()).isFalse();
+        assertThat(existingBlock.retryAfterSeconds()).isEqualTo(840);
+    }
+
+    @Test
     void invalidEmailIsRejected() {
         assertThatThrownBy(() -> limiter.acquire(
                 VerificationRequestRateLimiter.Purpose.RESEND, "not-an-email"))
