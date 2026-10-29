@@ -1,7 +1,6 @@
 package com.neurosql.security;
 
 import java.sql.Timestamp;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -42,7 +41,6 @@ public class JdbcAccountActionTokenRepository {
             """;
 
     private static final Pattern TOKEN_HASH_PATTERN = Pattern.compile("[0-9a-f]{64}");
-    private static final long MAX_TOKEN_LIFETIME_SECONDS = Duration.ofHours(24).getSeconds();
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -62,7 +60,7 @@ public class JdbcAccountActionTokenRepository {
             String tokenHash,
             long lifetimeSeconds) {
         if (userId == null || purpose == null || !isValidHash(tokenHash)
-                || lifetimeSeconds < 1 || lifetimeSeconds > MAX_TOKEN_LIFETIME_SECONDS) {
+                || lifetimeSeconds < 1 || lifetimeSeconds > purpose.lifetime().getSeconds()) {
             throw new IllegalArgumentException("A user, valid purpose, token digest, and supported lifetime are required.");
         }
 

@@ -1,6 +1,7 @@
 package com.neurosql.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -155,6 +156,24 @@ class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+
+    @Test
+    void rejectsLifetimeLongerThanTheSelectedPurposeAllows() {
+        UUID userId = insertUser();
+        String digest = codec.hashToken(codec.issueToken());
+
+        assertThatThrownBy(() -> repository.createToken(
+                userId,
+                AccountActionTokenService.Purpose.PASSWORD_RESET,
+                digest,
+                Duration.ofMinutes(31).getSeconds()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Integer.class,
+                digest)).isZero();
     }
 
     private UUID insertUser() {
