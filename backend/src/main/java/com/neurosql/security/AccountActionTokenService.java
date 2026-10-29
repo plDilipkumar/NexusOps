@@ -80,6 +80,23 @@ public class AccountActionTokenService {
         return tokens.consumeToken(tokenHash, purpose);
     }
 
+    /**
+     * Verifies an email address by consuming a matching, unexpired one-time token
+     * and updating account verification state atomically in PostgreSQL.
+     *
+     * <p>The boolean result intentionally does not reveal whether an account exists,
+     * is already verified, or has an expired/replayed token.</p>
+     */
+    public boolean verifyEmail(String rawToken) {
+        final String tokenHash;
+        try {
+            tokenHash = tokenCodec.hashToken(rawToken);
+        } catch (IllegalArgumentException invalidToken) {
+            return false;
+        }
+        return tokens.consumeEmailVerificationToken(tokenHash);
+    }
+
     public enum Purpose {
         EMAIL_VERIFICATION(Duration.ofHours(24)),
         PASSWORD_RESET(Duration.ofMinutes(30));
