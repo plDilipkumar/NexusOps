@@ -1,9 +1,11 @@
 package com.neurosql.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -16,7 +18,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
  * Exercises account lookup SQL against the disposable PostgreSQL 17 CI database.
  * This creates only nullable test-fixture columns, not a production migration.
  */
-@EnabledIfEnvironmentVariable(named = "NEUROSQL_TEST_JDBC_URL", matches = "^jdbc:postgresql:.*$")
+@EnabledIfEnvironmentVariable(named = "NEUROSQL_TEST_JDBC_URL", matches = "^jdbc:postgresql://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?/neurosql_test(\\?.*)?$")
 class JdbcAccountRepositoryPostgresIntegrationTest {
     private JdbcTemplate jdbc;
     private JdbcAccountRepository repository;
@@ -41,6 +43,9 @@ class JdbcAccountRepositoryPostgresIntegrationTest {
         jdbc.execute("ALTER TABLE neurosql_app.app_users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)");
         jdbc.execute("ALTER TABLE neurosql_app.app_users ADD COLUMN IF NOT EXISTS display_name VARCHAR(120)");
         jdbc.execute("ALTER TABLE neurosql_app.app_users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ");
+        jdbc.execute("ALTER TABLE neurosql_app.app_users ALTER COLUMN user_id SET DEFAULT gen_random_uuid()");
+        jdbc.execute("ALTER TABLE neurosql_app.app_users ALTER COLUMN status SET DEFAULT 'ACTIVE'");
+        jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_app_users_email_lower ON neurosql_app.app_users (lower(email))");
         repository = new JdbcAccountRepository(jdbc);
     }
 
@@ -65,6 +70,58 @@ class JdbcAccountRepositoryPostgresIntegrationTest {
         assertThat(repository.findActiveVerifiedByEmail("' OR 1=1 --")).isEmpty();
         assertThat(repository.findActiveVerifiedByEmail("x".repeat(255) + "@example.test")).isEmpty();
         assertThat(repository.findActiveVerifiedByEmail(null)).isEmpty();
+    }
+
+    @Test
+    void createsUnverifiedAccountAndTreatsCaseInsensitiveDuplicatesAsNoOp() {
+        String suffix = UUID.randomUUID().toString();
+        String email = "registration-" + suffix + "@example.test";
+        String passwordHash = "$2a$10$" + "x".repeat(53);
+
+        UUID userId = repository.createUnverifiedAccount(
+                "  " + email.toUpperCase(Locale.ROOT) + "  ",
+                passwordHash,
+                " Registration Test ")
+                .orElseThrow();
+
+        assertThat(jdbc.queryForObject(
+                "SELECT email FROM neurosql_app.app_users WHERE user_id = ?",
+                String.class,
+                userId)).isEqualTo(email);
+        assertThat(jdbc.queryForObject(
+                "SELECT status FROM neurosql_app.app_users WHERE user_id = ?",
+                String.class,
+                userId)).isEqualTo("ACTIVE");
+        assertThat(jdbc.queryForObject(
+                "SELECT email_verified_at IS NULL FROM neurosql_app.app_users WHERE user_id = ?",
+                Boolean.class,
+                userId)).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT display_name FROM neurosql_app.app_users WHERE user_id = ?",
+                String.class,
+                userId)).isEqualTo("Registration Test");
+
+        assertThat(repository.createUnverifiedAccount(email, passwordHash, "Duplicate User")).isEmpty();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.app_users WHERE lower(email) = ?",
+                Integer.class,
+                email)).isEqualTo(1);
+    }
+
+    @Test
+    void rejectsInvalidAccountFieldsBeforeIssuingInsert() {
+        String passwordHash = "$2a$10$" + "x".repeat(53);
+
+        assertThatThrownBy(() -> repository.createUnverifiedAccount("not-an-email", passwordHash, "Test"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> repository.createUnverifiedAccount("valid@example.test", "short", "Test"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> repository.createUnverifiedAccount(
+                "valid@example.test", passwordHash, "  "))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.app_users WHERE email = 'valid@example.test'",
+                Integer.class)).isZero();
     }
 
     private UUID insertAccount(String email, String status, Instant verifiedAt) {
