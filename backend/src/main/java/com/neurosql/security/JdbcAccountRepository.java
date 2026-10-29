@@ -65,7 +65,7 @@ public class JdbcAccountRepository {
         return createdUsers.stream().findFirst();
     }
 
-    private static String normalizeRegistrationEmail(String email) {
+    static String normalizeRegistrationEmail(String email) {
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("A valid email address is required.");
         }
@@ -86,7 +86,7 @@ public class JdbcAccountRepository {
         return normalized;
     }
 
-    private static String normalizeDisplayName(String displayName) {
+    static String normalizeDisplayName(String displayName) {
         if (displayName == null) {
             throw new IllegalArgumentException("A display name is required.");
         }
