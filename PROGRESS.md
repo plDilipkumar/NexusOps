@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 11:57 IST
+Last verified: 2026-10-29 12:57 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -537,3 +537,17 @@ Last verified: 2026-10-29 11:57 IST
 - [ ] Draft PR #7 still contains proposed V1–V4 and remains unapproved/unmerged. No proposed migration has been applied to Neon `main`; explicit user approval is required before any production schema change. Durable authentication and shared rate limiting remain disabled in production.
 - [x] No credentials were committed, no paid resources were introduced, and no production environment settings or database schemas were changed.
 
+
+
+## Duplicate-safe unverified account insert primitive — PR #9 (2026-10-29)
+- [x] Re-read the default-branch progress tracker and the current feature-branch tracker, inspected PRs #7/#9, the account repository/token persistence code, and the dedicated Neon/Vercel/Render resources before selecting this step.
+- [x] Added `JdbcAccountRepository.createUnverifiedAccount`: a parameterized insert of only email, encoded password hash, and display name, using `ON CONFLICT (lower(email)) DO NOTHING RETURNING user_id` against the proposed case-insensitive unique email index. It relies on the schema defaults to create an ACTIVE but unverified account; it cannot set `email_verified_at`.
+- [x] Added defensive email/display-name/hash validation and normalization before insertion. Case-insensitive duplicate email returns an empty result rather than raising a uniqueness exception, so a future public controller can keep responses generic.
+- [x] Tightened `JdbcAccountRepositoryPostgresIntegrationTest` to accept only loopback PostgreSQL database `neurosql_test`. The disposable fixture adds the expected unique index/defaults and verifies creation of an unverified account, normalization, duplicate suppression, and invalid-input rejection.
+- [x] GitHub Actions run #189 (https://github.com/plDilipkumar/NexusOps/actions/runs/40835916390) passed backend Maven verification, frontend durable-auth tests/production build, and the PostgreSQL 17 HTTP/JDBC integration job. The production API/database smoke job was skipped as expected for an unmerged feature-branch commit.
+- [x] Read-only infrastructure checks: Neon project `neurosql` is on the free tier in Singapore/PostgreSQL 17.11; production `neurosql_db` on branch `main` (`br-empty-credit-b360dmpc`) still has zero visible application tables/views. Temporary branch `br-sweet-sky-b38kd7rm` still contains the six proposed `neurosql_app` tables. No Neon SQL writes were made.
+- [x] Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` on the Hobby plan. The latest verified production-target deployment remains READY for main commit `6425ab4`; the most recent preview observed is a READY deployment from `work/account-action-token-schema` commit `789f3ec`. No deployment was intentionally triggered in this run. Preview suppression remains unverified and the earlier free-tier deployment quota notice remains a constraint.
+- [x] Render service `neurosql-api` remains on the free plan, linked to repository branch `main`, Docker context `backend`; latest listed live deployment remains commit `746d58d`. No backend deployment or environment change was made.
+- [ ] This is persistence groundwork only: registration orchestration that creates the account and verification token in one transaction, email delivery, and public registration/verification endpoints remain unfinished. Duplicate and new-account cases must receive the same public response, and raw verification tokens must never be returned by an HTTP endpoint or logged.
+- [ ] Draft PR #7 remains unapproved/unmerged. Proposed migrations V1–V4 are not applied to Neon `main`; durable authentication and shared rate limiting remain disabled in production. A restricted production LOGIN role and HMAC key are not configured.
+- [x] No credentials were committed, no paid resources were introduced, and no production schema, environment, or backend deployment was changed.
