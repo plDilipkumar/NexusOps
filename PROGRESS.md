@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 15:06 IST
+Last verified: 2026-10-29 16:06 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -584,3 +584,21 @@ Last verified: 2026-10-29 15:06 IST
 - [ ] This is an SMTP adapter only: no SMTP provider/credentials are configured, no email was sent, and registration does not yet call this adapter. Do not expose registration until delivery retry/resend behavior is designed so transient provider failures do not strand unverified accounts or reveal whether an email exists.
 - [ ] Draft PR #7 remains unapproved/unmerged. Proposed V1–V4 have not been applied to Neon main; no production LOGIN role, HMAC secret, or SMTP credentials are configured. Durable authentication and shared rate limiting remain disabled in production.
 - [x] No credentials were committed, no paid resources were introduced, and no production database schema, environment setting, or backend deployment was changed.
+
+
+## Verification-email workflow and resend rotation — PR #9 (2026-10-29)
+- [x] Re-read this tracker on `main` and `feature/session-token-codec-main`, inspected registration/token/email code and CI, and rechecked the dedicated Neon project/database/branches, Vercel linkage/deployments, and the confirmed Render workspace/service before choosing this milestone.
+- [x] Added `VerificationEmailWorkflowService` to connect registration to the configured email sender without exposing a controller or returning account/token details. New-account, duplicate-account, unknown-resend, and SMTP-delivery-failure outcomes share the same generic response message.
+- [x] Added `VerificationResendPreparationService`. It looks up only active, unverified accounts, locks the account row in a transaction, irreversibly consumes outstanding email-verification tokens, and issues a replacement token. The preparation transaction commits before the workflow attempts SMTP delivery, so network latency does not hold database locks.
+- [x] Added `JdbcAccountRepository.findActiveUnverifiedByEmailForUpdate` using a parameterized query and `FOR UPDATE`; invalid addresses and absent/verified/disabled accounts behave as no eligible account.
+- [x] Added `JdbcAccountActionTokenRepository.consumeOutstandingTokens` and `AccountActionTokenService.replaceOutstandingToken`. Rotation is purpose- and user-scoped, and relies on the proposed V4 single-use trigger to prevent token reactivation. No schema change was required.
+- [x] Standardized a generic `VerificationEmailSender.DeliveryFailedException`; the SMTP adapter's exception extends it. Delivery failures are logged only as a generic warning without recipient, token, or provider details. A caller can retry via the internal resend workflow; no public resend endpoint is exposed yet.
+- [x] Added unit coverage for generic registration/resend responses, duplicate suppression, sanitized delivery failure, eligible-account selection, invalid/missing account handling, token rotation calls, and redaction. Extended the existing disposable PostgreSQL integration tests to verify the `FOR UPDATE` lookup and that invalidation affects only outstanding tokens for the requested user and purpose.
+- [x] GitHub Actions run #202 (https://github.com/plDilipkumar/NexusOps/actions/runs/40858581512) passed on code commit `95e5a458992f58e05002f934c5a9eda1fec1a90b`: backend Maven verification reported 163 tests, 0 failures/errors, and 29 database-gated skips; the separate PostgreSQL 17 integration job passed 29 tests with 0 failures/errors/skips; frontend validation tests and production build passed. Production API/database smoke was skipped as expected for an unmerged PR.
+- [x] Read-only Neon checks: project `neurosql` (`lingering-dew-88806235`) remains free-tier/Singapore/PostgreSQL 17.11. Production database `neurosql_db` on `main` (`br-empty-credit-b360dmpc`) has zero visible application tables. The isolated test branch `br-sweet-sky-b38kd7rm` retains six proposed application tables; a read-only count found zero users, workspaces, memberships, sessions, rate-limit rows, and account-action tokens. No SQL writes or migrations were performed.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on Hobby/free, with `neurosql.vercel.app` attached. No deployment was found for code commit `95e5a458992f58e05002f934c5a9eda1fec1a90b`; no preview for this change is claimed. The latest inspected production-target deployment remains `READY` for `main` commit `6425ab4`. The project API still does not expose the preview-disable flag for independent read-back, and the earlier free-tier quota notice remains a constraint.
+- [x] Render service `neurosql-api` remains on the free plan in the confirmed Dilip Kumar workspace, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy on commit. The latest listed live deployment remains commit `746d58d`; no backend deployment or environment change was triggered.
+- [ ] This is a service-layer workflow only: no registration/resend HTTP endpoints, endpoint-specific rate limits, email provider credentials, or real email delivery are configured. Keep the workflow feature-gated until the HTTP contract, abuse controls, and provider settings are reviewed.
+- [ ] Draft PR #7 remains unapproved/unmerged; proposed V1–V4 have not been applied to Neon `main`. The restricted production LOGIN role and HMAC secret are not configured, so durable authentication and shared rate limiting remain disabled in production.
+- [ ] Vercel preview suppression is not independently verifiable, and Render's prior missed-auto-deploy issue remains unresolved.
+- [x] No credentials were committed, no paid resources were introduced, and no production database writes/migrations, environment changes, or backend deployments were performed.
