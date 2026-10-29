@@ -40,6 +40,29 @@ public class JdbcAccountActionTokenRepository {
             RETURNING user_id
             """;
 
+    static final String VERIFY_EMAIL_SQL = """
+            WITH consumed AS (
+                UPDATE neurosql_app.account_action_tokens
+                SET consumed_at = now()
+                WHERE token_hash = ?
+                  AND purpose = 'EMAIL_VERIFICATION'
+                  AND consumed_at IS NULL
+                  AND expires_at > now()
+                RETURNING user_id
+            ),
+            verified AS (
+                UPDATE neurosql_app.app_users AS users
+                SET email_verified_at = now(),
+                    updated_at = now()
+                FROM consumed
+                WHERE users.user_id = consumed.user_id
+                  AND users.status = 'ACTIVE'
+                  AND users.email_verified_at IS NULL
+                RETURNING users.user_id
+            )
+            SELECT user_id FROM verified
+            """;
+
     private static final Pattern TOKEN_HASH_PATTERN = Pattern.compile("[0-9a-f]{64}");
 
     private final JdbcTemplate jdbcTemplate;
@@ -93,6 +116,23 @@ public class JdbcAccountActionTokenRepository {
                 tokenHash,
                 purpose.name());
         return users.stream().findFirst();
+    }
+
+    /**
+     * Consumes a valid email-verification token and marks the active account verified
+     * in the same PostgreSQL statement. Invalid, expired, replayed, wrong-purpose,
+     * already-verified, or inactive-account cases return false without exposing identity.
+     */
+    public boolean consumeEmailVerificationToken(String tokenHash) {
+        if (!isValidHash(tokenHash)) {
+            return false;
+        }
+
+        List<UUID> verifiedUsers = jdbcTemplate.query(
+                VERIFY_EMAIL_SQL,
+                (resultSet, rowNumber) -> resultSet.getObject("user_id", UUID.class),
+                tokenHash);
+        return !verifiedUsers.isEmpty();
     }
 
     private static boolean isValidHash(String tokenHash) {
