@@ -3,8 +3,12 @@ name: NeuroSQL CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'PROGRESS.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'PROGRESS.md'
 
 permissions:
   contents: read
@@ -40,14 +44,52 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm install --no-audit --no-fund
+      - name: Test frontend durable-auth validation
+        working-directory: frontend
+        run: npm test
       - name: Build frontend
         working-directory: frontend
         run: npm run build
 
+  session-postgres-integration:
+    name: Durable-auth HTTP/JDBC integration tests (PostgreSQL 17)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: neurosql_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d neurosql_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Run durable-auth integration tests against disposable PostgreSQL
+        working-directory: backend
+        env:
+          NEUROSQL_TEST_JDBC_URL: jdbc:postgresql://localhost:5432/neurosql_test
+          NEUROSQL_TEST_DB_USERNAME: postgres
+          NEUROSQL_TEST_DB_PASSWORD: postgres
+        run: mvn -B -Dtest=JdbcSessionRepositoryPostgresIntegrationTest,WorkspaceAuthorizationPostgresIntegrationTest,JdbcAccountRepositoryPostgresIntegrationTest,DurableLoginPostgresIntegrationTest,DurableAuthHttpPostgresIntegrationTest,SharedLoginRateLimitHealthIndicatorPostgresIntegrationTest,JdbcAccountActionTokenRepositoryPostgresIntegrationTest,RegistrationServicePostgresIntegrationTest test
+
   production-smoke:
     name: Production API and database smoke test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [backend, frontend]
+    needs: [backend, frontend, session-postgres-integration]
     runs-on: ubuntu-latest
     steps:
       - name: Verify deployed API reaches the dedicated Neon database

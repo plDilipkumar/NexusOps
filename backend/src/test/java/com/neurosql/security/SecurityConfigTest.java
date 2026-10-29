@@ -1,5 +1,7 @@
 package com.neurosql.security;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -20,6 +22,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -39,9 +44,44 @@ class SecurityConfigTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
+    void configuredOwnerPasswordIsStoredAsBcryptHash() {
+        PasswordEncoder encoder = new BCryptPasswordEncoder();
+        UserDetails owner = new SecurityConfig()
+                .ownerUserDetailsService(true, "test-owner", "test-password", encoder)
+                .loadUserByUsername("test-owner");
+
+        assertThat(owner.getPassword()).startsWith("$2");
+        assertThat(owner.getPassword()).isNotEqualTo("test-password");
+        assertThat(encoder.matches("test-password", owner.getPassword())).isTrue();
+    }
+
+    @Test
+    void weakConfiguredOwnerPasswordIsRejectedBeforeAuthenticationIsEnabled() {
+        assertThatThrownBy(() -> new SecurityConfig()
+                .ownerUserDetailsService(true, "test-owner", "short", new BCryptPasswordEncoder()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at least 12 characters");
+    }
+
+    @Test
     void schemaMetadataRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/schema"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void repeatedInvalidBasicCredentialsAreRateLimited() throws Exception {
+        for (int attempt = 0; attempt < BasicAuthAttemptRateLimiter.MAX_FAILED_ATTEMPTS; attempt++) {
+            mockMvc.perform(get("/api/schema")
+                            .with(httpBasic("rate-limit-test-user", "wrong-password")))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        mockMvc.perform(get("/api/schema")
+                        .with(httpBasic("rate-limit-test-user", "wrong-password")))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists("Retry-After"))
+                .andExpect(jsonPath("$.error").value("too_many_authentication_attempts"));
     }
 
     @Test
