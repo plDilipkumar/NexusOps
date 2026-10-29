@@ -72,17 +72,24 @@ class VerificationEmailWorkflowServiceTest {
     }
 
     @Test
-    void deliveryFailureIsGenericAndCanBeRetriedWithoutLeakingProviderDetails() {
+    void deliveryFailureReturnsGenericResponseAndResendCanRetryWithoutLeakingProviderDetails() {
         when(registration.register(EMAIL, PASSWORD, DISPLAY_NAME))
                 .thenReturn(new RegistrationService.RegistrationAttempt(Optional.of(token)));
+        when(resendPreparation.prepare(EMAIL)).thenReturn(Optional.of(
+                new VerificationResendPreparationService.VerificationDelivery(EMAIL, token)));
         doThrow(new VerificationEmailSender.DeliveryFailedException())
+                .doNothing()
                 .when(emailSender).sendVerificationEmail(EMAIL, token);
 
-        VerificationEmailWorkflowService.RequestAccepted response =
+        VerificationEmailWorkflowService.RequestAccepted initial =
                 service.registerAndSend(EMAIL, PASSWORD, DISPLAY_NAME);
+        VerificationEmailWorkflowService.RequestAccepted retry = service.resendVerification(EMAIL);
 
-        assertThat(response.message()).isEqualTo(GENERIC_MESSAGE);
-        assertThat(response.toString()).doesNotContain(RAW_TOKEN, EMAIL);
+        assertThat(initial.message()).isEqualTo(GENERIC_MESSAGE);
+        assertThat(retry.message()).isEqualTo(GENERIC_MESSAGE);
+        assertThat(initial.toString()).doesNotContain(RAW_TOKEN, EMAIL);
+        assertThat(retry.toString()).doesNotContain(RAW_TOKEN, EMAIL);
+        verify(emailSender, org.mockito.Mockito.times(2)).sendVerificationEmail(EMAIL, token);
     }
 
     @Test
