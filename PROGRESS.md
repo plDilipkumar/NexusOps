@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-10-29 06:02 IST
+Last verified: 2026-10-29 06:57 IST
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -438,3 +438,16 @@ Last verified: 2026-10-29 06:02 IST
 - [ ] This indicator is implemented and CI-tested but is not enabled against production: draft PR #7 remains unapproved/unmerged; V1/V2/V3 are not applied to Neon `main`, and no dedicated production LOGIN role or HMAC key has been configured.
 - [ ] Next: after explicit schema approval, configure the dedicated least-privileged LOGIN identity and runtime HMAC secret securely, then verify the readiness endpoint using that identity on the isolated Neon branch before any production activation.
 - [x] No credentials were committed, no paid resources were introduced, no production environment settings changed, no backend deployment was triggered, and no production database writes or migrations were performed.
+
+## Shared limiter readiness: elevated-role and ownership checks — PR #9 (not merged)
+- [x] Extended `SharedLoginRateLimitHealthIndicator` to fail readiness when the connected role can create objects in `neurosql_app`, owns or is a member of the database-owner role, has superuser/createdb/createrole/replication/BYPASSRLS attributes, or inherits membership in any such elevated role.
+- [x] Kept the probe read-only. It still checks the expected database (`neurosql_db`), rate-limit table, schema usage, required column-level SELECT/INSERT/UPDATE permissions, DELETE permission, and denial of identity-hash UPDATE and TRUNCATE. The health response exposes no privilege or connection details.
+- [x] Expanded readiness tests to cover denied TRUNCATE, elevated role attributes, elevated role membership, schema CREATE, database ownership, and membership in the database-owner role.
+- [x] GitHub Actions run #162 (ID `40800642207`) passed backend Maven verification, frontend durable-auth tests/build, and the PostgreSQL 17 HTTP/JDBC integration job. The production smoke job was skipped as expected for an unmerged feature branch.
+- [x] Vercel preview for code commit `b804c51590df2d4d1d481f4f8ebcd7425139a209` reports `READY`: https://neurosql-j6jmfdg77-dilips-projects-d0ae994d.vercel.app. This is a preview, not a production release.
+- [x] Rechecked Neon project `neurosql` (`lingering-dew-88806235`), free-tier Singapore/PostgreSQL 17. Production branch `br-empty-credit-b360dmpc` / database `neurosql_db` still has no visible application tables. Temporary branch `br-sweet-sky-b38kd7rm` contains the five proposed auth/rate-limit tables.
+- [x] Read-only privilege query on the temporary branch confirmed the runtime group role has schema USAGE but no schema CREATE; SELECT on `identity_hash`; UPDATE on failure state but not `identity_hash`; DELETE; no TRUNCATE; and no superuser/createdb/createrole/replication/BYPASSRLS attributes. This checks the group role's grants, not a separate production LOGIN principal.
+- [x] Vercel project `neurosql` is linked to `plDilipkumar/NexusOps` by deployment metadata; the latest feature preview is `READY`. Render service `neurosql-api` remains on the free plan in the Dilip Kumar workspace, linked to repository branch `main`, Docker context `backend`, with auto-deploy-on-commit configured. No Render deployment or environment changes were made.
+- [ ] This remains CI-verified readiness logic; the readiness SQL has not yet been executed through a dedicated LOGIN principal against the temporary Neon branch. A separate runtime LOGIN role and secret configuration are still outstanding.
+- [ ] Draft PR #7 remains unapproved/unmerged. Do not apply V1/V2/V3 to Neon `main` without explicit user approval. Durable auth and shared rate limiting remain disabled in production; registration, password recovery, and workspace lifecycle administration are unfinished.
+- [x] No credentials were committed, no paid resources were introduced, no production environment settings changed, no backend deployment was triggered, and no production schema changes were made.
