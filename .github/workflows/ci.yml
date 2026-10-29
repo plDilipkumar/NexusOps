@@ -3,8 +3,12 @@ name: NeuroSQL CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'PROGRESS.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'PROGRESS.md'
 
 permissions:
   contents: read
@@ -44,10 +48,99 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  auth-schema-contract:
+    name: Proposed auth schema and runtime grants (ephemeral PostgreSQL 17)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: neurosql_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d neurosql_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Apply proposed schema to disposable CI database
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V1__durable_auth_workspaces.sql
+      - name: Apply proposed least-privilege runtime grants
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V2__durable_auth_runtime_grants.sql
+      - name: Apply proposed shared login rate-limit schema
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V3__shared_login_rate_limits.sql
+      - name: Apply proposed account action token schema
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V4__account_action_tokens.sql
+      - name: Verify schema constraints and fixture cleanup
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-auth-workspace-schema.sql
+      - name: Verify runtime privileges and session lifecycle under restricted role
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-auth-runtime-grants.sql
+      - name: Verify shared login rate-limit schema and grants
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-auth-login-rate-limits.sql
+      - name: Verify account action token schema and least-privilege grants
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-auth-account-tokens.sql
+
   production-smoke:
     name: Production API and database smoke test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [backend, frontend]
+    needs: [backend, frontend, auth-schema-contract]
     runs-on: ubuntu-latest
     steps:
       - name: Verify deployed API reaches the dedicated Neon database
