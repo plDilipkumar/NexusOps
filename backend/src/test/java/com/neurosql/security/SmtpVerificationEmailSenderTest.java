@@ -70,7 +70,7 @@ class SmtpVerificationEmailSenderTest {
                 .hasMessage("A valid HTTPS verification URL must be configured.");
         assertThatThrownBy(() -> sender("https://neurosql.vercel.app/verify-email?next=https://evil.test"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("A valid HTTPS verification URL must be configured()");
+                .hasMessage("A valid HTTPS verification URL must be configured.");
         verifyNoInteractions(mailSender);
     }
 
