@@ -34,7 +34,7 @@ class SharedLoginRateLimitHealthIndicatorTest {
                         && sql.contains("has_column_privilege")
                         && sql.contains("has_table_privilege")
                         && sql.contains("pg_roles")
-                        && sql.contains("pg_has_role")
+                        && sql.contains("pg_has_role") && sql.contains("neurosql_auth_runtime")
                         && !sql.contains("INSERT INTO")
                         && !sql.contains("UPDATE ")
                         && !sql.contains("DELETE FROM")));
@@ -74,16 +74,30 @@ class SharedLoginRateLimitHealthIndicatorTest {
     }
 
     @Test
-    void reportsDownWhenRuntimeRoleHasElevatedAttributesOrMembership() {
+    void reportsDownWhenRuntimeRoleHasElevatedAttributesOrUnexpectedMembership() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         Map<String, Object> elevatedAttributes = readyRow(EXPECTED_DATABASE);
         elevatedAttributes.put("safe_role_attributes", false);
         when(jdbc.queryForMap(anyString())).thenReturn(elevatedAttributes);
         assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
 
-        Map<String, Object> elevatedMembership = readyRow(EXPECTED_DATABASE);
-        elevatedMembership.put("no_elevated_role_membership", false);
-        when(jdbc.queryForMap(anyString())).thenReturn(elevatedMembership);
+        Map<String, Object> unexpectedMembership = readyRow(EXPECTED_DATABASE);
+        unexpectedMembership.put("no_unexpected_role_membership", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(unexpectedMembership);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void reportsDownWhenConnectedRoleIsNotALoginOrLacksRuntimeGroupMembership() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object> notLogin = readyRow(EXPECTED_DATABASE);
+        notLogin.put("current_role_can_login", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(notLogin);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+
+        Map<String, Object> notMember = readyRow(EXPECTED_DATABASE);
+        notMember.put("runtime_group_membership", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(notMember);
         assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
     }
 
@@ -156,8 +170,10 @@ class SharedLoginRateLimitHealthIndicatorTest {
                 Map.entry("schema_create_denied", true),
                 Map.entry("not_database_owner", true),
                 Map.entry("not_database_owner_member", true),
+                Map.entry("current_role_can_login", true),
+                Map.entry("runtime_group_membership", true),
                 Map.entry("safe_role_attributes", true),
-                Map.entry("no_elevated_role_membership", true),
+                Map.entry("no_unexpected_role_membership", true),
                 Map.entry("can_select_identity_hash", true),
                 Map.entry("can_select_failure_timestamps", true),
                 Map.entry("can_select_blocked_until", true),
