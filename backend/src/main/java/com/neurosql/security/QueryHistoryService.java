@@ -9,7 +9,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -19,14 +19,10 @@ import org.springframework.stereotype.Service;
  * recorded as user query executions.
  */
 @Service
-@ConditionalOnProperty(
-        prefix = "neurosql.auth",
-        name = {"durable-sessions-enabled", "shared-rate-limit-enabled"},
-        havingValue = "true")
-@ConditionalOnProperty(
-        prefix = "neurosql.sql-history",
-        name = "enabled",
-        havingValue = "true")
+@ConditionalOnExpression(
+        "'${neurosql.auth.durable-sessions-enabled:false}' == 'true' and "
+                + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true' and "
+                + "'${neurosql.sql-history.enabled:false}' == 'true')
 public class QueryHistoryService {
     private static final Logger LOGGER = LoggerFactory.getLogger(QueryHistoryService.class);
     private static final int MAX_QUERY_CHARACTERS = 50_000;
