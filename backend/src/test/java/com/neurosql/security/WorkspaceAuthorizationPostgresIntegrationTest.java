@@ -55,6 +55,23 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
                     PRIMARY KEY (workspace_id, user_id)
                 )
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS neurosql_app.query_history (
+                    history_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    workspace_id UUID NOT NULL,
+                    user_id UUID NOT NULL,
+                    query_text TEXT NOT NULL,
+                    query_hash VARCHAR(64) NOT NULL,
+                    outcome VARCHAR(16) NOT NULL,
+                    row_count INTEGER,
+                    execution_time_ms INTEGER NOT NULL,
+                    truncated BOOLEAN NOT NULL DEFAULT false,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    FOREIGN KEY (workspace_id, user_id)
+                        REFERENCES neurosql_app.workspace_memberships (workspace_id, user_id)
+                        ON DELETE CASCADE
+                )
+                """);
 
         authorization = new WorkspaceAuthorizationService(new JdbcWorkspaceAuthorizationRepository(jdbc));
     }
@@ -105,6 +122,43 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         assertThat(visible.get(0).role()).isEqualTo(WorkspaceRole.ADMIN);
         assertThat(authorization.listActiveWorkspaces(inactiveUser)).isEmpty();
         assertThat(authorization.listActiveWorkspaces(null)).isEmpty();
+    }
+
+    @Test
+    void appendsSuccessfulAndFailedHistoryAgainstTheExactWorkspaceMembership() {
+        UUID firstUser = insertUser("ACTIVE");
+        UUID secondUser = insertUser("ACTIVE");
+        UUID firstWorkspace = insertWorkspace("history-a");
+        UUID secondWorkspace = insertWorkspace("history-b");
+        insertMembership(firstWorkspace, firstUser, "OWNER", "ACTIVE");
+        insertMembership(firstWorkspace, secondUser, "VIEWER", "ACTIVE");
+        insertMembership(secondWorkspace, firstUser, "ADMIN", "ACTIVE");
+
+        QueryHistoryService history = new QueryHistoryService(new JdbcQueryHistoryRepository(jdbc));
+        history.recordSucceeded(firstUser, firstWorkspace, " SELECT 1 ", 1, 7, false);
+        history.recordFailed(firstUser, firstWorkspace, "SELECT broken FROM", 19);
+        history.recordSucceeded(secondUser, firstWorkspace, "SELECT 2", 1, 3, true);
+        history.recordSucceeded(firstUser, secondWorkspace, "SELECT 3", 1, 2, false);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.query_history WHERE workspace_id = ? AND user_id = ?",
+                Integer.class, firstWorkspace, firstUser)).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.query_history WHERE workspace_id = ? AND user_id = ?",
+                Integer.class, firstWorkspace, secondUser)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.query_history WHERE workspace_id = ? AND user_id = ?",
+                Integer.class, secondWorkspace, firstUser)).isEqualTo(1);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT query_hash FROM neurosql_app.query_history WHERE query_text = 'SELECT 1'",
+                String.class)).isEqualTo(QueryHistoryService.sha256("SELECT 1"));
+        assertThat(jdbc.queryForObject(
+                "SELECT row_count FROM neurosql_app.query_history WHERE outcome = 'FAILED'",
+                Integer.class)).isNull();
+        assertThat(jdbc.queryForObject(
+                "SELECT truncated FROM neurosql_app.query_history WHERE outcome = 'FAILED'",
+                Boolean.class)).isFalse();
     }
 
     private UUID insertUser(String status) {
