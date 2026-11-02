@@ -56,7 +56,7 @@ class DurableLoginServiceTest {
 
     @Test
     void activeVerifiedAccountWithCorrectPasswordReceivesSession() {
-        when(accounts.findActiveVerifiedByEmail(EMAIL))
+        when(accounts.findActiveVerifiedByEmailForUpdate(EMAIL))
                 .thenReturn(Optional.of(new JdbcAccountRepository.LoginAccount(USER_ID, STORED_HASH)));
         when(passwordEncoder.matches(PASSWORD, STORED_HASH)).thenReturn(true);
         SessionLifecycleService.IssuedSession issued =
@@ -67,13 +67,13 @@ class DurableLoginServiceTest {
 
         assertThat(result.status()).isEqualTo(DurableLoginService.Status.AUTHENTICATED);
         assertThat(result.session()).isEqualTo(issued);
-        verify(accounts).findActiveVerifiedByEmail(EMAIL);
+        verify(accounts).findActiveVerifiedByEmailForUpdate(EMAIL);
         verify(sessions).issueSession(USER_ID, NOW);
     }
 
     @Test
     void unknownAccountUsesDummyHashAndReturnsGenericFailure() {
-        when(accounts.findActiveVerifiedByEmail(EMAIL)).thenReturn(Optional.empty());
+        when(accounts.findActiveVerifiedByEmailForUpdate(EMAIL)).thenReturn(Optional.empty());
         when(passwordEncoder.matches(PASSWORD, "dummy-hash")).thenReturn(false);
 
         DurableLoginService.LoginAttempt result = service.login(EMAIL, PASSWORD);
@@ -86,7 +86,7 @@ class DurableLoginServiceTest {
 
     @Test
     void invalidPasswordStillRunsDummyCandidateCheckAndCannotIssueSession() {
-        when(accounts.findActiveVerifiedByEmail(EMAIL))
+        when(accounts.findActiveVerifiedByEmailForUpdate(EMAIL))
                 .thenReturn(Optional.of(new JdbcAccountRepository.LoginAccount(USER_ID, STORED_HASH)));
         when(passwordEncoder.matches(DurableLoginService.DUMMY_CANDIDATE, STORED_HASH)).thenReturn(false);
 
@@ -99,7 +99,7 @@ class DurableLoginServiceTest {
 
     @Test
     void repeatedFailuresAreRateLimitedByNormalizedEmail() {
-        when(accounts.findActiveVerifiedByEmail(EMAIL)).thenReturn(Optional.empty());
+        when(accounts.findActiveVerifiedByEmailForUpdate(EMAIL)).thenReturn(Optional.empty());
         when(passwordEncoder.matches(anyString(), eq("dummy-hash"))).thenReturn(false);
 
         for (int i = 0; i < BasicAuthAttemptRateLimiter.MAX_FAILED_ATTEMPTS; i++) {
@@ -111,13 +111,13 @@ class DurableLoginServiceTest {
         assertThat(blocked.status()).isEqualTo(DurableLoginService.Status.RATE_LIMITED);
         assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
         verify(accounts, times(BasicAuthAttemptRateLimiter.MAX_FAILED_ATTEMPTS))
-                .findActiveVerifiedByEmail(EMAIL);
+                .findActiveVerifiedByEmailForUpdate(EMAIL);
         verify(sessions, never()).issueSession(any(UUID.class), any(Instant.class));
     }
 
     @Test
     void malformedStoredPasswordHashFailsClosed() {
-        when(accounts.findActiveVerifiedByEmail(EMAIL))
+        when(accounts.findActiveVerifiedByEmailForUpdate(EMAIL))
                 .thenReturn(Optional.of(new JdbcAccountRepository.LoginAccount(USER_ID, "not-a-bcrypt-hash")));
         when(passwordEncoder.matches(PASSWORD, "not-a-bcrypt-hash"))
                 .thenThrow(new IllegalArgumentException("malformed hash"));
