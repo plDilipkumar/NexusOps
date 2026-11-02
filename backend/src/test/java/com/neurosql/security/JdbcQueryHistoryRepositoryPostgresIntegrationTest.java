@@ -41,7 +41,7 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
         jdbc.execute("CREATE SCHEMA IF NOT EXISTS neurosql_app");
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS neurosql_app.query_history (
-                    history_id UUID PRIMARY KEY,
+                    history_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     workspace_id UUID NOT NULL,
                     user_id UUID NOT NULL,
                     query_text TEXT NOT NULL,
@@ -49,8 +49,8 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
                     outcome VARCHAR(16) NOT NULL,
                     row_count INTEGER,
                     execution_time_ms INTEGER NOT NULL,
-                    truncated BOOLEAN NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL
+                    truncated BOOLEAN NOT NULL DEFAULT false,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
                 """);
         repository = new JdbcQueryHistoryRepository(jdbc);
