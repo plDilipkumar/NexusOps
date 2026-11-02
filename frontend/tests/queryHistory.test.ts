@@ -48,11 +48,34 @@ test("requests the first page with bearer and workspace headers and no-store cac
   assert.equal(parsed.searchParams.get("limit"),"25");
   assert.equal(parsed.searchParams.get("cursor"),null);
   assert.equal(parsed.searchParams.get("outcome"),null);
+  assert.equal(parsed.searchParams.get("from"),null);
+  assert.equal(parsed.searchParams.get("to"),null);
   assert.equal(init?.method,"GET");
   assert.equal(init?.cache,"no-store");
   const headers=init?.headers as Record<string,string>;
   assert.equal(headers.Authorization,"Bearer "+token);
   assert.equal(headers["X-NeuroSQL-Workspace-Id"],workspaceId);
+});
+
+test("sends inclusive UTC date filters alongside the selected outcome",async()=>{
+  let url="";
+  const fetcher:typeof fetch=async(input)=>{url=String(input);return new Response(JSON.stringify(page),{status:200});};
+  await fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId,outcome:"FAILED",
+    fromDate:"2026-11-01",toDate:"2026-11-02"},fetcher);
+  const parsed=new URL(url);
+  assert.equal(parsed.searchParams.get("outcome"),"FAILED");
+  assert.equal(parsed.searchParams.get("from"),"2026-11-01");
+  assert.equal(parsed.searchParams.get("to"),"2026-11-02");
+});
+
+test("rejects invalid calendar dates and reversed ranges before network access",async()=>{
+  let calls=0;
+  const fetcher:typeof fetch=async()=>{calls+=1;return new Response(JSON.stringify(page),{status:200});};
+  await assert.rejects(fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId,
+    fromDate:"2026-02-30"},fetcher),/valid UTC calendar dates/);
+  await assert.rejects(fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId,
+    fromDate:"2026-11-03",toDate:"2026-11-02"},fetcher),/must not be after/);
+  assert.equal(calls,0);
 });
 
 test("sends the selected outcome filter with the history request",async()=>{
@@ -93,6 +116,7 @@ test("rejects invalid credentials, workspace, and outcome before network access"
 
 test("maps API authorization and feature-gate errors to safe messages",async()=>{
   for(const [status,message] of [
+    [400,/date filter is invalid/],
     [401,/Sign in again/],
     [403,/cannot view history/],
     [404,/not enabled/],

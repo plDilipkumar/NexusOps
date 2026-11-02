@@ -1,5 +1,6 @@
 package com.neurosql.security;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -65,6 +66,8 @@ public class JdbcQueryHistoryRepository {
             WHERE workspace_id = ?
               AND user_id = ?
               AND (?::varchar IS NULL OR outcome = ?::varchar)
+              AND (?::date IS NULL OR created_at >= (?::date::timestamp AT TIME ZONE 'UTC'))
+              AND (?::date IS NULL OR created_at < ((?::date + 1)::timestamp AT TIME ZONE 'UTC'))
             ORDER BY created_at DESC, history_id DESC
             LIMIT ?
             """;
@@ -77,6 +80,8 @@ public class JdbcQueryHistoryRepository {
               AND user_id = ?
               AND (created_at, history_id) < (?::timestamptz, ?::uuid)
               AND (?::varchar IS NULL OR outcome = ?::varchar)
+              AND (?::date IS NULL OR created_at >= (?::date::timestamp AT TIME ZONE 'UTC'))
+              AND (?::date IS NULL OR created_at < ((?::date + 1)::timestamp AT TIME ZONE 'UTC'))
             ORDER BY created_at DESC, history_id DESC
             LIMIT ?
             """;
@@ -86,11 +91,13 @@ public class JdbcQueryHistoryRepository {
      * The caller supplies pageSize + 1 to detect whether another page exists.
      */
     public List<HistoryEntry> findRecent(
-            UUID workspaceId,
-            UUID userId,
-            int limit,
-            QueryHistoryCursor.Position before,
-            String outcome) {
+            UUID workspaceId, UUID userId, int limit, QueryHistoryCursor.Position before, String outcome) {
+        return findRecent(workspaceId, userId, limit, before, outcome, null, null);
+    }
+
+    public List<HistoryEntry> findRecent(
+            UUID workspaceId, UUID userId, int limit, QueryHistoryCursor.Position before,
+            String outcome, LocalDate fromDate, LocalDate toDate) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(userId, "userId");
         if (limit < 1 || limit > QueryHistoryReadService.MAX_PAGE_SIZE + 1) {
@@ -99,6 +106,11 @@ public class JdbcQueryHistoryRepository {
         if (outcome != null && !OUTCOMES.contains(outcome)) {
             throw new IllegalArgumentException("History outcome filter is invalid.");
         }
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw new IllegalArgumentException("History date range is invalid.");
+        }
+        java.sql.Date fromParameter = fromDate == null ? null : java.sql.Date.valueOf(fromDate);
+        java.sql.Date toParameter = toDate == null ? null : java.sql.Date.valueOf(toDate);
 
         if (before == null) {
             return jdbcTemplate.query(
@@ -108,6 +120,10 @@ public class JdbcQueryHistoryRepository {
                     userId,
                     outcome,
                     outcome,
+                    fromParameter,
+                    fromParameter,
+                    toParameter,
+                    toParameter,
                     limit);
         }
 
@@ -120,6 +136,10 @@ public class JdbcQueryHistoryRepository {
                 before.historyId().toString(),
                 outcome,
                 outcome,
+                fromParameter,
+                fromParameter,
+                toParameter,
+                toParameter,
                 limit);
     }
 

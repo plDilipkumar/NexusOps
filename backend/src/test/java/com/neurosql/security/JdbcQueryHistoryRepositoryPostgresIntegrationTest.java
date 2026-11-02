@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -153,6 +154,21 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
 
         assertThat(second).extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
                 .containsExactly("SELECT failed three");
+    }
+
+    @Test
+    void appliesInclusiveUtcDateRangeAtBothBoundaries() {
+        UUID workspaceId=insertWorkspace();
+        UUID userId=insertUser();
+        insertMembership(workspaceId,userId);
+        insert(workspaceId,userId,"SUCCEEDED","SELECT end boundary",Instant.parse("2026-11-02T23:59:59.999999Z"));
+        insert(workspaceId,userId,"SUCCEEDED","SELECT start boundary",Instant.parse("2026-11-01T00:00:00Z"));
+        insert(workspaceId,userId,"SUCCEEDED","SELECT before range",Instant.parse("2026-10-31T23:59:59.999999Z"));
+        insert(workspaceId,userId,"SUCCEEDED","SELECT after range",Instant.parse("2026-11-03T00:00:00Z"));
+        List<JdbcQueryHistoryRepository.HistoryEntry> entries=repository.findRecent(
+                workspaceId,userId,10,null,null,LocalDate.parse("2026-11-01"),LocalDate.parse("2026-11-02"));
+        assertThat(entries).extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
+                .containsExactly("SELECT end boundary","SELECT start boundary");
     }
 
     @Test

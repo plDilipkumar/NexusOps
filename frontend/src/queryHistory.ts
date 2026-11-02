@@ -23,6 +23,8 @@ type FetchHistoryOptions = {
   workspaceId: string;
   cursor?: string | null;
   outcome?: QueryHistoryOutcomeFilter;
+  fromDate?: string;
+  toDate?: string;
   signal?: AbortSignal;
 };
 
@@ -33,6 +35,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BEARER = /^[A-Za-z0-9_-]{43}$/;
 const OUTCOME_FILTERS: readonly string[] = ["ALL", "SUCCEEDED", "FAILED", "CANCELED"];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+function isValidIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const parsed = new Date(value + "T00:00:00.000Z");
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
 
 export function parseQueryHistoryPage(payload: unknown): QueryHistoryPage {
   if (!isRecord(payload) || !Array.isArray(payload.items) || payload.items.length > 100) {
@@ -89,7 +97,7 @@ export function parseQueryHistoryPage(payload: unknown): QueryHistoryPage {
 }
 
 function failureMessage(status: number): string {
-  if (status === 400) return "The history page request is invalid. Refresh the history and try again.";
+  if (status === 400) return "The history page or date filter is invalid. Refresh the history and try again.";
   if (status === 401) return "Your sign-in is no longer valid. Sign in again to view query history.";
   if (status === 403) return "Your account cannot view history in the selected workspace.";
   if (status === 404) return "Query history is not enabled on the API.";
@@ -113,11 +121,21 @@ export async function fetchQueryHistoryPage(
   if (!OUTCOME_FILTERS.includes(outcome)) {
     throw new Error("Choose a valid query-history outcome filter.");
   }
+  const fromDate = options.fromDate?.trim() ?? "";
+  const toDate = options.toDate?.trim() ?? "";
+  if ((fromDate && !isValidIsoDate(fromDate)) || (toDate && !isValidIsoDate(toDate))) {
+    throw new Error("Choose valid UTC calendar dates for query history.");
+  }
+  if (fromDate && toDate && fromDate > toDate) {
+    throw new Error("The history start date must not be after its end date.");
+  }
 
   const url = new URL("/api/sql/history", options.apiBaseUrl.replace(/\/$/, "") + "/");
   url.searchParams.set("limit", "25");
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (outcome !== "ALL") url.searchParams.set("outcome", outcome);
+  if (fromDate) url.searchParams.set("from", fromDate);
+  if (toDate) url.searchParams.set("to", toDate);
 
   const response = await fetcher(url.toString(), {
     method: "GET",
