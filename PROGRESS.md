@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — transactional password-reset orchestration implemented; GitHub Actions run #312 passed.
+Last verified: 2026-11-03 — login/password-reset concurrency race closed; GitHub Actions run #316 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
