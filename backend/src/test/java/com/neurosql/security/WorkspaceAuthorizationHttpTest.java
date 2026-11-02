@@ -173,7 +173,9 @@ class WorkspaceAuthorizationHttpTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
                         .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"sql\\":\\"SELECT broken FROM\\"}"))
+                        .content("""
+                                {"sql":"SELECT broken FROM"}
+                                """))
                 .andExpect(status().isUnprocessableEntity());
 
         verify(queryHistoryService).recordFailed(
@@ -192,7 +194,9 @@ class WorkspaceAuthorizationHttpTest {
         mockMvc.perform(post("/api/sql/execute")
                         .with(httpBasic("test-owner", "test-owner-password-123"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"sql\\":\\"SELECT 1\\"}"))
+                        .content("""
+                                {"sql":"SELECT 1"}
+                                """))
                 .andExpect(status().isOk());
 
         verifyNoInteractions(queryHistoryService);
