@@ -3,7 +3,6 @@ package com.neurosql.api;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(path = "/api/sql", produces = MediaType.APPLICATION_JSON_VALUE)
-@ConditionalOnBean(ReadOnlyQueryExecutor.class)
 @ConditionalOnExpression(
         "'${neurosql.sql-execution.enabled:false}' == 'true' and ("
                 + "'${neurosql.auth.enabled:false}' == 'true' or "
