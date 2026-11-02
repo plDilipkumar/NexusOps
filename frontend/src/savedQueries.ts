@@ -28,7 +28,7 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
-type PageOptions = RequestOptions & { cursor?: string | null };
+type PageOptions = RequestOptions & { cursor?: string | null; search?: string | null };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BEARER = /^[A-Za-z0-9_-]{43}$/;
@@ -141,7 +141,7 @@ export function parseSavedQueryPage(payload: unknown, workspaceId: string): Save
 }
 
 function failureMessage(status: number): string {
-  if (status === 400) return "The saved-query details or page request are invalid.";
+  if (status === 400) return "The saved-query details, search, or page request are invalid.";
   if (status === 401) return "Your sign-in is no longer valid. Sign in again to access saved queries.";
   if (status === 403) return "Your account cannot perform this action in the selected workspace.";
   if (status === 404) return "Saved Queries is not enabled or the requested query was not found.";
@@ -201,10 +201,18 @@ export async function fetchSavedQueriesPage(
   if (options.cursor !== undefined && options.cursor !== null && !CURSOR.test(options.cursor)) {
     throw new Error("The saved-query cursor is invalid. Refresh the list and try again.");
   }
+  const search = (options.search ?? "").trim();
+  if (
+    codePointLength(search) > 120 ||
+    /[\u0000-\u001f\u007f-\u009f]/u.test(search)
+  ) {
+    throw new Error("Saved-query search must contain at most 120 printable characters.");
+  }
 
   const url = new URL("/api/sql/saved-queries", options.apiBaseUrl.replace(/\/+$/, "") + "/");
   url.searchParams.set("limit", "25");
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
+  if (search) url.searchParams.set("q", search);
 
   const response = await fetcher(url.toString(), {
     method: "GET",

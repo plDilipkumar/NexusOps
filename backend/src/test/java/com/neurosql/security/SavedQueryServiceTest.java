@@ -149,16 +149,16 @@ class SavedQueryServiceTest {
         var first = entry(UUID.fromString("10000000-0000-4000-8000-000000000001"), "One", "", "SELECT 1");
         var second = entry(UUID.fromString("10000000-0000-4000-8000-000000000002"), "Two", "", "SELECT 2");
         var third = entry(UUID.fromString("10000000-0000-4000-8000-000000000003"), "Three", "", "SELECT 3");
-        when(repository.findRecent(WORKSPACE_ID, 3, null)).thenReturn(List.of(first, second, third));
+        when(repository.findRecent(WORKSPACE_ID, 3, null, null)).thenReturn(List.of(first, second, third));
 
-        SavedQueryService.SavedQueryPage page = service.list(WORKSPACE_ID, 2, null);
+        SavedQueryService.SavedQueryPage page = service.list(WORKSPACE_ID, 2, null, null);
 
         assertThat(page.items()).containsExactly(first, second);
         assertThat(page.hasMore()).isTrue();
         assertThat(page.nextCursor()).isNotBlank();
-        assertThat(SavedQueryCursor.decode(page.nextCursor(), WORKSPACE_ID))
+        assertThat(SavedQueryCursor.decode(page.nextCursor(), WORKSPACE_ID, null))
                 .isEqualTo(new SavedQueryCursor.Position(UPDATED_AT, second.savedQueryId()));
-        verify(repository).findRecent(WORKSPACE_ID, 3, null);
+        verify(repository).findRecent(WORKSPACE_ID, 3, null, null);
     }
 
     @Test
@@ -169,8 +169,37 @@ class SavedQueryServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
 
         String cursor = SavedQueryCursor.encode(
-                UUID.randomUUID(), UPDATED_AT, UUID.randomUUID());
-        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 25, cursor))
+                UUID.randomUUID(), null, UPDATED_AT, UUID.randomUUID());
+        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 25, null, cursor))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void listNormalizesSearchAndBindsPaginationToTheSameSearch() {
+        var first = entry(UUID.fromString("10000000-0000-4000-8000-000000000001"),
+                "Monthly revenue", "Finance report", "SELECT 1");
+        var second = entry(UUID.fromString("10000000-0000-4000-8000-000000000002"),
+                "Finance forecast", "", "SELECT 2");
+        when(repository.findRecent(WORKSPACE_ID, 2, null, "finance"))
+                .thenReturn(List.of(first, second));
+
+        SavedQueryService.SavedQueryPage page = service.list(WORKSPACE_ID, 1, " finance ", null);
+
+        assertThat(page.items()).containsExactly(first);
+        assertThat(page.hasMore()).isTrue();
+        assertThat(SavedQueryCursor.decode(page.nextCursor(), WORKSPACE_ID, "finance"))
+                .isEqualTo(new SavedQueryCursor.Position(UPDATED_AT, first.savedQueryId()));
+        verify(repository).findRecent(WORKSPACE_ID, 2, null, "finance");
+        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 1, "invoice", page.nextCursor()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsOverlongOrControlCharacterSearchBeforeDatabaseAccess() {
+        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 25, "x".repeat(121), null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 25, "finance\nreport", null))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(repository);
     }

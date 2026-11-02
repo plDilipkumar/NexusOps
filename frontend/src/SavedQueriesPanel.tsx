@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,type FormEvent} from "react";
-import {AlertCircle,Bookmark,CheckCircle2,Clock3,Edit3,LoaderCircle,Plus,RefreshCw,RotateCcw,Save,Trash2,X} from "lucide-react";
+import {AlertCircle,Bookmark,CheckCircle2,Clock3,Edit3,LoaderCircle,Plus,RefreshCw,RotateCcw,Save,Search,Trash2,X} from "lucide-react";
 import {
   createSavedQuery,
   deleteSavedQuery,
@@ -50,6 +50,8 @@ export function SavedQueriesPanel({
   const [name,setName]=useState("");
   const [description,setDescription]=useState("");
   const [queryText,setQueryText]=useState("");
+  const [searchInput,setSearchInput]=useState("");
+  const [appliedSearch,setAppliedSearch]=useState("");
   const [reloadKey,setReloadKey]=useState(0);
   const generation=useRef(0);
   const initialController=useRef<AbortController|null>(null);
@@ -76,7 +78,7 @@ export function SavedQueriesPanel({
     const controller=new AbortController();
     initialController.current=controller;
     setLoading(true);
-    void fetchSavedQueriesPage({apiBaseUrl,token,workspaceId,signal:controller.signal})
+    void fetchSavedQueriesPage({apiBaseUrl,token,workspaceId,search:appliedSearch,signal:controller.signal})
       .then(page=>{
         if(requestGeneration!==generation.current)return;
         setItems(page.items);
@@ -100,7 +102,7 @@ export function SavedQueriesPanel({
       moreController.current?.abort();
       generation.current+=1;
     };
-  },[apiBaseUrl,token,workspaceId,reloadKey]);
+  },[apiBaseUrl,token,workspaceId,reloadKey,appliedSearch]);
 
   useEffect(()=>{
     if(initialSql&&token&&workspaceId&&canCreate){
@@ -123,6 +125,8 @@ export function SavedQueriesPanel({
     setFormError("");
     setSaving(false);
     setDeletingId(null);
+    setSearchInput("");
+    setAppliedSearch("");
     onInitialSqlConsumed();
   },[token,workspaceId]);
 
@@ -136,7 +140,7 @@ export function SavedQueriesPanel({
     setError("");
     try{
       const page=await fetchSavedQueriesPage({
-        apiBaseUrl,token,workspaceId,cursor:nextCursor,signal:controller.signal,
+        apiBaseUrl,token,workspaceId,cursor:nextCursor,search:appliedSearch,signal:controller.signal,
       });
       if(requestGeneration!==generation.current)return;
       setItems(current=>{
@@ -155,6 +159,16 @@ export function SavedQueriesPanel({
         moreController.current=null;
       }
     }
+  };
+
+  const submitSearch=(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    setAppliedSearch(searchInput.trim());
+  };
+
+  const clearSearch=()=>{
+    setSearchInput("");
+    setAppliedSearch("");
   };
 
   const startCreate=()=>{
@@ -252,6 +266,22 @@ export function SavedQueriesPanel({
         <span><CheckCircle2 size={14}/> {role||"Workspace"} · workspace-scoped</span>
         <span>{items.length} loaded</span>
       </div>
+      <form className="saved-search" onSubmit={submitSearch}>
+        <label htmlFor="saved-query-search">Search by name or description</label>
+        <div className="saved-search-controls">
+          <Search size={15}/>
+          <input
+            id="saved-query-search"
+            value={searchInput}
+            onChange={event=>setSearchInput(event.target.value)}
+            maxLength={120}
+            placeholder="e.g. monthly revenue or finance"
+          />
+          <button type="submit" className="secondary" disabled={loading}>Search</button>
+          {(searchInput||appliedSearch)&&<button type="button" className="secondary" onClick={clearSearch}>Clear</button>}
+        </div>
+        {appliedSearch&&<small>Showing matches for “{appliedSearch}”. Search covers names and descriptions.</small>}
+      </form>
       {error&&<div className="saved-error" role="alert"><AlertCircle size={15}/>{error}</div>}
 
       {formOpen&&<form className="saved-form" onSubmit={submitForm}>
@@ -277,8 +307,16 @@ export function SavedQueriesPanel({
 
       {loading ? <div className="saved-state"><LoaderCircle size={18} className="saved-spin"/> Loading saved queries…</div> :
         items.length===0&&!error ? <article className="saved-empty">
-          <Bookmark size={26}/><b>No saved queries yet</b><p>Save a query from the Workspace or create one here. Saved SQL is never executed automatically.</p>
-          {canCreate&&<button type="button" className="run" onClick={startCreate}><Plus size={14}/> Create your first saved query</button>}
+          <Bookmark size={26}/>
+          {appliedSearch ? <>
+            <b>No saved queries match this search</b>
+            <p>Try another name or description, or clear the search to browse the full workspace library.</p>
+            <button type="button" className="secondary" onClick={clearSearch}>Clear search</button>
+          </> : <>
+            <b>No saved queries yet</b>
+            <p>Save a query from the Workspace or create one here. Saved SQL is never executed automatically.</p>
+            {canCreate&&<button type="button" className="run" onClick={startCreate}><Plus size={14}/> Create your first saved query</button>}
+          </>}
         </article> :
         items.length>0 ? <div className="saved-list">
           {items.map(item=><article className="saved-entry" key={item.savedQueryId}>

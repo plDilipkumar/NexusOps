@@ -47,6 +47,7 @@ public class SavedQueriesController {
     @GetMapping
     public ResponseEntity<?> list(
             @RequestParam(defaultValue = "25") int limit,
+            @RequestParam(required = false) String q,
             @RequestParam(required = false) String cursor,
             Authentication authentication,
             HttpServletRequest request) {
@@ -65,7 +66,7 @@ public class SavedQueriesController {
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
                     .header(HttpHeaders.PRAGMA, "no-cache")
-                    .body(savedQueries.list(workspaceId, limit, cursor));
+                    .body(savedQueries.list(workspaceId, limit, q, cursor));
         } catch (IllegalArgumentException invalidPage) {
             return ResponseEntity.badRequest()
                     .cacheControl(CacheControl.noStore())

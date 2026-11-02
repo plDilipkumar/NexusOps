@@ -38,19 +38,20 @@ test("rejects malformed, cross-workspace, duplicate, and inconsistent page data"
   assert.throws(()=>parseSavedQueryPage({...page,items:[{...item,queryText:""}]},workspaceId),/invalid saved-query record/);
 });
 
-test("fetches a no-store workspace page with bearer credentials and cursor",async()=>{
+test("fetches a no-store workspace page with bearer credentials, cursor, and server-side search",async()=>{
   let url="";
   let init:RequestInit|undefined;
   const fetcher:typeof fetch=async(input,requestInit)=>{
     url=String(input);init=requestInit;
     return new Response(JSON.stringify(page),{status:200,headers:{"Content-Type":"application/json"}});
   };
-  const result=await fetchSavedQueriesPage({...options,cursor:"eyJjdXJzb3IifQ"},fetcher);
+  const result=await fetchSavedQueriesPage({...options,cursor:"eyJjdXJzb3IifQ",search:" Finance "},fetcher);
   const parsed=new URL(url);
   assert.deepEqual(result,page);
   assert.equal(parsed.pathname,"/api/sql/saved-queries");
   assert.equal(parsed.searchParams.get("limit"),"25");
   assert.equal(parsed.searchParams.get("cursor"),"eyJjdXJzb3IifQ");
+  assert.equal(parsed.searchParams.get("q"),"Finance");
   assert.equal(init?.method,"GET");
   assert.equal(init?.cache,"no-store");
   const headers=init?.headers as Record<string,string>;
@@ -99,6 +100,8 @@ test("rejects invalid credentials, workspace, cursor, and drafts before network 
   await assert.rejects(fetchSavedQueriesPage({...options,token:"bad"},fetcher),/valid NeuroSQL session/);
   await assert.rejects(fetchSavedQueriesPage({...options,workspaceId:"bad"},fetcher),/valid workspace/);
   await assert.rejects(fetchSavedQueriesPage({...options,cursor:"bad cursor"},fetcher),/cursor is invalid/);
+  await assert.rejects(fetchSavedQueriesPage({...options,search:"x".repeat(121)},fetcher),/search must contain/);
+  await assert.rejects(fetchSavedQueriesPage({...options,search:"bad\nsearch"},fetcher),/search must contain/);
   await assert.rejects(createSavedQuery(options,{...draft,name:" "},fetcher),/saved-query name/);
   await assert.rejects(createSavedQuery(options,{...draft,queryText:" "},fetcher),/Saved SQL/);
   await assert.rejects(createSavedQuery(options,{...draft,name:"bad\u0000name"},fetcher),/printable characters/);

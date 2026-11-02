@@ -30,6 +30,9 @@ public class JdbcSavedQueryRepository {
                    query_text, created_at, updated_at
             FROM neurosql_app.saved_queries
             WHERE workspace_id = ?
+              AND (?::text IS NULL
+                   OR POSITION(LOWER(?) IN LOWER(name)) > 0
+                   OR POSITION(LOWER(?) IN LOWER(description)) > 0)
             ORDER BY updated_at DESC, saved_query_id DESC
             LIMIT ?
             """;
@@ -40,6 +43,9 @@ public class JdbcSavedQueryRepository {
             FROM neurosql_app.saved_queries
             WHERE workspace_id = ?
               AND (updated_at, saved_query_id) < (?::timestamptz, ?::uuid)
+              AND (?::text IS NULL
+                   OR POSITION(LOWER(?) IN LOWER(name)) > 0
+                   OR POSITION(LOWER(?) IN LOWER(description)) > 0)
             ORDER BY updated_at DESC, saved_query_id DESC
             LIMIT ?
             """;
@@ -83,7 +89,8 @@ public class JdbcSavedQueryRepository {
     public List<SavedQueryEntry> findRecent(
             UUID workspaceId,
             int limit,
-            SavedQueryCursor.Position before) {
+            SavedQueryCursor.Position before,
+            String search) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         if (limit < 1 || limit > SavedQueryService.MAX_PAGE_SIZE + 1) {
             throw new IllegalArgumentException("Saved-query read limit is outside the supported range.");
@@ -94,6 +101,9 @@ public class JdbcSavedQueryRepository {
                     LIST_FIRST_PAGE_SQL,
                     JdbcSavedQueryRepository::mapSavedQuery,
                     workspaceId,
+                    search,
+                    search,
+                    search,
                     limit);
         }
 
@@ -103,6 +113,9 @@ public class JdbcSavedQueryRepository {
                 workspaceId,
                 Timestamp.from(before.updatedAt()),
                 before.savedQueryId(),
+                search,
+                search,
+                search,
                 limit);
     }
 

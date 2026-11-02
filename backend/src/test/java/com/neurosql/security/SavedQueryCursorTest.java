@@ -16,30 +16,38 @@ class SavedQueryCursorTest {
     private static final Instant UPDATED_AT = Instant.parse("2026-11-02T10:30:00.123456Z");
 
     @Test
-    void roundTripsCanonicalWorkspaceCursor() {
-        String cursor = SavedQueryCursor.encode(WORKSPACE_ID, UPDATED_AT, SAVED_QUERY_ID);
+    void roundTripsCanonicalWorkspaceAndSearchCursor() {
+        String cursor = SavedQueryCursor.encode(WORKSPACE_ID, "finance", UPDATED_AT, SAVED_QUERY_ID);
 
-        assertThat(SavedQueryCursor.decode(cursor, WORKSPACE_ID))
+        assertThat(SavedQueryCursor.decode(cursor, WORKSPACE_ID, "finance"))
                 .isEqualTo(new SavedQueryCursor.Position(UPDATED_AT, SAVED_QUERY_ID));
     }
 
     @Test
     void rejectsCursorReplayedAcrossWorkspaces() {
-        String cursor = SavedQueryCursor.encode(WORKSPACE_ID, UPDATED_AT, SAVED_QUERY_ID);
+        String cursor = SavedQueryCursor.encode(WORKSPACE_ID, "finance", UPDATED_AT, SAVED_QUERY_ID);
 
-        assertThatThrownBy(() -> SavedQueryCursor.decode(cursor, UUID.randomUUID()))
+        assertThatThrownBy(() -> SavedQueryCursor.decode(cursor, UUID.randomUUID(), "finance"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsCursorReplayedAcrossDifferentSearches() {
+        String cursor = SavedQueryCursor.encode(WORKSPACE_ID, "finance", UPDATED_AT, SAVED_QUERY_ID);
+
+        assertThatThrownBy(() -> SavedQueryCursor.decode(cursor, WORKSPACE_ID, "invoice"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void rejectsMalformedAndNonCanonicalCursors() {
-        String cursor = SavedQueryCursor.encode(WORKSPACE_ID, UPDATED_AT, SAVED_QUERY_ID);
+        String cursor = SavedQueryCursor.encode(WORKSPACE_ID, null, UPDATED_AT, SAVED_QUERY_ID);
 
-        assertThatThrownBy(() -> SavedQueryCursor.decode(cursor + "=", WORKSPACE_ID))
+        assertThatThrownBy(() -> SavedQueryCursor.decode(cursor + "=", WORKSPACE_ID, null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> SavedQueryCursor.decode("not-a-cursor", WORKSPACE_ID))
+        assertThatThrownBy(() -> SavedQueryCursor.decode("not-a-cursor", WORKSPACE_ID, null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> SavedQueryCursor.decode(" ", WORKSPACE_ID))
+        assertThatThrownBy(() -> SavedQueryCursor.decode(" ", WORKSPACE_ID, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -47,6 +55,7 @@ class SavedQueryCursorTest {
     void rejectsTimestampsWithoutPostgresMicrosecondPrecision() {
         assertThatThrownBy(() -> SavedQueryCursor.encode(
                 WORKSPACE_ID,
+                null,
                 Instant.parse("2026-11-02T10:30:00.123456789Z"),
                 SAVED_QUERY_ID))
                 .isInstanceOf(IllegalArgumentException.class);

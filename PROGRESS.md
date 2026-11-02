@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-02 — Saved Queries frontend and session-context cleanup; CI run #277 passed.
+Last verified: 2026-11-02 — Server-side Saved Queries search; CI verification pending.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -859,3 +859,20 @@ Last verified: 2026-11-02 — Saved Queries frontend and session-context cleanup
 - [ ] Saved Queries remains disabled in production. Durable authentication and the control-plane datasource are not enabled; draft PR #7 remains open/draft/unapproved/unmerged and V1–V5 have not been applied to Neon main. The production branch has no separate least-privilege application LOGIN. The dedicated SQL read-only LOGIN is also not provisioned or verified.
 - [ ] PR #9 remains open/unmerged. The production API smoke test was skipped for this feature-branch run, and no live end-to-end Saved Queries workflow or deployment is claimed.
 - [x] No Neon SQL writes, migrations, role changes, production data changes, environment changes, or deployments were performed. No credentials were committed and no paid resources were introduced.
+
+
+## Server-side Saved Queries search and filter — PR #9 (2026-11-02)
+
+- [x] Re-read this tracker and inspected the current feature branch/PRs, repository implementation, Neon project/database/branches/roles, Vercel Git linkage/deployments, and Render service/deploy history before selecting the next unfinished Saved Queries milestone.
+- [x] Added optional q search to GET /api/sql/saved-queries. Search is bounded to 120 printable Unicode code points, normalized by trimming, case-insensitive, and limited to saved-query name and description; SQL text is deliberately not searched.
+- [x] Implemented the search with bound PostgreSQL parameters and POSITION(LOWER(?) IN LOWER(...)), so percent signs, underscores, and backslashes are literal characters rather than LIKE wildcards. Workspace filtering remains mandatory in both first-page and keyset-page SQL.
+- [x] Upgraded the saved-query keyset cursor to v2 and included a SHA-256 fingerprint of the normalized search. A cursor from one workspace or search cannot be replayed with a different filter; the database workspace predicate remains the authorization boundary.
+- [x] Added the Saved Queries search form. Applying/clearing search resets the keyset page, Load More retains the exact active filter, and empty results distinguish “no saved queries” from “no matches”. The frontend does not fake global search by filtering only loaded records.
+- [x] Added service/cursor tests, HTTP parameter-forwarding coverage, disposable PostgreSQL integration tests for case-insensitive name/description matches, literal wildcard matching, workspace isolation, stable filtered pagination, and cursor/filter mismatch rejection, plus frontend request/validation tests.
+- [ ] GitHub Actions verification for this commit is pending. The immediately preceding branch-head run #278 completed backend tests, frontend production build, and PostgreSQL 17 integration successfully; production smoke was skipped because PR #9 is unmerged.
+- [x] Read-only Neon inspection on 2026-11-02: project neurosql (lingering-dew-88806235), free organization, Singapore, PostgreSQL 17.11. Production main (br-empty-credit-b360dmpc), database neurosql_db, has zero neurosql_app tables and only the elevated neurosql_owner role. Temporary V5 review branch br-morning-scene-b35jbi7a has eight proposed application tables; neurosql_auth_runtime is NOLOGIN and has no elevated role attributes. No production or temporary-branch schema changes were needed for this search feature.
+- [x] Vercel project neurosql (prj_bWhKWqbbb5EaNRdez05bEsMPe35a) is linked to plDilipkumar/NexusOps on the Hobby plan and retains neurosql.vercel.app. Latest inspected READY deployment is commit 789f3ecb85cb76bd4f9bbac388aad8b9b90347df on work/account-action-token-schema, with no production target; no deployment for this feature commit was found or triggered.
+- [x] Render service neurosql-api (srv-dbgb6vt9fdbs73da93n0) is on the free plan in the Dilip Kumar workspace, linked to plDilipkumar/NexusOps branch main, Docker context backend, with commit auto-deploy enabled. Latest listed live deployment remains commit 746d58da4d47b1fb49a6796dda8b424c8a6c969d; this feature branch is not deployed there.
+- [ ] Search is currently limited to name/description; query-text/full-SQL search and search ranking are intentionally not included. A documented history-retention and user-facing history deletion/export design remains pending.
+- [ ] PR #9 remains open/unmerged. Draft PR #7 remains unapproved/unmerged; proposed V1–V5 have not been applied to Neon main. The production application/control-plane LOGIN and dedicated SQL read-only LOGIN remain unverified, so durable authentication, SQL execution, EXPLAIN, query history, and Saved Queries remain disabled in production.
+- [x] No database migrations, Neon role changes, production data/environment changes, deployments, credentials, or paid resources were introduced.

@@ -247,17 +247,17 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         insertMembership(secondWorkspace, firstUser, "ADMIN", "ACTIVE");
 
         SavedQueryService savedQueries = new SavedQueryService(new JdbcSavedQueryRepository(jdbc));
-        var first = savedQueries.create(firstWorkspace, firstUser, "Monthly revenue", "Finance", "SELECT 1");
+        var first = savedQueries.create(firstWorkspace, firstUser, "Monthly revenue", "Finance report", "SELECT 1");
         var second = savedQueries.create(firstWorkspace, secondUser, "Open invoices", "", "SELECT 2");
         var otherWorkspace = savedQueries.create(secondWorkspace, firstUser, "Private report", "", "SELECT 3");
 
-        SavedQueryService.SavedQueryPage firstPage = savedQueries.list(firstWorkspace, 1, null);
+        SavedQueryService.SavedQueryPage firstPage = savedQueries.list(firstWorkspace, 1, null, null);
         assertThat(firstPage.items()).hasSize(1);
         assertThat(firstPage.hasMore()).isTrue();
         assertThat(firstPage.nextCursor()).isNotBlank();
 
         SavedQueryService.SavedQueryPage secondPage =
-                savedQueries.list(firstWorkspace, 1, firstPage.nextCursor());
+                savedQueries.list(firstWorkspace, 1, null, firstPage.nextCursor());
         assertThat(secondPage.items()).hasSize(1);
         assertThat(secondPage.hasMore()).isFalse();
         assertThat(secondPage.nextCursor()).isNull();
@@ -265,9 +265,38 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         assertThat(java.util.stream.Stream.concat(firstPage.items().stream(), secondPage.items().stream())
                 .map(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId).toList())
                 .containsExactlyInAnyOrder(first.savedQueryId(), second.savedQueryId());
-        assertThat(savedQueries.list(secondWorkspace, 10, null).items())
+        assertThat(savedQueries.list(secondWorkspace, 10, null, null).items())
                 .extracting(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId)
                 .containsExactly(otherWorkspace.savedQueryId());
+
+        var secondFinance = savedQueries.create(
+                firstWorkspace, secondUser, "Monthly expenses", "Finance forecast", "SELECT 4");
+        var percent = savedQueries.create(
+                firstWorkspace, firstUser, "Percent % report", "Literal percent marker", "SELECT 5");
+        var underscore = savedQueries.create(
+                firstWorkspace, firstUser, "Underscore report", "Literal_under_score", "SELECT 6");
+
+        SavedQueryService.SavedQueryPage financeFirst = savedQueries.list(firstWorkspace, 1, "finance", null);
+        SavedQueryService.SavedQueryPage financeSecond =
+                savedQueries.list(firstWorkspace, 1, "finance", financeFirst.nextCursor());
+        assertThat(financeFirst.hasMore()).isTrue();
+        assertThat(financeSecond.hasMore()).isFalse();
+        assertThat(java.util.stream.Stream.concat(financeFirst.items().stream(), financeSecond.items().stream())
+                .map(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId).toList())
+                .containsExactlyInAnyOrder(first.savedQueryId(), secondFinance.savedQueryId());
+        assertThatThrownBy(() -> savedQueries.list(firstWorkspace, 1, "invoice", financeFirst.nextCursor()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(savedQueries.list(firstWorkspace, 10, "INVOICE", null).items())
+                .extracting(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId)
+                .containsExactly(second.savedQueryId());
+        assertThat(savedQueries.list(firstWorkspace, 10, "%", null).items())
+                .extracting(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId)
+                .containsExactly(percent.savedQueryId());
+        assertThat(savedQueries.list(firstWorkspace, 10, "_", null).items())
+                .extracting(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId)
+                .containsExactly(underscore.savedQueryId());
+        assertThat(savedQueries.list(secondWorkspace, 10, "finance", null).items()).isEmpty();
     }
 
     @Test

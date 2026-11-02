@@ -25,6 +25,7 @@ public class SavedQueryService {
     private static final int MAX_NAME_CODE_POINTS = 120;
     private static final int MAX_DESCRIPTION_CODE_POINTS = 500;
     private static final int MAX_QUERY_CODE_POINTS = 50_000;
+    private static final int MAX_SEARCH_CODE_POINTS = 120;
 
     private final JdbcSavedQueryRepository repository;
 
@@ -32,17 +33,18 @@ public class SavedQueryService {
         this.repository = Objects.requireNonNull(repository, "repository");
     }
 
-    public SavedQueryPage list(UUID workspaceId, int pageSize, String cursor) {
+    public SavedQueryPage list(UUID workspaceId, int pageSize, String rawSearch, String cursor) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
             throw new IllegalArgumentException("Saved-query page size must be between 1 and 100.");
         }
 
+        String search = normalizeSearch(rawSearch);
         SavedQueryCursor.Position before = cursor == null
                 ? null
-                : SavedQueryCursor.decode(cursor, workspaceId);
+                : SavedQueryCursor.decode(cursor, workspaceId, search);
         List<JdbcSavedQueryRepository.SavedQueryEntry> fetched =
-                repository.findRecent(workspaceId, pageSize + 1, before);
+                repository.findRecent(workspaceId, pageSize + 1, before, search);
 
         boolean hasMore = fetched.size() > pageSize;
         List<JdbcSavedQueryRepository.SavedQueryEntry> items = hasMore
@@ -52,7 +54,8 @@ public class SavedQueryService {
         String nextCursor = null;
         if (hasMore && !items.isEmpty()) {
             JdbcSavedQueryRepository.SavedQueryEntry last = items.get(items.size() - 1);
-            nextCursor = SavedQueryCursor.encode(workspaceId, last.updatedAt(), last.savedQueryId());
+            nextCursor = SavedQueryCursor.encode(
+                    workspaceId, search, last.updatedAt(), last.savedQueryId());
         }
         return new SavedQueryPage(items, nextCursor, hasMore);
     }
@@ -106,6 +109,15 @@ public class SavedQueryService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(savedQueryId, "savedQueryId");
         return repository.delete(workspaceId, savedQueryId);
+    }
+
+    private static String normalizeSearch(String value) {
+        String search = value == null ? "" : value.strip();
+        int length = search.codePointCount(0, search.length());
+        if (length > MAX_SEARCH_CODE_POINTS || search.codePoints().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("Saved-query search must contain at most 120 printable characters.");
+        }
+        return search.isEmpty() ? null : search;
     }
 
     private static String normalizeName(String value) {

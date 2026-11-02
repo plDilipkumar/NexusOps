@@ -478,13 +478,14 @@ class WorkspaceAuthorizationHttpTest {
         var entry = new JdbcSavedQueryRepository.SavedQueryEntry(
                 savedId, WORKSPACE_ID, USER_ID, "Monthly revenue", "Finance report",
                 "SELECT sum(amount) FROM invoices", updatedAt, updatedAt);
-        when(savedQueryService.list(WORKSPACE_ID, 1, null))
+        when(savedQueryService.list(WORKSPACE_ID, 1, "finance", null))
                 .thenReturn(new SavedQueryService.SavedQueryPage(List.of(entry), null, false));
 
         mockMvc.perform(get("/api/sql/saved-queries")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
                         .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
-                        .param("limit", "1"))
+                        .param("limit", "1")
+                        .param("q", "finance"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
                         org.hamcrest.Matchers.containsString("no-store")))
@@ -495,7 +496,7 @@ class WorkspaceAuthorizationHttpTest {
 
         verify(workspaceAuthorizationService)
                 .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
-        verify(savedQueryService).list(WORKSPACE_ID, 1, null);
+        verify(savedQueryService).list(WORKSPACE_ID, 1, "finance", null);
     }
 
     @Test
