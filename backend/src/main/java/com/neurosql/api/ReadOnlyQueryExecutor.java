@@ -28,7 +28,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * PostgreSQL read-only transaction and database grants are enforced before
  * submitted SQL is executed. The feature is disabled by default.</p>
  */
-public final class ReadOnlyQueryExecutor {
+public final class ReadOnlyQueryExecutor implements AutoCloseable {
     private static final String ROLE_READINESS_SQL = """
             SELECT current_database() = ? AS expected_database,
                    session_user = current_user AS session_identity_matches,
@@ -127,6 +127,7 @@ public final class ReadOnlyQueryExecutor {
     private static final int MAX_PLAN_CHARACTERS = 65_536;
 
     private final JdbcTemplate jdbc;
+    private final AutoCloseable ownedDataSource;
     private final TransactionTemplate transaction;
     private final ReadOnlySqlValidator validator;
     private final String expectedDatabase;
@@ -142,7 +143,21 @@ public final class ReadOnlyQueryExecutor {
             String expectedReadOnlyRole,
             int maximumRows,
             int queryTimeoutSeconds) {
+        this(jdbc, transactionManager, validator, expectedDatabase, expectedReadOnlyRole,
+                maximumRows, queryTimeoutSeconds, null);
+    }
+
+    ReadOnlyQueryExecutor(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager,
+            ReadOnlySqlValidator validator,
+            String expectedDatabase,
+            String expectedReadOnlyRole,
+            int maximumRows,
+            int queryTimeoutSeconds,
+            AutoCloseable ownedDataSource) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.ownedDataSource = ownedDataSource;
         this.validator = Objects.requireNonNull(validator, "validator");
         this.expectedDatabase = requireNonBlank(expectedDatabase, "expectedDatabase");
         this.expectedReadOnlyRole = requireRoleName(expectedReadOnlyRole);
@@ -292,6 +307,18 @@ public final class ReadOnlyQueryExecutor {
             return text;
         }
         return text.substring(0, MAX_CELL_CHARACTERS) + "… [truncated]";
+    }
+
+    @Override
+    public void close() {
+        if (ownedDataSource == null) {
+            return;
+        }
+        try {
+            ownedDataSource.close();
+        } catch (Exception ignored) {
+            // Closing the optional SQL-only pool must not leak connection details.
+        }
     }
 
     private static String requireNonBlank(String value, String name) {
