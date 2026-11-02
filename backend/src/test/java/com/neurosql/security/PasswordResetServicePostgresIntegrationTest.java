@@ -148,7 +148,8 @@ class PasswordResetServicePostgresIntegrationTest {
                 actionTokens.issueToken(fixture.userId(), AccountActionTokenService.Purpose.PASSWORD_RESET);
         jdbc.update("""
                 UPDATE neurosql_app.account_action_tokens
-                SET expires_at = now() - INTERVAL '1 minute'
+                SET created_at = now() - INTERVAL '2 hours',
+                    expires_at = now() - INTERVAL '1 hour'
                 WHERE token_hash = ?
                 """,
                 tokenCodec.hashToken(expired.token()));
