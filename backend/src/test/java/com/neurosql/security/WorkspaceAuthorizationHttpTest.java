@@ -154,6 +154,45 @@ class WorkspaceAuthorizationHttpTest {
     }
 
     @Test
+    void activeViewerCanRequestExplainForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(queryExecutor.explain("SELECT 1")).thenReturn(
+                new ReadOnlyQueryExecutor.ExplainResponse(
+                        "[{\\"Plan\\":{\\"Node Type\\":\\"Result\\"}}]", 1, false));
+
+        mockMvc.perform(post("/api/sql/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\\"sql\\":\\"SELECT 1\\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analyze").value(false));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(queryExecutor).explain("SELECT 1");
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotRequestExplain() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\\"sql\\":\\"SELECT 1\\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(queryExecutor);
+    }
+
+    @Test
     void viewerWithoutWorkspaceMembershipCannotExecuteSql() throws Exception {
         authenticateSession();
         when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))

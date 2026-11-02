@@ -122,6 +122,9 @@ public final class WorkspaceAuthorizationFilter extends OncePerRequestFilter {
         if ("POST".equalsIgnoreCase(method) && "/api/sql/execute".equals(path)) {
             return WorkspaceRole.VIEWER;
         }
+        if ("POST".equalsIgnoreCase(method) && "/api/sql/explain".equals(path)) {
+            return WorkspaceRole.VIEWER;
+        }
         // New paths and HTTP methods must declare an explicit role policy before being exposed.
         return null;
     }

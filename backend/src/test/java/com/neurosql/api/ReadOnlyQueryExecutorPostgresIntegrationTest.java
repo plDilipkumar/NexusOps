@@ -87,6 +87,29 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
     }
 
     @Test
+    void returnsJsonPlanWithoutExecutingTheSubmittedQuery() {
+        int before = rowCount();
+
+        ReadOnlyQueryExecutor.ExplainResponse result =
+                runtimeExecutor().explain("SELECT " + schemaName + ".attempt_write()");
+
+        assertThat(result.planJson()).contains("\\"Plan\\"");
+        assertThat(result.analyze()).isFalse();
+        assertThat(result.elapsedTimeMillis()).isGreaterThanOrEqualTo(0);
+        // EXPLAIN without ANALYZE plans the SECURITY DEFINER call but never invokes it.
+        assertThat(rowCount()).isEqualTo(before);
+    }
+
+    @Test
+    void rejectsMutationBeforeGeneratingAPlan() {
+        assertThatThrownBy(() -> runtimeExecutor().explain(
+                "DELETE FROM " + schemaName + ".probe"))
+                .isInstanceOf(ReadOnlyQueryExecutor.QueryRejectedException.class);
+
+        assertThat(rowCount()).isEqualTo(55);
+    }
+
+    @Test
     void rejectsMutationBeforeItReachesPostgres() {
         assertThatThrownBy(() -> runtimeExecutor().execute(
                 "DELETE FROM " + schemaName + ".probe"))

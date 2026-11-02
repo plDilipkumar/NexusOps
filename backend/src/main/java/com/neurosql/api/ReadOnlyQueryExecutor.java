@@ -124,6 +124,7 @@ public final class ReadOnlyQueryExecutor {
 
     private static final int MAX_COLUMNS = 100;
     private static final int MAX_CELL_CHARACTERS = 4_096;
+    private static final int MAX_PLAN_CHARACTERS = 65_536;
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
@@ -174,6 +175,41 @@ public final class ReadOnlyQueryExecutor {
                 assertReadOnlyRuntimeRole();
                 return executeBoundedQuery(sql);
             }), "The read-only query transaction returned no result.");
+        } catch (QueryRejectedException | QueryExecutionUnavailableException | QueryExecutionException known) {
+            throw known;
+        } catch (DataAccessException | TransactionException failure) {
+            // Do not expose SQL, schema names, driver messages, or connection details.
+            throw new QueryExecutionException();
+        }
+    }
+
+    /**
+     * Returns a PostgreSQL JSON execution plan without running the submitted query.
+     * EXPLAIN ANALYZE is intentionally never used; the request still runs in a
+     * read-only transaction after the same dedicated-role checks as normal SQL.
+     */
+    public ExplainResponse explain(String sql) {
+        ReadOnlySqlValidator.ValidationResponse validation = validator.validate(sql);
+        if (!validation.valid()) {
+            throw new QueryRejectedException(validation.errors());
+        }
+
+        try {
+            return Objects.requireNonNull(transaction.execute(status -> {
+                jdbc.execute("SET TRANSACTION READ ONLY");
+                jdbc.execute("SET LOCAL statement_timeout = '" + (queryTimeoutSeconds * 1_000) + "ms'");
+                assertReadOnlyRuntimeRole();
+
+                long startedAt = System.nanoTime();
+                String planJson = jdbc.queryForObject(
+                        "EXPLAIN (FORMAT JSON, COSTS TRUE, VERBOSE FALSE, SETTINGS FALSE) " + sql,
+                        (resultSet, rowNumber) -> resultSet.getString(1));
+                if (planJson == null || planJson.length() > MAX_PLAN_CHARACTERS) {
+                    throw new QueryExecutionException();
+                }
+                long elapsedMillis = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
+                return new ExplainResponse(planJson, elapsedMillis, false);
+            }), "The read-only EXPLAIN transaction returned no result.");
         } catch (QueryRejectedException | QueryExecutionUnavailableException | QueryExecutionException known) {
             throw known;
         } catch (DataAccessException | TransactionException failure) {
@@ -280,6 +316,8 @@ public final class ReadOnlyQueryExecutor {
             int rowCount,
             boolean truncated,
             long executionTimeMillis) {}
+
+    public record ExplainResponse(String planJson, long elapsedTimeMillis, boolean analyze) {}
 
     public static final class QueryRejectedException extends RuntimeException {
         private final List<String> errors;

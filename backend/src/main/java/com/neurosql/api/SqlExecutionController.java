@@ -54,6 +54,29 @@ public class SqlExecutionController {
         }
     }
 
+    @PostMapping(path = "/explain", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> explain(@Valid @RequestBody QueryRequest request) {
+        try {
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .body(executor.explain(request.sql()));
+        } catch (ReadOnlyQueryExecutor.QueryRejectedException rejected) {
+            return ResponseEntity.badRequest()
+                    .cacheControl(CacheControl.noStore())
+                    .body(new QueryError("The SQL draft was rejected.", rejected.errors()));
+        } catch (ReadOnlyQueryExecutor.QueryExecutionUnavailableException unavailable) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new QueryError(
+                            "SQL execution is not ready. A restricted read-only database role is required.",
+                            java.util.List.of()));
+        } catch (ReadOnlyQueryExecutor.QueryExecutionException failed) {
+            return ResponseEntity.unprocessableEntity()
+                    .cacheControl(CacheControl.noStore())
+                    .body(new QueryError("The query plan could not be generated.", java.util.List.of()));
+        }
+    }
+
     public record QueryRequest(
             @NotBlank(message = "SQL is required.")
             @Size(max = 10_000, message = "SQL must be 10000 characters or fewer.")
