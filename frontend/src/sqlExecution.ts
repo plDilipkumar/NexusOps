@@ -108,7 +108,10 @@ function failureMessage(status: number, payload: unknown): string {
   if (status === 401) return "Your sign-in is no longer valid. Sign in again.";
   if (status === 403) return "Your account cannot run queries in the selected workspace.";
   if (status === 404) return "SQL execution is not enabled on the API.";
-  if (status === 409) return "The query was cancelled.";
+  if (status === 409) {
+    if (isRecord(payload) && payload.message === "The query was cancelled.") return "The query was cancelled.";
+    return "The query request conflicted with another active execution. Retry it.";
+  }
   if (status === 429) return "Too many query requests. Try again later.";
   if (status === 503) return "The restricted read-only database role is not ready. Query execution is unavailable.";
   if (status === 422) return "The query could not be completed. Check the SQL and visible schema, then try again.";
