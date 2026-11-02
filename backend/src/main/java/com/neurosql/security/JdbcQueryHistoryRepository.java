@@ -3,7 +3,7 @@ package com.neurosql.security;
 import java.util.Objects;
 import java.util.UUID;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -15,14 +15,10 @@ import org.springframework.stereotype.Repository;
  * have been approved and provisioned.</p>
  */
 @Repository
-@ConditionalOnProperty(
-        prefix = "neurosql.auth",
-        name = {"durable-sessions-enabled", "shared-rate-limit-enabled"},
-        havingValue = "true")
-@ConditionalOnProperty(
-        prefix = "neurosql.sql-history",
-        name = "enabled",
-        havingValue = "true")
+@ConditionalOnExpression(
+        "'${neurosql.auth.durable-sessions-enabled:false}' == 'true' and "
+                + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true' and "
+                + "'${neurosql.sql-history.enabled:false}' == 'true')
 public class JdbcQueryHistoryRepository {
     static final String INSERT_SQL = """
             INSERT INTO neurosql_app.query_history
