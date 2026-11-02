@@ -75,6 +75,31 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
                 )
                 """);
 
+
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS neurosql_app.saved_queries (
+                    saved_query_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    workspace_id UUID NOT NULL,
+                    owner_user_id UUID NOT NULL,
+                    name VARCHAR(120) NOT NULL CHECK (name <> '' AND name = btrim(name)),
+                    description VARCHAR(500) NOT NULL DEFAULT '',
+                    query_text TEXT NOT NULL CHECK (length(query_text) BETWEEN 1 AND 50000 AND btrim(query_text) <> ''),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    FOREIGN KEY (workspace_id, owner_user_id)
+                        REFERENCES neurosql_app.workspace_memberships (workspace_id, user_id)
+                        ON DELETE CASCADE
+                )
+                """);
+        jdbc.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_saved_queries_workspace_name
+                    ON neurosql_app.saved_queries (workspace_id, lower(name))
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS ix_saved_queries_workspace_updated
+                    ON neurosql_app.saved_queries (workspace_id, updated_at DESC, saved_query_id DESC)
+                """);
+
         authorization = new WorkspaceAuthorizationService(new JdbcWorkspaceAuthorizationRepository(jdbc));
     }
 
@@ -208,6 +233,74 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         assertThat(org.assertj.core.api.Assertions.catchThrowable(
                 () -> reader.list(secondUser, firstWorkspace, 10, firstPage.nextCursor())))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+
+    @Test
+    void savedQueriesAreSharedOnlyWithinTheirWorkspaceAndUseStableKeysetPagination() {
+        UUID firstUser = insertUser("ACTIVE");
+        UUID secondUser = insertUser("ACTIVE");
+        UUID firstWorkspace = insertWorkspace("saved-query-a");
+        UUID secondWorkspace = insertWorkspace("saved-query-b");
+        insertMembership(firstWorkspace, firstUser, "OWNER", "ACTIVE");
+        insertMembership(firstWorkspace, secondUser, "MEMBER", "ACTIVE");
+        insertMembership(secondWorkspace, firstUser, "ADMIN", "ACTIVE");
+
+        SavedQueryService savedQueries = new SavedQueryService(new JdbcSavedQueryRepository(jdbc));
+        var first = savedQueries.create(firstWorkspace, firstUser, "Monthly revenue", "Finance", "SELECT 1");
+        var second = savedQueries.create(firstWorkspace, secondUser, "Open invoices", "", "SELECT 2");
+        var otherWorkspace = savedQueries.create(secondWorkspace, firstUser, "Private report", "", "SELECT 3");
+
+        SavedQueryService.SavedQueryPage firstPage = savedQueries.list(firstWorkspace, 1, null);
+        assertThat(firstPage.items()).hasSize(1);
+        assertThat(firstPage.hasMore()).isTrue();
+        assertThat(firstPage.nextCursor()).isNotBlank();
+
+        SavedQueryService.SavedQueryPage secondPage =
+                savedQueries.list(firstWorkspace, 1, firstPage.nextCursor());
+        assertThat(secondPage.items()).hasSize(1);
+        assertThat(secondPage.hasMore()).isFalse();
+        assertThat(secondPage.nextCursor()).isNull();
+
+        assertThat(java.util.stream.Stream.concat(firstPage.items().stream(), secondPage.items().stream())
+                .map(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId).toList())
+                .containsExactlyInAnyOrder(first.savedQueryId(), second.savedQueryId());
+        assertThat(savedQueries.list(secondWorkspace, 10, null).items())
+                .extracting(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId)
+                .containsExactly(otherWorkspace.savedQueryId());
+    }
+
+    @Test
+    void savedQueryNamesAreUniqueWithoutCrossWorkspaceCollisions() {
+        UUID user = insertUser("ACTIVE");
+        UUID firstWorkspace = insertWorkspace("saved-name-a");
+        UUID secondWorkspace = insertWorkspace("saved-name-b");
+        insertMembership(firstWorkspace, user, "OWNER", "ACTIVE");
+        insertMembership(secondWorkspace, user, "OWNER", "ACTIVE");
+
+        SavedQueryService savedQueries = new SavedQueryService(new JdbcSavedQueryRepository(jdbc));
+        savedQueries.create(firstWorkspace, user, "Monthly", "", "SELECT 1");
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                () -> savedQueries.create(firstWorkspace, user, "monthly", "", "SELECT 2")))
+                .isInstanceOf(SavedQueryService.DuplicateNameException.class);
+
+        assertThat(savedQueries.create(secondWorkspace, user, "monthly", "", "SELECT 2"))
+                .isNotNull();
+    }
+
+    @Test
+    void savedQueryOwnerMustHaveMembershipInTheTargetWorkspace() {
+        UUID member = insertUser("ACTIVE");
+        UUID outsider = insertUser("ACTIVE");
+        UUID workspace = insertWorkspace("saved-query-membership");
+        insertMembership(workspace, member, "OWNER", "ACTIVE");
+
+        SavedQueryService savedQueries = new SavedQueryService(new JdbcSavedQueryRepository(jdbc));
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                () -> savedQueries.create(workspace, outsider, "Not allowed", "", "SELECT 1")))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 
     private void insertHistory(UUID workspaceId, UUID userId, String sql, String createdAt) {
