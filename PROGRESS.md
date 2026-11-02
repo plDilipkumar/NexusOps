@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — gated email verification endpoint hardened against rejected-token logging; GitHub Actions run #308 passed.
+Last verified: 2026-11-03 — transactional password-reset orchestration implemented; GitHub Actions run #312 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1021,7 +1021,32 @@ Last verified: 2026-11-03 — gated email verification endpoint hardened against
 - [ ] Neon API continued returning HTTP 502 for read-only project/branch/database inspection. No current Neon state is asserted from this run; no schema change or Neon write was attempted.
 - [x] No production migrations, database writes, role/environment changes, deployments, credentials, or paid resources were introduced.
 
+## Transactional password-reset orchestration — PR #9 (2026-11-03)
+
+- [x] Re-read this tracker and inspected the current feature branch, PR #9 / draft PR #7, account-action token service/repository, account repository, session repository, disposable PostgreSQL test fixtures, Neon project/branches/database/roles, Vercel Git linkage/deployments, and the confirmed Render workspace/service/deploy history before selecting this milestone.
+- [x] Added feature-gated `PasswordResetService`, requiring both durable sessions and the shared PostgreSQL login limiter flags. It is an internal service only; no public reset endpoint or frontend was added in this step.
+- [x] Reused the existing `PASSWORD_RESET` purpose and `AccountActionTokenService.consumeToken`; no parallel token format or token table was introduced. Invalid, expired, replayed, malformed, and wrong-purpose tokens return the same non-success result.
+- [x] Reused `PasswordPolicy` before token consumption and the existing Spring `PasswordEncoder` (BCrypt in the application configuration) for the replacement hash. Raw reset tokens are never persisted by this service.
+- [x] Added `JdbcAccountRepository.updatePasswordHashForActiveVerifiedUser`. It updates only an ACTIVE account with a verified email and refreshes `updated_at`; if the account is no longer eligible, the service throws so the preceding token consumption rolls back.
+- [x] Added `JdbcSessionRepository.revokeAllForUser`. It revokes every previously unrevoked session for that user in the same transaction, using PostgreSQL `GREATEST(now(), created_at)` to preserve the schema timestamp check.
+- [x] The public service method is transactional. Token consumption, BCrypt hash update, and session revocation commit together. An account-update failure or session-revocation exception rolls the token and password changes back.
+- [x] Added four unit tests for successful ordering, invalid tokens, password-policy rejection before token use, and ineligible account handling.
+- [x] Added four disposable PostgreSQL 17 integration tests: successful BCrypt password replacement + all-session revocation + replay rejection; expired/wrong-purpose token rejection; rollback for a disabled account; and rollback of token/password/session changes when session revocation fails.
+- [x] The first CI run (#310) passed backend and frontend checks, but inspection showed the new PostgreSQL integration class was not yet listed in the workflow's explicit integration-test command. Updated `.github/workflows/ci.yml` to include `PasswordResetServicePostgresIntegrationTest`; corrected the expired-token fixture to backdate both `created_at` and `expires_at` so it respects the existing `expires_at > created_at` constraint.
+- [x] GitHub Actions run #312 (ID `41540595304`, https://github.com/plDilipkumar/NexusOps/actions/runs/41540595304) completed successfully on the password-reset workflow update: backend Maven verification ran 297 tests with 0 failures/errors and 54 expected database-gated skips; the disposable PostgreSQL 17 integration job passed 54 tests with 0 failures/errors/skips, including all four new password-reset integration tests; frontend tests passed (47), and TypeScript compilation + Vite production build passed. Production API/database smoke was skipped because PR #9 remains unmerged.
+- [x] Read-only Neon inspection confirmed project `neurosql` (`lingering-dew-88806235`), free subscription, AWS ap-southeast-1, PostgreSQL 17, production branch `main` (`br-empty-credit-b360dmpc`), and database `neurosql_db`. Production `main` still has zero application tables and only the `neurosql_owner` login among inspected NeuroSQL roles. Temporary V5 review branch `br-morning-scene-b35jbi7a` still contains the eight proposed `neurosql_app` tables; `neurosql_auth_runtime` remains NOLOGIN. No Neon schema, row, or role was changed.
+- [x] Vercel Git linkage was directly confirmed: Hobby project `neurosql` (`prj_bWhKWqbbb5EaNRdez05bEsMPe35a`) is linked to `plDilipkumar/NexusOps`. The project reports `live=false`; the latest READY deployment has no production target. Deployment lookup for the current password-reset commit returned zero deployments. No Vercel deployment or plan upgrade was triggered.
+- [x] Render was inspected in the confirmed Dilip Kumar workspace. Service `neurosql-api` (`srv-dbgb6vt9fdbs73da93n0`) remains free-tier, Singapore, one instance, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy on commit. Latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; this feature branch is not deployed there.
+- [ ] Password-reset initiation/resend HTTP endpoint and confirmation endpoint are not implemented. SMTP remains disabled; no provider credentials were configured.
+- [ ] Before exposing password reset publicly, address the concurrent-login race: a login that reads the old password hash before reset could potentially insert a new session after the reset transaction revokes existing sessions. Serialize account credential verification/session issuance with password changes (for example, lock the account row through login and session creation) and add a PostgreSQL concurrency test before adding the public endpoint.
+- [ ] The existing registration/verification request limiter is process-local. A shared/distributed abuse-control policy and operator-configured trusted proxy CIDRs remain required before public account lifecycle rollout.
+- [ ] PR #9 remains open/unmerged. Draft PR #7 remains unapproved/unmerged; proposed V1–V5 migrations remain unapplied to Neon `main`. The production application/control-plane LOGIN and dedicated SQL read-only LOGIN remain unverified, so durable authentication, query history, saved queries, SQL execution, and EXPLAIN remain disabled in production.
+- [x] No Neon migrations, production database writes, role changes, environment changes, deployments, credentials, or paid resources were introduced.
+
 ### Next milestone
-- [ ] Implement password-reset orchestration using the existing `PASSWORD_RESET` token purpose: atomically consume a valid token, update the BCrypt password hash, and revoke every active session for that user in the same transaction. Add repository/service tests plus disposable PostgreSQL integration tests for rollback, expiry, replay, and session revocation before adding an HTTP endpoint.
-- [ ] After the password-reset contract is tested, add registration, resend, email-verification, and recovery frontend screens. Keep SMTP delivery disabled until provider credentials are configured securely outside source control.
-- [ ] Before any public account lifecycle rollout, replace process-local request quotas with a verified shared/distributed abuse-control design and configure trusted proxy CIDRs; do not trust arbitrary forwarded headers.
+- [ ] Close the concurrent-login/password-reset race by locking the active verified account row from credential lookup through session creation, while preserving the existing shared login limiter. Add a PostgreSQL concurrency test proving a session authenticated with the pre-reset password cannot survive a completed reset.
+- [ ] Then add a generic, rate-limited password-reset request endpoint that rotates outstanding `PASSWORD_RESET` tokens and never reveals whether an email exists; keep email delivery gated until SMTP is securely configured.
+- [ ] Add the password-reset confirmation HTTP endpoint using the tested orchestration service, with generic error handling and `Cache-Control: no-store`.
+- [ ] Add registration, verification, and password-recovery frontend screens after the HTTP contracts are stable.
+- [ ] Before any public account lifecycle rollout, replace process-local quotas with a verified shared/distributed abuse-control design and configure trusted proxy CIDRs; do not trust arbitrary forwarded headers.
+
