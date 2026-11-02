@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — gated email-verification HTTP endpoint added; GitHub Actions run #306 passed.
+Last verified: 2026-11-03 — gated email verification endpoint hardened against rejected-token logging; GitHub Actions run #308 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1001,7 +1001,7 @@ Last verified: 2026-11-03 — gated email-verification HTTP endpoint added; GitH
 - [x] The controller is gated on both `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=true` and `NEUROSQL_AUTH_SHARED_RATE_LIMIT_ENABLED=true`. It deliberately does not require SMTP to be enabled: verification consumes an already-issued token and does not send mail.
 - [x] Request validation accepts only a canonical-shape 43-character base64url token. Success returns HTTP 200; invalid, expired, wrong-purpose, already-verified, inactive-account, and replayed-token outcomes share the same generic HTTP 400 response. Both response paths set `Cache-Control: no-store` and `Pragma: no-cache`.
 - [x] Raw tokens are not echoed or logged by the controller. The existing repository hashes the token before querying and performs token consumption plus account verification in one PostgreSQL data-modifying statement.
-- [x] Added five MockMvc tests for successful verification, generic invalid/replayed responses, token non-disclosure, malformed/missing-token rejection before service access, no-store headers, and CORS preflight.
+- [x] Added six MockMvc tests for successful verification, generic invalid/replayed responses, token non-disclosure, malformed/missing-token and unreadable-JSON rejection before service access, no-store headers, and CORS preflight.
 - [x] GitHub Actions run #306 (ID `41533042631`, https://github.com/plDilipkumar/NexusOps/actions/runs/41533042631) passed on code commit `188abe669851980a738b72b5f062b0a846447ad5`: backend Maven verification ran 288 tests with 0 failures/errors and 50 expected database-gated skips; the disposable PostgreSQL 17 integration job passed 50 tests with 0 failures/errors/skips; frontend tests passed (47), and the TypeScript/Vite production build passed. Production API/database smoke was skipped because PR #9 is unmerged.
 - [x] The PostgreSQL integration job re-exercised the existing email-verification token path against disposable PostgreSQL 17: valid tokens verify an active unverified account exactly once; replay and wrong-purpose tokens do not verify an account. This is CI-only PostgreSQL, not Neon production.
 - [ ] No separate per-IP limiter is attached to the verify endpoint yet. Tokens are 256-bit random and the route remains feature-gated, but request-volume throttling and trusted-proxy configuration must be reviewed before any public activation; the existing registration/resend limiter is process-local and not sufficient for a multi-instance rollout.
@@ -1010,6 +1010,16 @@ Last verified: 2026-11-03 — gated email-verification HTTP endpoint added; GitH
 - [x] Render workspace was resolved to the previously confirmed Dilip Kumar workspace. Service `neurosql-api` (`srv-dbgb6vt9fdbs73da93n0`) remains on the free plan in Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, one instance, auto-deploy enabled. Latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; this feature commit is not deployed.
 - [ ] PR #9 remains open/unmerged. Draft PR #7 remains unapproved/unmerged; proposed V1–V5 migrations remain unapplied to Neon `main`. Production durable auth, SMTP delivery, registration, email verification, query history, saved queries, and SQL execution remain disabled.
 - [x] No Neon migrations, production database writes, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+## Verification endpoint log-redaction hardening — PR #9 (2026-11-03)
+
+- [x] Reviewed the #306 backend logs after the initial verification endpoint passed. The default Spring MVC validation resolver logged rejected field values for malformed request tokens, contrary to the no-token-logging requirement.
+- [x] Added controller-local handlers for `MethodArgumentNotValidException` and `HttpMessageNotReadableException`. Malformed/missing token bodies now return one generic, non-cacheable 400 response without invoking Spring's default rejected-value warning logger.
+- [x] Expanded `AccountVerificationControllerTest` to six tests, including malformed JSON and assertions that the malformed submitted token is not echoed. The #308 backend log contains no validation-resolver warning from this controller's tests; unrelated legacy validation warnings in other controllers remain outside this step.
+- [x] GitHub Actions run #308 (ID `41533344816`, https://github.com/plDilipkumar/NexusOps/actions/runs/41533344816) passed on code commit `29a3a764fd388e41185ce996c6b34525c62ec23e`: backend Maven verification ran 289 tests with 0 failures/errors and 50 expected database-gated skips; disposable PostgreSQL 17 integration passed 50 tests with 0 failures/errors/skips; frontend tests passed (47), and TypeScript/Vite production build passed. Production API/database smoke was skipped because PR #9 remains unmerged.
+- [x] Rechecked Vercel for commit `29a3a764fd388e41185ce996c6b34525c62ec23e`: no deployment exists for this backend-only commit. Render still serves commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d` from `main`; no deployment was triggered.
+- [ ] Neon API continued returning HTTP 502 for read-only project/branch/database inspection. No current Neon state is asserted from this run; no schema change or Neon write was attempted.
+- [x] No production migrations, database writes, role/environment changes, deployments, credentials, or paid resources were introduced.
 
 ### Next milestone
 - [ ] Implement password-reset orchestration using the existing `PASSWORD_RESET` token purpose: atomically consume a valid token, update the BCrypt password hash, and revoke every active session for that user in the same transaction. Add repository/service tests plus disposable PostgreSQL integration tests for rollback, expiry, replay, and session revocation before adding an HTTP endpoint.
