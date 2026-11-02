@@ -107,14 +107,14 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
   }finally{setDurableAuthLoading(false);}
 };
 const logoutDurable=async()=>{
-  invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);
+  invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setSavedQuerySeed("");
   const token=durableSession?.token;
   let revocationConfirmed=!token;
   if(token){try{const response=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store"});revocationConfirmed=response.status===204||response.status===401;}catch{/* The local token is still cleared; surface that server revocation was not confirmed. */}}
   setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setDurableEmail("");setDurablePassword("");setSchemaData(null);setSchemaError(revocationConfirmed?"":"Signed out locally, but the server could not confirm session revocation. The session may remain valid until it expires.");setExpandedTables({});
 };
 const selectDurableWorkspace=(workspaceId:string)=>{
-  invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);
+  invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setSavedQuerySeed("");
   setSelectedWorkspaceId(workspaceId);setSchemaData(null);setExpandedTables({});setSchemaError("");
   if(durableSession&&workspaceId)void loadDurableSchema(durableSession.token,workspaceId);
 };
@@ -181,7 +181,7 @@ const logoutSchema=()=>{invalidateQuery();setSchemaCredentials(null);setSchemaDa
 const restoreHistoryQuery=(query:string)=>{invalidateQuery();setSql(query);setSavedQuerySeed("");setActive("Workspace");setNotice("Query restored in the editor. Review it before running.");};
 const openSaveQuery=()=>{if(!canCreateSavedQuery)return;setSavedQuerySeed(sql);setNotice("");setActive("Saved queries");};
 
-useEffect(()=>{if(!durableSession)return;const expire=()=>{invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setSchemaError("Your session expired. Sign in again.");};const remaining=Date.parse(durableSession.expiresAt)-Date.now();if(!Number.isFinite(remaining)||remaining<=0){expire();return;}const timer=window.setTimeout(expire,remaining);return()=>window.clearTimeout(timer);},[durableSession?.expiresAt]);
+useEffect(()=>{if(!durableSession)return;const expire=()=>{invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setSavedQuerySeed("");setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setSchemaError("Your session expired. Sign in again.");};const remaining=Date.parse(durableSession.expiresAt)-Date.now();if(!Number.isFinite(remaining)||remaining<=0){expire();return;}const timer=window.setTimeout(expire,remaining);return()=>window.clearTimeout(timer);},[durableSession?.expiresAt]);
 useEffect(()=>{let cancelled=false;const check=async()=>{try{const response=await fetch(`${API_BASE_URL}/api/health/database`,{headers:{Accept:"application/json"}});if(!response.ok)throw new Error(`HTTP ${response.status}`);const payload=(await response.json()) as DatabaseHealth;if(payload.status!=="UP")throw new Error("Database reported unavailable");if(!cancelled){setDatabaseHealth(payload);setHealthError("");setHealthCheckedAt(new Date().toLocaleTimeString());}}catch(error){if(!cancelled){setDatabaseHealth(null);setHealthError(error instanceof Error?error.message:"Unable to reach API");setHealthCheckedAt(new Date().toLocaleTimeString());}}finally{if(!cancelled)setHealthLoading(false);}};void check();const timer=window.setInterval(()=>void check(),60000);return()=>{cancelled=true;window.clearInterval(timer);};},[]);
 const nav=[["Workspace",TerminalSquare],["Schema explorer",Database],["Query history",History],["Saved queries",Bookmark],["Performance lab",Gauge]] as const;
 const selectedWorkspace=durableWorkspaces.find(workspace=>workspace.workspaceId===selectedWorkspaceId);
