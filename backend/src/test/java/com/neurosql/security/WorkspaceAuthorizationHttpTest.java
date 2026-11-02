@@ -24,6 +24,7 @@ import com.neurosql.api.SchemaController;
 import com.neurosql.api.SqlExecutionController;
 import com.neurosql.api.ReadOnlyQueryExecutor;
 import com.neurosql.api.WorkspaceController;
+import com.neurosql.security.QueryHistoryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -42,6 +43,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
         "neurosql.auth.username=test-owner",
         "neurosql.auth.password=test-owner-password-123",
         "neurosql.auth.durable-sessions-enabled=true",
+        "neurosql.auth.shared-rate-limit-enabled=true",
+        "neurosql.sql-history.enabled=true",
         "neurosql.schema-browser.enabled=true",
         "neurosql.sql-execution.enabled=true"
 })
@@ -68,6 +71,9 @@ class WorkspaceAuthorizationHttpTest {
 
     @MockBean
     private WorkspaceAuthorizationService workspaceAuthorizationService;
+
+    @MockBean
+    private QueryHistoryService queryHistoryService;
 
     @Test
     void durableSessionMustProvideCanonicalWorkspaceId() throws Exception {
@@ -151,6 +157,7 @@ class WorkspaceAuthorizationHttpTest {
         verify(workspaceAuthorizationService)
                 .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
         verify(queryExecutor).execute("SELECT 1");
+        verify(queryHistoryService).recordSucceeded(USER_ID, WORKSPACE_ID, "SELECT 1", 1, 2, false);
     }
 
     @Test
