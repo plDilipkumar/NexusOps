@@ -12,6 +12,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,6 +39,8 @@ public class AccountVerificationController {
             "Email verified. You can now sign in.";
     private static final String INVALID_MESSAGE =
             "This verification link is invalid or has expired. Request a new verification email.";
+    private static final String INVALID_REQUEST_MESSAGE =
+            "A valid verification token is required.";
 
     private final AccountActionTokenService actionTokens;
 
@@ -53,6 +58,22 @@ public class AccountVerificationController {
             return response(HttpStatus.OK, VERIFIED_MESSAGE);
         }
         return response(HttpStatus.BAD_REQUEST, INVALID_MESSAGE);
+    }
+
+    /**
+     * Spring's default validation resolver logs rejected field values at WARN.
+     * Override it here so malformed bearer-like tokens never enter application logs.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<MessageResponse> invalidTokenRequest(
+            MethodArgumentNotValidException ignored) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_REQUEST_MESSAGE);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<MessageResponse> unreadableTokenRequest(
+            HttpMessageNotReadableException ignored) {
+        return response(HttpStatus.BAD_REQUEST, INVALID_REQUEST_MESSAGE);
     }
 
     private static ResponseEntity<MessageResponse> response(HttpStatus status, String message) {

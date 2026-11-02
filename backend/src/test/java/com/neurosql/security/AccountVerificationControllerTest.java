@@ -34,6 +34,7 @@ class AccountVerificationControllerTest {
     private static final String VERIFIED_MESSAGE = "Email verified. You can now sign in.";
     private static final String INVALID_MESSAGE =
             "This verification link is invalid or has expired. Request a new verification email.";
+    private static final String INVALID_REQUEST_MESSAGE = "A valid verification token is required.";
 
     @Autowired
     private MockMvc mockMvc;
@@ -95,12 +96,17 @@ class AccountVerificationControllerTest {
     }
 
     @Test
-    void malformedTokenIsRejectedBeforeTokenServiceAccess() throws Exception {
-        mockMvc.perform(post("/api/auth/verify-email")
+    void malformedTokenIsRejectedWithSafeMessageBeforeTokenServiceAccess() throws Exception {
+        String response = mockMvc.perform(post("/api/auth/verify-email")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"token\":\"not-a-token\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(INVALID_REQUEST_MESSAGE))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
+        assertThat(response).doesNotContain("not-a-token");
         verifyNoInteractions(actionTokens);
     }
 
@@ -109,7 +115,19 @@ class AccountVerificationControllerTest {
         mockMvc.perform(post("/api/auth/verify-email")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(INVALID_REQUEST_MESSAGE));
+
+        verifyNoInteractions(actionTokens);
+    }
+
+    @Test
+    void unreadableJsonReturnsSafeMessage() throws Exception {
+        mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(INVALID_REQUEST_MESSAGE));
 
         verifyNoInteractions(actionTokens);
     }
