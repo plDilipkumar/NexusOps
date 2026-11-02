@@ -22,10 +22,10 @@ import java.util.UUID;
 
 import com.neurosql.api.DurableSessionController;
 import com.neurosql.api.SchemaController;
-import com.neurosql.api.SqlExecutionController;
+import com.neurosql.api.SqlExecutionController;\nimport com.neurosql.api.QueryHistoryController;
 import com.neurosql.api.ReadOnlyQueryExecutor;
 import com.neurosql.api.WorkspaceController;
-import com.neurosql.security.QueryHistoryService;
+import com.neurosql.security.QueryHistoryService;\nimport com.neurosql.security.QueryHistoryReadService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -37,7 +37,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class})
+@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class})
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
         "neurosql.auth.enabled=true",
@@ -74,7 +74,7 @@ class WorkspaceAuthorizationHttpTest {
     private WorkspaceAuthorizationService workspaceAuthorizationService;
 
     @MockBean
-    private QueryHistoryService queryHistoryService;
+    private QueryHistoryService queryHistoryService;\n\n    @MockBean\n    private QueryHistoryReadService queryHistoryReadService;
 
     @Test
     void durableSessionMustProvideCanonicalWorkspaceId() throws Exception {

@@ -2,7 +2,7 @@ package com.neurosql.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.UUID;
+import java.util.UUID;\nimport java.time.Instant;\nimport java.sql.Timestamp;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -159,6 +159,68 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "SELECT truncated FROM neurosql_app.query_history WHERE outcome = 'FAILED'",
                 Boolean.class)).isFalse();
+    }
+
+    @Test
+    void readsHistoryWithKeysetPaginationAndStrictWorkspaceUserScope() {
+        UUID firstUser = insertUser("ACTIVE");
+        UUID secondUser = insertUser("ACTIVE");
+        UUID firstWorkspace = insertWorkspace("history-page-a");
+        UUID secondWorkspace = insertWorkspace("history-page-b");
+        insertMembership(firstWorkspace, firstUser, "MEMBER", "ACTIVE");
+        insertMembership(firstWorkspace, secondUser, "MEMBER", "ACTIVE");
+        insertMembership(secondWorkspace, firstUser, "MEMBER", "ACTIVE");
+
+        insertHistory(firstWorkspace, firstUser, "SELECT 1", "2026-11-02T10:01:00.000001Z");
+        insertHistory(firstWorkspace, firstUser, "SELECT 2", "2026-11-02T10:02:00.000002Z");
+        insertHistory(firstWorkspace, firstUser, "SELECT 3", "2026-11-02T10:03:00.000003Z");
+        insertHistory(firstWorkspace, secondUser, "SELECT other user", "2026-11-02T10:04:00.000004Z");
+        insertHistory(secondWorkspace, firstUser, "SELECT other workspace", "2026-11-02T10:05:00.000005Z");
+
+        QueryHistoryReadService reader =
+                new QueryHistoryReadService(new JdbcQueryHistoryRepository(jdbc));
+        QueryHistoryReadService.QueryHistoryPage firstPage =
+                reader.list(firstUser, firstWorkspace, 2, null);
+
+        assertThat(firstPage.items())
+                .extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
+                .containsExactly("SELECT 3", "SELECT 2");
+        assertThat(firstPage.hasMore()).isTrue();
+        assertThat(firstPage.nextCursor()).isNotBlank();
+
+        QueryHistoryReadService.QueryHistoryPage secondPage =
+                reader.list(firstUser, firstWorkspace, 2, firstPage.nextCursor());
+        assertThat(secondPage.items())
+                .extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
+                .containsExactly("SELECT 1");
+        assertThat(secondPage.hasMore()).isFalse();
+        assertThat(secondPage.nextCursor()).isNull();
+
+        assertThat(reader.list(secondUser, firstWorkspace, 10, null).items())
+                .extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
+                .containsExactly("SELECT other user");
+        assertThat(reader.list(firstUser, secondWorkspace, 10, null).items())
+                .extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
+                .containsExactly("SELECT other workspace");
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                () -> reader.list(secondUser, firstWorkspace, 10, firstPage.nextCursor())))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private void insertHistory(UUID workspaceId, UUID userId, String sql, String createdAt) {
+        jdbc.update("""
+                INSERT INTO neurosql_app.query_history
+                    (history_id, workspace_id, user_id, query_text, query_hash,
+                     outcome, row_count, execution_time_ms, truncated, created_at)
+                VALUES (?, ?, ?, ?, ?, 'SUCCEEDED', 1, 2, false, ?)
+                """,
+                UUID.randomUUID(),
+                workspaceId,
+                userId,
+                sql,
+                QueryHistoryService.sha256(sql),
+                Timestamp.from(Instant.parse(createdAt)));
     }
 
     private UUID insertUser(String status) {
