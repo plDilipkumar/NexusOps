@@ -635,7 +635,7 @@ class WorkspaceAuthorizationHttpTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
                         .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"executionId\\":\\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\\"}"))
+                        .content("{\"executionId\":\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\"}"))
                 .andExpect(status().isAccepted())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
                         org.hamcrest.Matchers.containsString("no-store")))
@@ -656,7 +656,7 @@ class WorkspaceAuthorizationHttpTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
                         .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"executionId\\":\\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\\"}"))
+                        .content("{\"executionId\":\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\"}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error").value("workspace_access_denied"));
 

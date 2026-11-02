@@ -104,7 +104,7 @@ class SqlExecutionControllerTest {
     void cancellationEndpointRequiresAuthentication() throws Exception {
         mockMvc.perform(post("/api/sql/cancel")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"executionId\\":\\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\\"}"))
+                        .content("{\"executionId\":\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\"}"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -113,7 +113,7 @@ class SqlExecutionControllerTest {
         mockMvc.perform(post("/api/sql/cancel")
                         .with(httpBasic("sql-test-owner", "Sql-Test-Owner-Password-2026!"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"executionId\\":\\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\\"}"))
+                        .content("{\"executionId\":\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\"}"))
                 .andExpect(status().isForbidden());
     }
 
