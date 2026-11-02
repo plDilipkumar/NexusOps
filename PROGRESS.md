@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-02 14:12 UTC (19:42 IST) — Saved Queries frontend; CI run #274 passed.
+Last verified: 2026-11-02 — Saved Queries frontend; CI run #274 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
