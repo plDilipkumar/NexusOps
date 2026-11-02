@@ -26,6 +26,8 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
     private JdbcTemplate jdbc;
     private JdbcQueryHistoryRepository repository;
     private final List<UUID> insertedHistoryIds = new ArrayList<>();
+    private final List<UUID> insertedUserIds = new ArrayList<>();
+    private final List<UUID> insertedWorkspaceIds = new ArrayList<>();
 
     @BeforeEach
     void setUpDisposablePostgresFixture() {
@@ -43,6 +45,28 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
 
         jdbc.execute("CREATE SCHEMA IF NOT EXISTS neurosql_app");
         jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS neurosql_app.app_users (
+                    user_id UUID PRIMARY KEY,
+                    status VARCHAR(24) NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS neurosql_app.workspaces (
+                    workspace_id UUID PRIMARY KEY,
+                    name VARCHAR(120) NOT NULL,
+                    slug VARCHAR(120) NOT NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS neurosql_app.workspace_memberships (
+                    workspace_id UUID NOT NULL REFERENCES neurosql_app.workspaces(workspace_id),
+                    user_id UUID NOT NULL REFERENCES neurosql_app.app_users(user_id),
+                    role VARCHAR(16) NOT NULL,
+                    status VARCHAR(16) NOT NULL,
+                    PRIMARY KEY (workspace_id, user_id)
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS neurosql_app.query_history (
                     history_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     workspace_id UUID NOT NULL,
@@ -53,7 +77,10 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
                     row_count INTEGER,
                     execution_time_ms INTEGER NOT NULL,
                     truncated BOOLEAN NOT NULL DEFAULT false,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    FOREIGN KEY (workspace_id, user_id)
+                        REFERENCES neurosql_app.workspace_memberships (workspace_id, user_id)
+                        ON DELETE CASCADE
                 )
                 """);
         repository = new JdbcQueryHistoryRepository(jdbc);
@@ -65,20 +92,33 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
             for (UUID historyId : insertedHistoryIds) {
                 jdbc.update("DELETE FROM neurosql_app.query_history WHERE history_id = ?", historyId);
             }
+            for (UUID workspaceId : insertedWorkspaceIds) {
+                jdbc.update("DELETE FROM neurosql_app.workspace_memberships WHERE workspace_id = ?", workspaceId);
+                jdbc.update("DELETE FROM neurosql_app.workspaces WHERE workspace_id = ?", workspaceId);
+            }
+            for (UUID userId : insertedUserIds) {
+                jdbc.update("DELETE FROM neurosql_app.workspace_memberships WHERE user_id = ?", userId);
+                jdbc.update("DELETE FROM neurosql_app.app_users WHERE user_id = ?", userId);
+            }
         }
     }
 
     @Test
     void filtersOutcomeWithoutCrossingUserOrWorkspaceBoundaries() {
-        UUID workspaceId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
+        UUID workspaceId = insertWorkspace();
+        UUID otherWorkspaceId = insertWorkspace();
+        UUID userId = insertUser();
+        UUID otherUserId = insertUser();
+        insertMembership(workspaceId, userId);
+        insertMembership(workspaceId, otherUserId);
+        insertMembership(otherWorkspaceId, userId);
         Instant now = Instant.parse("2026-11-02T10:00:00Z");
 
         insert(workspaceId, userId, "FAILED", "SELECT broken", now);
         insert(workspaceId, userId, "SUCCEEDED", "SELECT 1", now.minusSeconds(1));
         insert(workspaceId, userId, "CANCELED", "SELECT pg_sleep(1)", now.minusSeconds(2));
-        insert(workspaceId, UUID.randomUUID(), "FAILED", "SELECT other user", now.minusSeconds(3));
-        insert(UUID.randomUUID(), userId, "FAILED", "SELECT other workspace", now.minusSeconds(4));
+        insert(workspaceId, otherUserId, "FAILED", "SELECT other user", now.minusSeconds(3));
+        insert(otherWorkspaceId, userId, "FAILED", "SELECT other workspace", now.minusSeconds(4));
 
         List<JdbcQueryHistoryRepository.HistoryEntry> failed =
                 repository.findRecent(workspaceId, userId, 10, null, "FAILED");
@@ -90,8 +130,9 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
 
     @Test
     void appliesOutcomeFilterBeforeKeysetLimitAcrossPages() {
-        UUID workspaceId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
+        UUID workspaceId = insertWorkspace();
+        UUID userId = insertUser();
+        insertMembership(workspaceId, userId);
         Instant newest = Instant.parse("2026-11-02T11:00:00Z");
 
         insert(workspaceId, userId, "SUCCEEDED", "SELECT newest success", newest.plusSeconds(1));
@@ -116,8 +157,9 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
 
     @Test
     void nullOutcomeReturnsAllSupportedOutcomesInDescendingOrder() {
-        UUID workspaceId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
+        UUID workspaceId = insertWorkspace();
+        UUID userId = insertUser();
+        insertMembership(workspaceId, userId);
         Instant newest = Instant.parse("2026-11-02T12:00:00Z");
 
         insert(workspaceId, userId, "CANCELED", "SELECT canceled", newest);
@@ -129,6 +171,34 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
 
         assertThat(all).extracting(JdbcQueryHistoryRepository.HistoryEntry::outcome)
                 .containsExactly("CANCELED", "FAILED", "SUCCEEDED");
+    }
+
+    private UUID insertUser() {
+        UUID userId = UUID.randomUUID();
+        jdbc.update("INSERT INTO neurosql_app.app_users (user_id, status) VALUES (?, 'ACTIVE')", userId);
+        insertedUserIds.add(userId);
+        return userId;
+    }
+
+    private UUID insertWorkspace() {
+        UUID workspaceId = UUID.randomUUID();
+        String slug = "history-filter-" + workspaceId;
+        jdbc.update(
+                "INSERT INTO neurosql_app.workspaces (workspace_id, name, slug) VALUES (?, ?, ?)",
+                workspaceId,
+                "History filter " + workspaceId,
+                slug);
+        insertedWorkspaceIds.add(workspaceId);
+        return workspaceId;
+    }
+
+    private void insertMembership(UUID workspaceId, UUID userId) {
+        jdbc.update("""
+                INSERT INTO neurosql_app.workspace_memberships (workspace_id, user_id, role, status)
+                VALUES (?, ?, 'MEMBER', 'ACTIVE')
+                """,
+                workspaceId,
+                userId);
     }
 
     private void insert(UUID workspaceId, UUID userId, String outcome, String sql, Instant createdAt) {
