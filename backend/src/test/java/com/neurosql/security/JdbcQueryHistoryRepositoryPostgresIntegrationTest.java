@@ -172,6 +172,64 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
     }
 
     @Test
+    void searchesSqlTextCaseInsensitivelyAndTreatsWildcardCharactersLiterallyWithinScope() {
+        UUID workspaceId = insertWorkspace();
+        UUID otherWorkspaceId = insertWorkspace();
+        UUID userId = insertUser();
+        UUID otherUserId = insertUser();
+        insertMembership(workspaceId, userId);
+        insertMembership(workspaceId, otherUserId);
+        insertMembership(otherWorkspaceId, userId);
+        Instant now = Instant.parse("2026-11-02T13:00:00Z");
+
+        insert(workspaceId, userId, "SUCCEEDED",
+                "SELECT * FROM Finance_Orders WHERE code LIKE 'A%_B'", now);
+        insert(workspaceId, userId, "SUCCEEDED",
+                "SELECT * FROM finance_accounts", now.minusSeconds(1));
+        insert(workspaceId, otherUserId, "SUCCEEDED",
+                "SELECT * FROM finance_orders for another user", now.minusSeconds(2));
+        insert(otherWorkspaceId, userId, "SUCCEEDED",
+                "SELECT * FROM finance_orders for another workspace", now.minusSeconds(3));
+
+        List<JdbcQueryHistoryRepository.HistoryEntry> caseInsensitive =
+                repository.findRecent(workspaceId, userId, 10, null, null, null, null, "FINANCE_ORDERS");
+        assertThat(caseInsensitive).hasSize(1);
+        assertThat(caseInsensitive.get(0).queryText()).contains("Finance_Orders");
+
+        List<JdbcQueryHistoryRepository.HistoryEntry> literalWildcard =
+                repository.findRecent(workspaceId, userId, 10, null, null, null, null, "%_B");
+        assertThat(literalWildcard).hasSize(1);
+        assertThat(literalWildcard.get(0).queryText()).contains("A%_B");
+    }
+
+    @Test
+    void appliesSqlTextSearchBeforeKeysetLimitAcrossPages() {
+        UUID workspaceId = insertWorkspace();
+        UUID userId = insertUser();
+        insertMembership(workspaceId, userId);
+        Instant newest = Instant.parse("2026-11-02T14:00:00Z");
+
+        insert(workspaceId, userId, "SUCCEEDED", "SELECT newest unrelated", newest.plusSeconds(1));
+        insert(workspaceId, userId, "FAILED", "SELECT needle one", newest);
+        insert(workspaceId, userId, "FAILED", "SELECT needle two", newest.minusSeconds(1));
+        insert(workspaceId, userId, "FAILED", "SELECT needle three", newest.minusSeconds(2));
+
+        List<JdbcQueryHistoryRepository.HistoryEntry> first =
+                repository.findRecent(workspaceId, userId, 2, null, "FAILED", null, null, "NEEDLE");
+        assertThat(first).extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
+                .containsExactly("SELECT needle one", "SELECT needle two");
+
+        var lastVisible = first.get(1);
+        QueryHistoryCursor.Position cursor =
+                new QueryHistoryCursor.Position(lastVisible.createdAt(), lastVisible.historyId());
+        List<JdbcQueryHistoryRepository.HistoryEntry> second =
+                repository.findRecent(workspaceId, userId, 2, cursor, "FAILED", null, null, "needle");
+
+        assertThat(second).extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
+                .containsExactly("SELECT needle three");
+    }
+
+    @Test
     void nullOutcomeReturnsAllSupportedOutcomesInDescendingOrder() {
         UUID workspaceId = insertWorkspace();
         UUID userId = insertUser();

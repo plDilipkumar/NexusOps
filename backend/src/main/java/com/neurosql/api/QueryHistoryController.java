@@ -45,6 +45,7 @@ public class QueryHistoryController {
             @RequestParam(name = "outcome", required = false) String outcome,
             @RequestParam(name = "from", required = false) String fromDate,
             @RequestParam(name = "to", required = false) String toDate,
+            @RequestParam(name = "q", required = false) String querySearch,
             Authentication authentication,
             HttpServletRequest request) {
         DurableSessionAuthenticationFilter.SessionPrincipal principal = durablePrincipal(authentication);
@@ -64,7 +65,7 @@ public class QueryHistoryController {
 
         try {
             QueryHistoryReadService.QueryHistoryPage page =
-                    history.list(principal.userId(), workspaceId, limit, cursor, outcome, fromDate, toDate);
+                    history.list(principal.userId(), workspaceId, limit, cursor, outcome, fromDate, toDate, querySearch);
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
                     .header(HttpHeaders.PRAGMA, "no-cache")

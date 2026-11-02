@@ -1,9 +1,12 @@
 package com.neurosql.security;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
+
 import org.junit.jupiter.api.Test;
 
 class QueryHistoryCursorTest {
@@ -14,8 +17,8 @@ class QueryHistoryCursorTest {
     private static final LocalDate FROM=LocalDate.parse("2026-11-01"),TO=LocalDate.parse("2026-11-02");
 
     @Test void roundTripsTimestampAndAllFilterScope() {
-        String encoded=QueryHistoryCursor.encode(WORKSPACE_ID,USER_ID,CREATED_AT,HISTORY_ID,"FAILED",FROM,TO);
-        var decoded=QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"FAILED",FROM,TO);
+        String encoded=QueryHistoryCursor.encode(WORKSPACE_ID,USER_ID,CREATED_AT,HISTORY_ID,"FAILED",FROM,TO,"select orders");
+        var decoded=QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"FAILED",FROM,TO,"SELECT ORDERS");
         assertThat(decoded.createdAt()).isEqualTo(CREATED_AT);
         assertThat(decoded.historyId()).isEqualTo(HISTORY_ID);
     }
@@ -27,13 +30,14 @@ class QueryHistoryCursorTest {
         assertThatThrownBy(()->QueryHistoryCursor.decode(padded,WORKSPACE_ID,USER_ID,null,null,null)).isInstanceOf(IllegalArgumentException.class);
     }
 
-    @Test void rejectsReplayAcrossUsersWorkspacesOutcomesOrDateRanges() {
-        String encoded=QueryHistoryCursor.encode(WORKSPACE_ID,USER_ID,CREATED_AT,HISTORY_ID,"FAILED",FROM,TO);
-        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,UUID.randomUUID(),USER_ID,"FAILED",FROM,TO)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,UUID.randomUUID(),"FAILED",FROM,TO)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"SUCCEEDED",FROM,TO)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"FAILED",TO,TO)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"FAILED",FROM,null)).isInstanceOf(IllegalArgumentException.class);
+    @Test void rejectsReplayAcrossUsersWorkspacesOutcomesDatesOrSearchTerms() {
+        String encoded=QueryHistoryCursor.encode(WORKSPACE_ID,USER_ID,CREATED_AT,HISTORY_ID,"FAILED",FROM,TO,"select orders");
+        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,UUID.randomUUID(),USER_ID,"FAILED",FROM,TO,"select orders")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,UUID.randomUUID(),"FAILED",FROM,TO,"select orders")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"SUCCEEDED",FROM,TO,"select orders")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"FAILED",TO,TO,"select orders")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"FAILED",FROM,null,"select orders")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->QueryHistoryCursor.decode(encoded,WORKSPACE_ID,USER_ID,"FAILED",FROM,TO,"select accounts")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test void rejectsOversizedCursorsInvalidPrecisionUnknownOutcomeAndReversedDates() {

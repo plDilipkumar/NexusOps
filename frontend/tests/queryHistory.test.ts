@@ -61,11 +61,12 @@ test("sends inclusive UTC date filters alongside the selected outcome",async()=>
   let url="";
   const fetcher:typeof fetch=async(input)=>{url=String(input);return new Response(JSON.stringify(page),{status:200});};
   await fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId,outcome:"FAILED",
-    fromDate:"2026-11-01",toDate:"2026-11-02"},fetcher);
+    fromDate:"2026-11-01",toDate:"2026-11-02",query:"Finance_Orders"},fetcher);
   const parsed=new URL(url);
   assert.equal(parsed.searchParams.get("outcome"),"FAILED");
   assert.equal(parsed.searchParams.get("from"),"2026-11-01");
   assert.equal(parsed.searchParams.get("to"),"2026-11-02");
+  assert.equal(parsed.searchParams.get("q"),"Finance_Orders");
 });
 
 test("rejects invalid calendar dates and reversed ranges before network access",async()=>{
@@ -93,14 +94,25 @@ test("sends the selected outcome filter with the history request",async()=>{
   assert.equal(new URL(url).searchParams.get("outcome"),"FAILED");
 });
 
+test("rejects oversized and control-character SQL searches before network access",async()=>{
+  let calls=0;
+  const fetcher:typeof fetch=async()=>{calls+=1;return new Response(JSON.stringify(page),{status:200});};
+  await assert.rejects(fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId,
+    query:"x".repeat(121)},fetcher),/120 printable characters/);
+  await assert.rejects(fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId,
+    query:"SELECT\u0000users"},fetcher),/120 printable characters/);
+  assert.equal(calls,0);
+});
+
 test("passes an opaque cursor as a query parameter for the next page",async()=>{
   let url="";
   const fetcher:typeof fetch=async(input)=>{
     url=String(input);
     return new Response(JSON.stringify(page),{status:200});
   };
-  await fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId,cursor:"eyJjdXJzb3IifQ"},fetcher);
+  await fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId,cursor:"eyJjdXJzb3IifQ",query:"orders"},fetcher);
   assert.equal(new URL(url).searchParams.get("cursor"),"eyJjdXJzb3IifQ");
+  assert.equal(new URL(url).searchParams.get("q"),"orders");
 });
 
 test("rejects invalid credentials, workspace, and outcome before network access",async()=>{

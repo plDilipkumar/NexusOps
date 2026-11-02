@@ -20,6 +20,7 @@ public class QueryHistoryReadService {
     static final int MAX_PAGE_SIZE = 100;
     private static final int MAX_OUTCOME_LENGTH = 16;
     private static final int MAX_DATE_INPUT_LENGTH = 12;
+    private static final int MAX_SEARCH_LENGTH = 120;
     private static final Set<String> OUTCOMES = Set.of("SUCCEEDED", "FAILED", "CANCELED");
     private final JdbcQueryHistoryRepository repository;
 
@@ -30,11 +31,17 @@ public class QueryHistoryReadService {
     /** Backward-compatible overload for callers that do not use date filters. */
     public QueryHistoryPage list(
             UUID userId, UUID workspaceId, int pageSize, String cursor, String rawOutcome) {
-        return list(userId, workspaceId, pageSize, cursor, rawOutcome, null, null);
+        return list(userId, workspaceId, pageSize, cursor, rawOutcome, null, null, null);
+    }
+
+    /** Backward-compatible overload for callers that do not use SQL-text search. */
+    public QueryHistoryPage list(UUID userId, UUID workspaceId, int pageSize, String cursor,
+            String rawOutcome, String rawFromDate, String rawToDate) {
+        return list(userId, workspaceId, pageSize, cursor, rawOutcome, rawFromDate, rawToDate, null);
     }
 
     public QueryHistoryPage list(UUID userId, UUID workspaceId, int pageSize, String cursor,
-            String rawOutcome, String rawFromDate, String rawToDate) {
+            String rawOutcome, String rawFromDate, String rawToDate, String rawQuerySearch) {
         Objects.requireNonNull(userId, "userId");
         Objects.requireNonNull(workspaceId, "workspaceId");
         if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
@@ -43,13 +50,14 @@ public class QueryHistoryReadService {
         String outcome = normalizeOutcome(rawOutcome);
         LocalDate fromDate = normalizeDate(rawFromDate);
         LocalDate toDate = normalizeDate(rawToDate);
+        String querySearch = normalizeSearch(rawQuerySearch);
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             throw new IllegalArgumentException("History date range is invalid.");
         }
         QueryHistoryCursor.Position before = cursor == null ? null
-                : QueryHistoryCursor.decode(cursor, workspaceId, userId, outcome, fromDate, toDate);
+                : QueryHistoryCursor.decode(cursor, workspaceId, userId, outcome, fromDate, toDate, querySearch);
         List<JdbcQueryHistoryRepository.HistoryEntry> fetched = repository.findRecent(
-                workspaceId, userId, pageSize + 1, before, outcome, fromDate, toDate);
+                workspaceId, userId, pageSize + 1, before, outcome, fromDate, toDate, querySearch);
         boolean hasMore = fetched.size() > pageSize;
         List<JdbcQueryHistoryRepository.HistoryEntry> items = hasMore
                 ? List.copyOf(fetched.subList(0, pageSize)) : List.copyOf(fetched);
@@ -57,7 +65,7 @@ public class QueryHistoryReadService {
         if (hasMore && !items.isEmpty()) {
             var last = items.get(items.size() - 1);
             nextCursor = QueryHistoryCursor.encode(
-                    workspaceId, userId, last.createdAt(), last.historyId(), outcome, fromDate, toDate);
+                    workspaceId, userId, last.createdAt(), last.historyId(), outcome, fromDate, toDate, querySearch);
         }
         return new QueryHistoryPage(items, nextCursor, hasMore);
     }
@@ -85,6 +93,20 @@ public class QueryHistoryReadService {
         } catch (DateTimeParseException invalid) {
             throw new IllegalArgumentException("History date filter is invalid.", invalid);
         }
+    }
+
+    private static String normalizeSearch(String rawSearch) {
+        if (rawSearch == null) return null;
+        if (rawSearch.length() > MAX_SEARCH_LENGTH * 2) {
+            throw new IllegalArgumentException("History SQL-text search is too long.");
+        }
+        String value = rawSearch.strip();
+        if (value.isEmpty()) return null;
+        if (value.codePointCount(0, value.length()) > MAX_SEARCH_LENGTH
+                || value.codePoints().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("History SQL-text search is invalid.");
+        }
+        return value.toLowerCase(Locale.ROOT);
     }
 
     public record QueryHistoryPage(List<JdbcQueryHistoryRepository.HistoryEntry> items, String nextCursor, boolean hasMore) {

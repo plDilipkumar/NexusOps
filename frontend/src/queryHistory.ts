@@ -25,6 +25,7 @@ type FetchHistoryOptions = {
   outcome?: QueryHistoryOutcomeFilter;
   fromDate?: string;
   toDate?: string;
+  query?: string;
   signal?: AbortSignal;
 };
 
@@ -97,7 +98,7 @@ export function parseQueryHistoryPage(payload: unknown): QueryHistoryPage {
 }
 
 function failureMessage(status: number): string {
-  if (status === 400) return "The history page or date filter is invalid. Refresh the history and try again.";
+  if (status === 400) return "The history page, SQL search or date filter is invalid. Refresh the history and try again.";
   if (status === 401) return "Your sign-in is no longer valid. Sign in again to view query history.";
   if (status === 403) return "Your account cannot view history in the selected workspace.";
   if (status === 404) return "Query history is not enabled on the API.";
@@ -129,6 +130,10 @@ export async function fetchQueryHistoryPage(
   if (fromDate && toDate && fromDate > toDate) {
     throw new Error("The history start date must not be after its end date.");
   }
+  const query = options.query?.trim() ?? "";
+  if (Array.from(query).length > 120 || /[\u0000-\u001F\u007F-\u009F]/u.test(query)) {
+    throw new Error("Use at most 120 printable characters when searching SQL history.");
+  }
 
   const url = new URL("/api/sql/history", options.apiBaseUrl.replace(/\/$/, "") + "/");
   url.searchParams.set("limit", "25");
@@ -136,6 +141,7 @@ export async function fetchQueryHistoryPage(
   if (outcome !== "ALL") url.searchParams.set("outcome", outcome);
   if (fromDate) url.searchParams.set("from", fromDate);
   if (toDate) url.searchParams.set("to", toDate);
+  if (query) url.searchParams.set("q", query);
 
   const response = await fetcher(url.toString(), {
     method: "GET",

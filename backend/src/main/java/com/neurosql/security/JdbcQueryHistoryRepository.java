@@ -68,6 +68,7 @@ public class JdbcQueryHistoryRepository {
               AND (?::varchar IS NULL OR outcome = ?::varchar)
               AND (?::date IS NULL OR created_at >= (?::date::timestamp AT TIME ZONE 'UTC'))
               AND (?::date IS NULL OR created_at < ((?::date + 1)::timestamp AT TIME ZONE 'UTC'))
+              AND (?::varchar IS NULL OR STRPOS(LOWER(query_text), LOWER(?::varchar)) > 0)
             ORDER BY created_at DESC, history_id DESC
             LIMIT ?
             """;
@@ -82,6 +83,7 @@ public class JdbcQueryHistoryRepository {
               AND (?::varchar IS NULL OR outcome = ?::varchar)
               AND (?::date IS NULL OR created_at >= (?::date::timestamp AT TIME ZONE 'UTC'))
               AND (?::date IS NULL OR created_at < ((?::date + 1)::timestamp AT TIME ZONE 'UTC'))
+              AND (?::varchar IS NULL OR STRPOS(LOWER(query_text), LOWER(?::varchar)) > 0)
             ORDER BY created_at DESC, history_id DESC
             LIMIT ?
             """;
@@ -92,12 +94,18 @@ public class JdbcQueryHistoryRepository {
      */
     public List<HistoryEntry> findRecent(
             UUID workspaceId, UUID userId, int limit, QueryHistoryCursor.Position before, String outcome) {
-        return findRecent(workspaceId, userId, limit, before, outcome, null, null);
+        return findRecent(workspaceId, userId, limit, before, outcome, null, null, null);
     }
 
     public List<HistoryEntry> findRecent(
             UUID workspaceId, UUID userId, int limit, QueryHistoryCursor.Position before,
             String outcome, LocalDate fromDate, LocalDate toDate) {
+        return findRecent(workspaceId, userId, limit, before, outcome, fromDate, toDate, null);
+    }
+
+    public List<HistoryEntry> findRecent(
+            UUID workspaceId, UUID userId, int limit, QueryHistoryCursor.Position before,
+            String outcome, LocalDate fromDate, LocalDate toDate, String querySearch) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(userId, "userId");
         if (limit < 1 || limit > QueryHistoryReadService.MAX_PAGE_SIZE + 1) {
@@ -124,6 +132,8 @@ public class JdbcQueryHistoryRepository {
                     fromParameter,
                     toParameter,
                     toParameter,
+                    querySearch,
+                    querySearch,
                     limit);
         }
 
@@ -140,6 +150,8 @@ public class JdbcQueryHistoryRepository {
                 fromParameter,
                 toParameter,
                 toParameter,
+                querySearch,
+                querySearch,
                 limit);
     }
 

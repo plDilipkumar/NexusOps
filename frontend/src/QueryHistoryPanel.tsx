@@ -16,6 +16,8 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
   const [draftToDate,setDraftToDate]=useState("");
   const [fromDate,setFromDate]=useState("");
   const [toDate,setToDate]=useState("");
+  const [draftQuery,setDraftQuery]=useState("");
+  const [query,setQuery]=useState("");
   const generation=useRef(0);
   const initialController=useRef<AbortController|null>(null);
   const moreController=useRef<AbortController|null>(null);
@@ -29,25 +31,33 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
     if(!token||!workspaceId){setLoading(false);return;}
     const controller=new AbortController();
     initialController.current=controller;setLoading(true);
-    void fetchQueryHistoryPage({apiBaseUrl,token,workspaceId,outcome,fromDate,toDate,signal:controller.signal})
+    void fetchQueryHistoryPage({apiBaseUrl,token,workspaceId,outcome,fromDate,toDate,query,signal:controller.signal})
       .then(page=>{if(requestGeneration!==generation.current)return;setItems(page.items);setNextCursor(page.nextCursor);setHasMore(page.hasMore);})
       .catch(reason=>{if(requestGeneration===generation.current&&!controller.signal.aborted)setError(reason instanceof Error?reason.message:"Unable to load query history.");})
       .finally(()=>{if(requestGeneration===generation.current){setLoading(false);initialController.current=null;}});
     return ()=>{controller.abort();moreController.current?.abort();generation.current+=1;};
-  },[apiBaseUrl,token,workspaceId,reloadKey,outcome,fromDate,toDate]);
+  },[apiBaseUrl,token,workspaceId,reloadKey,outcome,fromDate,toDate,query]);
 
   const applyDateRange=()=>{
     if(draftFromDate&&draftToDate&&draftFromDate>draftToDate){setError("The start date must not be after the end date.");return;}
     setFromDate(draftFromDate);setToDate(draftToDate);
   };
   const clearDateRange=()=>{setDraftFromDate("");setDraftToDate("");setFromDate("");setToDate("");};
+  const applySearch=()=>{
+    const value=draftQuery.trim();
+    if(Array.from(value).length>120||/[\u0000-\u001F\u007F-\u009F]/u.test(value)){
+      setError("Use at most 120 printable characters when searching SQL history.");return;
+    }
+    setQuery(value);
+  };
+  const clearSearch=()=>{setDraftQuery("");setQuery("");};
   const loadMore=async()=>{
     if(!token||!workspaceId||!nextCursor||loadingMore)return;
     const requestGeneration=generation.current;
     moreController.current?.abort();
     const controller=new AbortController();moreController.current=controller;setLoadingMore(true);setError("");
     try{
-      const page=await fetchQueryHistoryPage({apiBaseUrl,token,workspaceId,cursor:nextCursor,outcome,fromDate,toDate,signal:controller.signal});
+      const page=await fetchQueryHistoryPage({apiBaseUrl,token,workspaceId,cursor:nextCursor,outcome,fromDate,toDate,query,signal:controller.signal});
       if(requestGeneration!==generation.current)return;
       setItems(current=>{const known=new Set(current.map(item=>item.historyId));return [...current,...page.items.filter(item=>!known.has(item.historyId))];});
       setNextCursor(page.nextCursor);setHasMore(page.hasMore);
@@ -55,7 +65,8 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
     finally{if(requestGeneration===generation.current){setLoadingMore(false);moreController.current=null;}}
   };
   const hasDateFilter=Boolean(fromDate||toDate);
-  const hasAnyFilter=outcome!=="ALL"||hasDateFilter;
+  const hasSearchFilter=Boolean(query);
+  const hasAnyFilter=outcome!=="ALL"||hasDateFilter||hasSearchFilter;
 
   return <div className="history-page">
     <div className="history-heading">
@@ -76,10 +87,17 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
             </label>
             <label className="history-filter">From (UTC)<input aria-label="History start date in UTC" type="date" value={draftFromDate} onChange={e=>setDraftFromDate(e.target.value)}/></label>
             <label className="history-filter">Through (UTC)<input aria-label="History end date in UTC" type="date" value={draftToDate} onChange={e=>setDraftToDate(e.target.value)}/></label>
+            <label className="history-filter">Search SQL text
+              <input aria-label="Search query history SQL text" type="search" maxLength={120} placeholder="Table, column or phrase"
+                value={draftQuery} onChange={e=>setDraftQuery(e.target.value)}
+                onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();applySearch();}}}/>
+            </label>
           </div>
           <div className="history-date-actions">
             <button type="button" className="secondary" onClick={applyDateRange} disabled={loading||(draftFromDate===fromDate&&draftToDate===toDate)}>Apply dates</button>
             {(draftFromDate||draftToDate||hasDateFilter)&&<button type="button" className="secondary" onClick={clearDateRange} disabled={loading}>Clear dates</button>}
+            <button type="button" className="secondary" onClick={applySearch} disabled={loading||draftQuery.trim()===query}>Search SQL</button>
+            {(draftQuery||hasSearchFilter)&&<button type="button" className="secondary" onClick={clearSearch} disabled={loading}>Clear search</button>}
           </div>
           <span>{items.length} loaded</span>
         </div>
@@ -87,7 +105,7 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
         {error&&<div className="history-error" role="alert"><AlertCircle size={15}/>{error}</div>}
         {loading?<div className="history-state"><LoaderCircle size={18} className="history-spin"/> Loading query history…</div>
           :items.length===0&&!error?<article className="history-empty"><History size={25}/><b>{hasAnyFilter?"No matching executions":"No query history yet"}</b>
-              <p>{hasAnyFilter?"Try another outcome or UTC date range.":"Run a read-only SQL query from the Workspace. Completed executions will appear here when query history is enabled by the API."}</p></article>
+              <p>{hasAnyFilter?"Try another SQL search, outcome or UTC date range.":"Run a read-only SQL query from the Workspace. Completed executions will appear here when query history is enabled by the API."}</p></article>
           :items.length>0?<div className="history-list">{items.map(entry=>{
               const statusClass=entry.outcome==="SUCCEEDED"?"success":entry.outcome==="FAILED"?"failed":"cancelled";
               const statusLabel=entry.outcome==="SUCCEEDED"?"Succeeded":entry.outcome==="FAILED"?"Failed":"Canceled";
