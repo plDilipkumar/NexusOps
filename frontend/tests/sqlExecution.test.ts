@@ -195,3 +195,21 @@ test("maps rejected cancellation responses to sanitized errors", async () => {
     /server could not cancel the query/,
   );
 });
+
+
+test("distinguishes a cancelled query from an execution identifier conflict", async () => {
+  const options = {
+    apiBaseUrl: "https://api.example.test",
+    sql: "SELECT 1",
+    headers: { Authorization: "Bearer " + "A".repeat(43), "X-NeuroSQL-Workspace-Id": "123e4567-e89b-12d3-a456-426614174002" },
+    executionId: "123e4567-e89b-42d3-a456-426614174000",
+  };
+  await assert.rejects(
+    executeReadOnlyQuery(options, async () => new Response(JSON.stringify({ message: "The query was cancelled.", errors: [] }), { status: 409 })),
+    /The query was cancelled/,
+  );
+  await assert.rejects(
+    executeReadOnlyQuery(options, async () => new Response(JSON.stringify({ message: "An execution with this identifier is already active.", errors: [] }), { status: 409 })),
+    /conflicted with another active execution/,
+  );
+});
