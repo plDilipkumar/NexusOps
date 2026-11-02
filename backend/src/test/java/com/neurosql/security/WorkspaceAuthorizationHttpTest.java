@@ -8,9 +8,11 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -529,6 +531,111 @@ class WorkspaceAuthorizationHttpTest {
         verify(savedQueryService).create(
                 WORKSPACE_ID, USER_ID, "Open invoices", null,
                 "SELECT * FROM invoices WHERE status = 'OPEN'");
+    }
+
+    @Test
+    void activeAdminCanUpdateWorkspaceSavedQuery() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN))
+                .thenReturn(true);
+        UUID savedId = UUID.fromString("d0b12b4a-f1a1-45f1-a6d3-54bbf76b70a1");
+        Instant updatedAt = Instant.parse("2026-11-02T11:00:00.123456Z");
+        var entry = new JdbcSavedQueryRepository.SavedQueryEntry(
+                savedId, WORKSPACE_ID, USER_ID, "Updated report", "Updated description",
+                "SELECT 2", updatedAt.minusSeconds(60), updatedAt);
+        when(savedQueryService.update(
+                WORKSPACE_ID, savedId, "Updated report", "Updated description", "SELECT 2"))
+                .thenReturn(Optional.of(entry));
+
+        mockMvc.perform(put("/api/sql/saved-queries/{savedQueryId}", savedId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Updated report","description":"Updated description","queryText":"SELECT 2"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.savedQueryId").value(savedId.toString()))
+                .andExpect(jsonPath("$.ownerUserId").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.name").value("Updated report"))
+                .andExpect(jsonPath("$.queryText").value("SELECT 2"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN);
+        verify(savedQueryService).update(
+                WORKSPACE_ID, savedId, "Updated report", "Updated description", "SELECT 2");
+    }
+
+    @Test
+    void activeAdminCanDeleteWorkspaceSavedQuery() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN))
+                .thenReturn(true);
+        UUID savedId = UUID.fromString("d0b12b4a-f1a1-45f1-a6d3-54bbf76b70a1");
+        when(savedQueryService.delete(WORKSPACE_ID, savedId)).thenReturn(true);
+
+        mockMvc.perform(delete("/api/sql/saved-queries/{savedQueryId}", savedId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN);
+        verify(savedQueryService).delete(WORKSPACE_ID, savedId);
+    }
+
+    @Test
+    void memberCannotUpdateOrDeleteWorkspaceSavedQueries() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN))
+                .thenReturn(false);
+        UUID savedId = UUID.fromString("d0b12b4a-f1a1-45f1-a6d3-54bbf76b70a1");
+
+        mockMvc.perform(put("/api/sql/saved-queries/{savedQueryId}", savedId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Updated report","description":"","queryText":"SELECT 2"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        mockMvc.perform(delete("/api/sql/saved-queries/{savedQueryId}", savedId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(savedQueryService);
+    }
+
+    @Test
+    void savedQueryMutationCorsIsScopedToSavedQueryRoutes() throws Exception {
+        String path = "/api/sql/saved-queries/d0b12b4a-f1a1-45f1-a6d3-54bbf76b70a1";
+        mockMvc.perform(options(path)
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "PUT")
+                        .header("Access-Control-Request-Headers",
+                                "authorization,content-type,x-neurosql-workspace-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        "Access-Control-Allow-Origin", "https://neurosql.vercel.app"))
+                .andExpect(header().string(
+                        "Access-Control-Allow-Methods", org.hamcrest.Matchers.containsString("PUT")));
+
+        mockMvc.perform(options(path)
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "DELETE")
+                        .header("Access-Control-Request-Headers",
+                                "authorization,x-neurosql-workspace-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        "Access-Control-Allow-Methods", org.hamcrest.Matchers.containsString("DELETE")));
     }
 
     @Test

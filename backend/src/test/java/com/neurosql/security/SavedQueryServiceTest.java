@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -83,6 +84,64 @@ class SavedQueryServiceTest {
 
         assertThatThrownBy(() -> service.create(WORKSPACE_ID, USER_ID, "Monthly", "", "SELECT 1"))
                 .isInstanceOf(SavedQueryService.DuplicateNameException.class);
+    }
+
+    @Test
+    void updateNormalizesMutableFieldsAndPreservesRepositoryOwnership() {
+        UUID savedQueryId = UUID.randomUUID();
+        var updated = entry(savedQueryId, "Updated report", "Updated description", "SELECT 2");
+        when(repository.update(
+                WORKSPACE_ID, savedQueryId, "Updated report", "Updated description", "SELECT 2"))
+                .thenReturn(Optional.of(updated));
+
+        assertThat(service.update(
+                WORKSPACE_ID, savedQueryId, " Updated report ", " Updated description ", " SELECT 2 "))
+                .contains(updated);
+
+        verify(repository).update(
+                WORKSPACE_ID, savedQueryId, "Updated report", "Updated description", "SELECT 2");
+    }
+
+    @Test
+    void updateMapsDuplicateWorkspaceNameToDomainConflict() {
+        UUID savedQueryId = UUID.randomUUID();
+        when(repository.update(WORKSPACE_ID, savedQueryId, "Monthly", "", "SELECT 2"))
+                .thenThrow(new DuplicateKeyException("unique index"));
+
+        assertThatThrownBy(() -> service.update(
+                WORKSPACE_ID, savedQueryId, "Monthly", "", "SELECT 2"))
+                .isInstanceOf(SavedQueryService.DuplicateNameException.class);
+    }
+
+    @Test
+    void updateRejectsInvalidFieldsBeforeDatabaseAccess() {
+        UUID savedQueryId = UUID.randomUUID();
+        assertThatThrownBy(() -> service.update(
+                WORKSPACE_ID, savedQueryId, " ", "", "SELECT 1"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.update(
+                WORKSPACE_ID, savedQueryId, "Valid", "", "x".repeat(50_001)))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void deleteDelegatesWorkspaceAndSavedQueryIdsToRepository() {
+        UUID savedQueryId = UUID.randomUUID();
+        when(repository.delete(WORKSPACE_ID, savedQueryId)).thenReturn(true);
+
+        assertThat(service.delete(WORKSPACE_ID, savedQueryId)).isTrue();
+
+        verify(repository).delete(WORKSPACE_ID, savedQueryId);
+    }
+
+    @Test
+    void deleteRejectsMissingIdentifiersBeforeDatabaseAccess() {
+        assertThatThrownBy(() -> service.delete(null, UUID.randomUUID()))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> service.delete(WORKSPACE_ID, null))
+                .isInstanceOf(NullPointerException.class);
+        verifyNoInteractions(repository);
     }
 
     @Test

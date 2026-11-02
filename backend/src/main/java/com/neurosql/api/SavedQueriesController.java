@@ -17,8 +17,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -106,6 +109,76 @@ public class SavedQueriesController {
                     .cacheControl(CacheControl.noStore())
                     .body(new ApiError("The saved-query details are invalid."));
         }
+    }
+
+    @PutMapping(path = "/{savedQueryId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> update(
+            @PathVariable UUID savedQueryId,
+            @Valid @RequestBody SaveQueryRequest requestBody,
+            Authentication authentication,
+            HttpServletRequest request) {
+        DurableSessionAuthenticationFilter.SessionPrincipal principal = durablePrincipal(authentication);
+        if (principal == null) {
+            return unauthorized();
+        }
+        UUID workspaceId = workspaceId(request);
+        if (workspaceId == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new ApiError("An authorized workspace is required."));
+        }
+
+        try {
+            var updated = savedQueries.update(
+                    workspaceId,
+                    savedQueryId,
+                    requestBody.name(),
+                    requestBody.description(),
+                    requestBody.queryText());
+            if (updated.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .cacheControl(CacheControl.noStore())
+                        .body(new ApiError("Saved query not found."));
+            }
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .header(HttpHeaders.PRAGMA, "no-cache")
+                    .body(new JdbcSavedQueryResponse(updated.get()));
+        } catch (SavedQueryService.DuplicateNameException duplicate) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new ApiError("A saved query with this name already exists in the workspace."));
+        } catch (IllegalArgumentException invalidInput) {
+            return ResponseEntity.badRequest()
+                    .cacheControl(CacheControl.noStore())
+                    .body(new ApiError("The saved-query details are invalid."));
+        }
+    }
+
+    @DeleteMapping("/{savedQueryId}")
+    public ResponseEntity<?> delete(
+            @PathVariable UUID savedQueryId,
+            Authentication authentication,
+            HttpServletRequest request) {
+        DurableSessionAuthenticationFilter.SessionPrincipal principal = durablePrincipal(authentication);
+        if (principal == null) {
+            return unauthorized();
+        }
+        UUID workspaceId = workspaceId(request);
+        if (workspaceId == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new ApiError("An authorized workspace is required."));
+        }
+
+        if (!savedQueries.delete(workspaceId, savedQueryId)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new ApiError("Saved query not found."));
+        }
+        return ResponseEntity.noContent()
+                .cacheControl(CacheControl.noStore())
+                .build();
     }
 
     private static DurableSessionAuthenticationFilter.SessionPrincipal durablePrincipal(

@@ -2,6 +2,7 @@ package com.neurosql.security;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -73,6 +74,38 @@ public class SavedQueryService {
         } catch (DuplicateKeyException duplicate) {
             throw new DuplicateNameException();
         }
+    }
+
+    /**
+     * Updates a saved query only inside the caller's already-authorized workspace.
+     * The immutable owner and workspace keys are not accepted from the request.
+     */
+    public Optional<JdbcSavedQueryRepository.SavedQueryEntry> update(
+            UUID workspaceId,
+            UUID savedQueryId,
+            String rawName,
+            String rawDescription,
+            String rawQueryText) {
+        Objects.requireNonNull(workspaceId, "workspaceId");
+        Objects.requireNonNull(savedQueryId, "savedQueryId");
+        String name = normalizeName(rawName);
+        String description = normalizeDescription(rawDescription);
+        String queryText = normalizeQueryText(rawQueryText);
+
+        try {
+            return repository.update(workspaceId, savedQueryId, name, description, queryText);
+        } catch (DuplicateKeyException duplicate) {
+            throw new DuplicateNameException();
+        }
+    }
+
+    /**
+     * Returns false when the ID does not exist in the authorized workspace.
+     */
+    public boolean delete(UUID workspaceId, UUID savedQueryId) {
+        Objects.requireNonNull(workspaceId, "workspaceId");
+        Objects.requireNonNull(savedQueryId, "savedQueryId");
+        return repository.delete(workspaceId, savedQueryId);
     }
 
     private static String normalizeName(String value) {

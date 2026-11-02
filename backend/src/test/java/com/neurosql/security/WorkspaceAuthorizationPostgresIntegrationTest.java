@@ -17,7 +17,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
  * service used by CI. It creates only a minimal test fixture; it is not a
  * production migration and must never point to a shared or production DB.
  */
-@EnabledIfEnvironmentVariable(named = "NEUROSQL_TEST_JDBC_URL", matches = "^jdbc:postgresql:.*$")
+@EnabledIfEnvironmentVariable(named = "NEUROSQL_TEST_JDBC_URL", matches = "^jdbc:postgresql://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?/neurosql_test(\\?.*)?$")
 class WorkspaceAuthorizationPostgresIntegrationTest {
     private JdbcTemplate jdbc;
     private WorkspaceAuthorizationService authorization;
@@ -287,6 +287,56 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
 
         assertThat(savedQueries.create(secondWorkspace, user, "monthly", "", "SELECT 2"))
                 .isNotNull();
+    }
+
+    @Test
+    void savedQueriesCanBeUpdatedAndDeletedOnlyWithinTheirWorkspace() {
+        UUID owner = insertUser("ACTIVE");
+        UUID workspace = insertWorkspace("saved-query-mutation-a");
+        UUID otherWorkspace = insertWorkspace("saved-query-mutation-b");
+        insertMembership(workspace, owner, "OWNER", "ACTIVE");
+        insertMembership(otherWorkspace, owner, "ADMIN", "ACTIVE");
+
+        SavedQueryService savedQueries = new SavedQueryService(new JdbcSavedQueryRepository(jdbc));
+        var created = savedQueries.create(workspace, owner, "Original", "Before", "SELECT 1");
+
+        assertThat(savedQueries.update(
+                otherWorkspace, created.savedQueryId(), "Cross workspace", "", "SELECT 9"))
+                .isEmpty();
+        assertThat(savedQueries.delete(otherWorkspace, created.savedQueryId())).isFalse();
+        assertThat(savedQueries.list(workspace, 25, null).items())
+                .extracting(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId)
+                .containsExactly(created.savedQueryId());
+
+        var updated = savedQueries.update(
+                workspace, created.savedQueryId(), "Updated", "After", "SELECT 2").orElseThrow();
+        assertThat(updated.ownerUserId()).isEqualTo(owner);
+        assertThat(updated.workspaceId()).isEqualTo(workspace);
+        assertThat(updated.name()).isEqualTo("Updated");
+        assertThat(updated.description()).isEqualTo("After");
+        assertThat(updated.queryText()).isEqualTo("SELECT 2");
+        assertThat(updated.updatedAt()).isAfter(created.updatedAt());
+
+        assertThat(savedQueries.delete(workspace, created.savedQueryId())).isTrue();
+        assertThat(savedQueries.list(workspace, 25, null).items()).isEmpty();
+    }
+
+    @Test
+    void updatingSavedQueryToAnotherCaseInsensitiveWorkspaceNameIsRejected() {
+        UUID owner = insertUser("ACTIVE");
+        UUID workspace = insertWorkspace("saved-query-update-duplicate");
+        insertMembership(workspace, owner, "OWNER", "ACTIVE");
+
+        SavedQueryService savedQueries = new SavedQueryService(new JdbcSavedQueryRepository(jdbc));
+        savedQueries.create(workspace, owner, "Monthly", "", "SELECT 1");
+        var second = savedQueries.create(workspace, owner, "Quarterly", "", "SELECT 2");
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                () -> savedQueries.update(workspace, second.savedQueryId(), "monthly", "", "SELECT 3")))
+                .isInstanceOf(SavedQueryService.DuplicateNameException.class);
+        assertThat(savedQueries.list(workspace, 25, null).items())
+                .extracting(JdbcSavedQueryRepository.SavedQueryEntry::name)
+                .containsExactlyInAnyOrder("Monthly", "Quarterly");
     }
 
     @Test

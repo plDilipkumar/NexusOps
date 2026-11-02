@@ -134,8 +134,29 @@ public final class WorkspaceAuthorizationFilter extends OncePerRequestFilter {
         if ("POST".equalsIgnoreCase(method) && "/api/sql/saved-queries".equals(path)) {
             return WorkspaceRole.MEMBER;
         }
+        if (isSavedQueryItemPath(path)
+                && ("PUT".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method))) {
+            return WorkspaceRole.ADMIN;
+        }
         // New paths and HTTP methods must declare an explicit role policy before being exposed.
         return null;
+    }
+
+    private static boolean isSavedQueryItemPath(String path) {
+        String prefix = "/api/sql/saved-queries/";
+        if (path == null || !path.startsWith(prefix)) {
+            return false;
+        }
+        String id = path.substring(prefix.length());
+        if (id.contains("/")) {
+            return false;
+        }
+        try {
+            UUID parsed = UUID.fromString(id);
+            return parsed.toString().equalsIgnoreCase(id);
+        } catch (IllegalArgumentException invalidId) {
+            return false;
+        }
     }
 
     private static boolean isLegacyOwner(Authentication authentication) {

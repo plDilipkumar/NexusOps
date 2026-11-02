@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -49,6 +50,24 @@ public class JdbcSavedQueryRepository {
             VALUES (?, ?, ?, ?, ?)
             RETURNING saved_query_id, workspace_id, owner_user_id, name, description,
                       query_text, created_at, updated_at
+            """;
+
+    static final String UPDATE_SQL = """
+            UPDATE neurosql_app.saved_queries
+               SET name = ?,
+                   description = ?,
+                   query_text = ?,
+                   updated_at = GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')
+             WHERE workspace_id = ?
+               AND saved_query_id = ?
+            RETURNING saved_query_id, workspace_id, owner_user_id, name, description,
+                      query_text, created_at, updated_at
+            """;
+
+    static final String DELETE_SQL = """
+            DELETE FROM neurosql_app.saved_queries
+             WHERE workspace_id = ?
+               AND saved_query_id = ?
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -101,6 +120,36 @@ public class JdbcSavedQueryRepository {
                 name,
                 description,
                 queryText);
+    }
+
+    /**
+     * Updates only mutable saved-query fields. Workspace and owner IDs are never
+     * accepted from the caller or included in the UPDATE statement.
+     */
+    public Optional<SavedQueryEntry> update(
+            UUID workspaceId,
+            UUID savedQueryId,
+            String name,
+            String description,
+            String queryText) {
+        List<SavedQueryEntry> updated = jdbcTemplate.query(
+                UPDATE_SQL,
+                JdbcSavedQueryRepository::mapSavedQuery,
+                name,
+                description,
+                queryText,
+                workspaceId,
+                savedQueryId);
+        return updated.stream().findFirst();
+    }
+
+    /**
+     * Deletes only a saved query in the supplied authorized workspace.
+     */
+    public boolean delete(UUID workspaceId, UUID savedQueryId) {
+        Objects.requireNonNull(workspaceId, "workspaceId");
+        Objects.requireNonNull(savedQueryId, "savedQueryId");
+        return jdbcTemplate.update(DELETE_SQL, workspaceId, savedQueryId) == 1;
     }
 
     private static SavedQueryEntry mapSavedQuery(ResultSet resultSet, int rowNumber) throws SQLException {
