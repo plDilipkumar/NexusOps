@@ -29,6 +29,17 @@ public class JdbcAccountRepository {
             LIMIT 1
             """;
 
+    static final String FIND_ACTIVE_VERIFIED_ACCOUNT_FOR_UPDATE_SQL = """
+            SELECT user_id, password_hash
+            FROM neurosql_app.app_users
+            WHERE lower(email) = ?
+              AND status = 'ACTIVE'
+              AND email_verified_at IS NOT NULL
+            ORDER BY user_id
+            LIMIT 1
+            FOR UPDATE
+            """;
+
     static final String CREATE_UNVERIFIED_ACCOUNT_SQL = """
             INSERT INTO neurosql_app.app_users (email, password_hash, display_name)
             VALUES (?, ?, ?)
@@ -171,6 +182,29 @@ public class JdbcAccountRepository {
 
         List<LoginAccount> matches = jdbcTemplate.query(
                 FIND_ACTIVE_VERIFIED_ACCOUNT_SQL,
+                (resultSet, rowNumber) -> new LoginAccount(
+                        resultSet.getObject("user_id", UUID.class),
+                        resultSet.getString("password_hash")),
+                normalizedEmail);
+        return matches.stream().findFirst();
+    }
+
+    /**
+     * Finds the credential row and locks it until the caller's transaction completes.
+     * Durable login must keep this lock through password verification and session creation
+     * so a concurrent password reset cannot revoke sessions before a stale login inserts one.
+     */
+    public Optional<LoginAccount> findActiveVerifiedByEmailForUpdate(String email) {
+        if (email == null || email.isBlank() || email.length() > 254) {
+            return Optional.empty();
+        }
+        String normalizedEmail = email.strip().toLowerCase(Locale.ROOT);
+        if (normalizedEmail.isEmpty() || normalizedEmail.length() > 254) {
+            return Optional.empty();
+        }
+
+        List<LoginAccount> matches = jdbcTemplate.query(
+                FIND_ACTIVE_VERIFIED_ACCOUNT_FOR_UPDATE_SQL,
                 (resultSet, rowNumber) -> new LoginAccount(
                         resultSet.getObject("user_id", UUID.class),
                         resultSet.getString("password_hash")),

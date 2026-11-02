@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Authenticates pre-provisioned, active, email-verified accounts and issues
@@ -62,6 +63,12 @@ public class DurableLoginService {
         this.dummyPasswordHash = dummyPasswordHash;
     }
 
+    /**
+     * Keeps the account row locked from credential verification through session insertion.
+     * Password-reset updates acquire the same row lock, so either login commits first and
+     * the reset revokes its session, or reset commits first and the old password no longer matches.
+     */
+    @Transactional
     public LoginAttempt login(String email, String password) {
         return login(email, password, clock.instant());
     }
@@ -80,7 +87,7 @@ public class DurableLoginService {
 
         Optional<JdbcAccountRepository.LoginAccount> account = normalizedEmail == null
                 ? Optional.empty()
-                : accounts.findActiveVerifiedByEmail(normalizedEmail);
+                : accounts.findActiveVerifiedByEmailForUpdate(normalizedEmail);
 
         boolean passwordValid = true;
         String candidatePassword;

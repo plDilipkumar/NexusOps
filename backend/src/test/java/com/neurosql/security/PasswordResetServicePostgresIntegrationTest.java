@@ -4,8 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +59,15 @@ class PasswordResetServicePostgresIntegrationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private CoordinatedPasswordEncoder coordinatedPasswordEncoder;
+
+    @Autowired
+    private DurableLoginService durableLoginService;
+
+    @Autowired
+    private SessionLifecycleService sessionLifecycleService;
 
     private final SessionTokenCodec tokenCodec = new SessionTokenCodec();
 
@@ -202,6 +219,86 @@ class PasswordResetServicePostgresIntegrationTest {
                 fixture.userId())).isEqualTo(2);
     }
 
+    @Test
+    void concurrentLoginCannotLeaveAnOldPasswordSessionAfterResetCommits() throws Exception {
+        assertThat(AopUtils.isAopProxy(durableLoginService)).isTrue();
+        Fixture fixture = insertUser("ACTIVE", true);
+        AccountActionTokenService.IssuedActionToken resetToken =
+                actionTokens.issueToken(fixture.userId(), AccountActionTokenService.Purpose.PASSWORD_RESET);
+
+        CoordinatedPasswordEncoder.MatchGate gate = coordinatedPasswordEncoder.blockNextMatch();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<DurableLoginService.LoginAttempt> loginFuture =
+                    executor.submit(() -> durableLoginService.login(fixture.email(), OLD_PASSWORD));
+            assertThat(gate.entered.await(5, TimeUnit.SECONDS)).isTrue();
+
+            CountDownLatch resetStarted = new CountDownLatch(1);
+            Future<PasswordResetService.ResetResult> resetFuture = executor.submit(() -> {
+                resetStarted.countDown();
+                return passwordResetService.resetPassword(resetToken.token(), NEW_PASSWORD);
+            });
+            assertThat(resetStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            // The reset must be waiting on the account row held by the login transaction.
+            assertThat(awaitPasswordUpdateWaitingOnAccountLock(resetFuture, Duration.ofSeconds(5))).isTrue();
+
+            gate.release.countDown();
+            DurableLoginService.LoginAttempt login = loginFuture.get(10, TimeUnit.SECONDS);
+            PasswordResetService.ResetResult reset = resetFuture.get(10, TimeUnit.SECONDS);
+
+            assertThat(login.status()).isEqualTo(DurableLoginService.Status.AUTHENTICATED);
+            assertThat(reset.successful()).isTrue();
+            assertThat(passwordEncoder.matches(NEW_PASSWORD, currentPasswordHash(fixture.userId()))).isTrue();
+            assertThat(jdbc.queryForObject(
+                    "SELECT count(*) FROM neurosql_app.user_sessions WHERE user_id = ? AND revoked_at IS NULL",
+                    Integer.class,
+                    fixture.userId())).isZero();
+            assertThat(jdbc.queryForObject(
+                    "SELECT count(*) FROM neurosql_app.user_sessions WHERE user_id = ? AND revoked_at IS NOT NULL",
+                    Integer.class,
+                    fixture.userId())).isEqualTo(1);
+            assertThat(sessionLifecycleService.validateSession(login.session().token(), Instant.now())).isEmpty();
+
+            // Once reset commits, the old password must not be able to create another session.
+            assertThat(durableLoginService.login(fixture.email(), OLD_PASSWORD).status())
+                    .isEqualTo(DurableLoginService.Status.INVALID_CREDENTIALS);
+            assertThat(jdbc.queryForObject(
+                    "SELECT count(*) FROM neurosql_app.user_sessions WHERE user_id = ? AND revoked_at IS NULL",
+                    Integer.class,
+                    fixture.userId())).isZero();
+        } finally {
+            gate.release.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    private boolean awaitPasswordUpdateWaitingOnAccountLock(
+            Future<?> resetFuture, Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        do {
+            if (resetFuture.isDone()) {
+                return false;
+            }
+            Boolean waiting = jdbc.queryForObject("""
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_stat_activity
+                        WHERE pid <> pg_backend_pid()
+                          AND datname = current_database()
+                          AND wait_event_type = 'Lock'
+                          AND ltrim(query) LIKE 'UPDATE neurosql_app.app_users%'
+                    )
+                    """, Boolean.class);
+            if (Boolean.TRUE.equals(waiting)) {
+                return true;
+            }
+            Thread.sleep(20);
+        } while (System.nanoTime() < deadline);
+        return false;
+    }
+
     private Fixture insertUser(String status, boolean verified) {
         UUID userId = UUID.randomUUID();
         String email = "password-reset-" + userId + "@example.test";
@@ -217,7 +314,7 @@ class PasswordResetServicePostgresIntegrationTest {
                 hash,
                 "Password Reset Test",
                 verified ? Timestamp.from(Instant.now()) : null);
-        return new Fixture(userId, hash);
+        return new Fixture(userId, email, hash);
     }
 
     private void insertSessions(UUID userId) {
@@ -256,7 +353,7 @@ class PasswordResetServicePostgresIntegrationTest {
                 fixture.userId())).isEqualTo(2);
     }
 
-    private record Fixture(UUID userId, String passwordHash) {
+    private record Fixture(UUID userId, String email, String passwordHash) {
     }
 
     @Configuration
@@ -283,8 +380,8 @@ class PasswordResetServicePostgresIntegrationTest {
         }
 
         @Bean
-        PasswordEncoder passwordEncoder() {
-            return new BCryptPasswordEncoder(4);
+        CoordinatedPasswordEncoder passwordEncoder() {
+            return new CoordinatedPasswordEncoder();
         }
 
         @Bean
@@ -308,12 +405,80 @@ class PasswordResetServicePostgresIntegrationTest {
         }
 
         @Bean
+        SessionLifecycleService sessionLifecycleService(JdbcSessionRepository sessions) {
+            return new SessionLifecycleService(sessions);
+        }
+
+        @Bean
+        BasicAuthAttemptRateLimiter loginAttemptRateLimiter() {
+            return new BasicAuthAttemptRateLimiter(Clock.systemUTC());
+        }
+
+        @Bean
+        DurableLoginService durableLoginService(
+                JdbcAccountRepository accounts,
+                PasswordEncoder passwordEncoder,
+                SessionLifecycleService sessions,
+                BasicAuthAttemptRateLimiter limiter) {
+            return new DurableLoginService(
+                    accounts,
+                    passwordEncoder,
+                    sessions,
+                    limiter,
+                    Clock.systemUTC(),
+                    passwordEncoder.encode(DurableLoginService.DUMMY_CANDIDATE));
+        }
+
+        @Bean
         PasswordResetService passwordResetService(
                 AccountActionTokenService actionTokens,
                 JdbcAccountRepository accounts,
                 JdbcSessionRepository sessions,
                 PasswordEncoder passwordEncoder) {
             return new PasswordResetService(actionTokens, accounts, sessions, passwordEncoder);
+        }
+    }
+
+    static final class CoordinatedPasswordEncoder implements PasswordEncoder {
+        private final PasswordEncoder delegate = new BCryptPasswordEncoder(4);
+        private final AtomicReference<MatchGate> nextMatchGate = new AtomicReference<>();
+
+        MatchGate blockNextMatch() {
+            MatchGate gate = new MatchGate();
+            nextMatchGate.set(gate);
+            return gate;
+        }
+
+        @Override
+        public String encode(CharSequence rawPassword) {
+            return delegate.encode(rawPassword);
+        }
+
+        @Override
+        public boolean matches(CharSequence rawPassword, String encodedPassword) {
+            MatchGate gate = nextMatchGate.getAndSet(null);
+            if (gate != null) {
+                gate.entered.countDown();
+                try {
+                    if (!gate.release.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Timed out waiting to release the coordinated password match.");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Coordinated password matching was interrupted.", interrupted);
+                }
+            }
+            return delegate.matches(rawPassword, encodedPassword);
+        }
+
+        @Override
+        public boolean upgradeEncoding(String encodedPassword) {
+            return delegate.upgradeEncoding(encodedPassword);
+        }
+
+        static final class MatchGate {
+            final CountDownLatch entered = new CountDownLatch(1);
+            final CountDownLatch release = new CountDownLatch(1);
         }
     }
 
