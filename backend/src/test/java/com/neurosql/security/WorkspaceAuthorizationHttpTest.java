@@ -22,10 +22,12 @@ import java.util.UUID;
 
 import com.neurosql.api.DurableSessionController;
 import com.neurosql.api.SchemaController;
-import com.neurosql.api.SqlExecutionController;\nimport com.neurosql.api.QueryHistoryController;
+import com.neurosql.api.SqlExecutionController;
+import com.neurosql.api.QueryHistoryController;
 import com.neurosql.api.ReadOnlyQueryExecutor;
 import com.neurosql.api.WorkspaceController;
-import com.neurosql.security.QueryHistoryService;\nimport com.neurosql.security.QueryHistoryReadService;
+import com.neurosql.security.QueryHistoryService;
+import com.neurosql.security.QueryHistoryReadService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -74,7 +76,10 @@ class WorkspaceAuthorizationHttpTest {
     private WorkspaceAuthorizationService workspaceAuthorizationService;
 
     @MockBean
-    private QueryHistoryService queryHistoryService;\n\n    @MockBean\n    private QueryHistoryReadService queryHistoryReadService;
+    private QueryHistoryService queryHistoryService;
+
+    @MockBean
+    private QueryHistoryReadService queryHistoryReadService;
 
     @Test
     void durableSessionMustProvideCanonicalWorkspaceId() throws Exception {
@@ -223,6 +228,66 @@ class WorkspaceAuthorizationHttpTest {
         verify(workspaceAuthorizationService)
                 .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
         verify(queryExecutor).explain("SELECT 1");
+    }
+
+
+    @Test
+    void activeViewerCanReadOnlyTheirHistoryForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        UUID historyId = UUID.fromString("c5f52e56-79ed-4c80-9e50-48e3d9d4e1a7");
+        var entry = new JdbcQueryHistoryRepository.HistoryEntry(
+                historyId,
+                "SELECT 1",
+                "SUCCEEDED",
+                1,
+                4,
+                false,
+                Instant.parse("2026-11-02T10:15:30.123456Z"));
+        when(queryHistoryReadService.list(USER_ID, WORKSPACE_ID, 1, null))
+                .thenReturn(new QueryHistoryReadService.QueryHistoryPage(List.of(entry), "next-page", true));
+
+        mockMvc.perform(get("/api/sql/history")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.items[0].historyId").value(historyId.toString()))
+                .andExpect(jsonPath("$.items[0].queryText").value("SELECT 1"))
+                .andExpect(jsonPath("$.items[0].outcome").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.hasMore").value(true))
+                .andExpect(jsonPath("$.nextCursor").value("next-page"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(queryHistoryReadService).list(USER_ID, WORKSPACE_ID, 1, null);
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotReadQueryHistory() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(get("/api/sql/history")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(queryHistoryReadService);
+    }
+
+    @Test
+    void legacyBasicOwnerCannotReadUserQueryHistory() throws Exception {
+        mockMvc.perform(get("/api/sql/history")
+                        .with(httpBasic("test-owner", "test-owner-password-123")))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(queryHistoryReadService);
     }
 
     @Test

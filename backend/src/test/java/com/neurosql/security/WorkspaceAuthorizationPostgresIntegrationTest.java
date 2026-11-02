@@ -2,7 +2,9 @@ package com.neurosql.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.UUID;\nimport java.time.Instant;\nimport java.sql.Timestamp;
+import java.util.UUID;
+import java.time.Instant;
+import java.sql.Timestamp;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
