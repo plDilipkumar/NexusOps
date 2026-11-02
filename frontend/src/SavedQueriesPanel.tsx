@@ -67,9 +67,6 @@ export function SavedQueriesPanel({
     setHasMore(false);
     setError("");
     setLoadingMore(false);
-    setFormOpen(false);
-    setEditingId(null);
-    setConfirmDeleteId(null);
 
     if(!token||!workspaceId){
       setLoading(false);
@@ -115,6 +112,19 @@ export function SavedQueriesPanel({
       setFormOpen(true);
     }
   },[initialSql,token,workspaceId,canCreate]);
+
+  useEffect(()=>{
+    setFormOpen(false);
+    setEditingId(null);
+    setConfirmDeleteId(null);
+    setName("");
+    setDescription("");
+    setQueryText("");
+    setFormError("");
+    setSaving(false);
+    setDeletingId(null);
+    onInitialSqlConsumed();
+  },[token,workspaceId]);
 
   const loadMore=async()=>{
     if(!token||!workspaceId||!nextCursor||loadingMore)return;
