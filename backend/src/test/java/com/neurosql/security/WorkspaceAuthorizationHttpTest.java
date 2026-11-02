@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -158,6 +159,43 @@ class WorkspaceAuthorizationHttpTest {
                 .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
         verify(queryExecutor).execute("SELECT 1");
         verify(queryHistoryService).recordSucceeded(USER_ID, WORKSPACE_ID, "SELECT 1", 1, 2, false);
+    }
+
+    @Test
+    void failedDatabaseExecutionIsRecordedForTheAuthenticatedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        doThrow(new ReadOnlyQueryExecutor.QueryExecutionException())
+                .when(queryExecutor).execute("SELECT broken FROM");
+
+        mockMvc.perform(post("/api/sql/execute")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\\"sql\\":\\"SELECT broken FROM\\"}"))
+                .andExpect(status().isUnprocessableEntity());
+
+        verify(queryHistoryService).recordFailed(
+                USER_ID, WORKSPACE_ID, "SELECT broken FROM", org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    void legacyOwnerExecutionDoesNotCreateWorkspaceHistory() throws Exception {
+        when(queryExecutor.execute("SELECT 1")).thenReturn(new ReadOnlyQueryExecutor.QueryResponse(
+                List.of(new ReadOnlyQueryExecutor.ColumnInfo("answer", "int4", java.sql.Types.INTEGER)),
+                List.of(List.of("1")),
+                1,
+                false,
+                2));
+
+        mockMvc.perform(post("/api/sql/execute")
+                        .with(httpBasic("test-owner", "test-owner-password-123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\\"sql\\":\\"SELECT 1\\"}"))
+                .andExpect(status().isOk());
+
+        verifyNoInteractions(queryHistoryService);
     }
 
     @Test
