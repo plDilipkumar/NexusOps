@@ -153,8 +153,8 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
                 Integer.class, secondWorkspace, firstUser)).isEqualTo(1);
 
         assertThat(jdbc.queryForObject(
-                "SELECT query_hash FROM neurosql_app.query_history WHERE query_text = 'SELECT 1'",
-                String.class)).isEqualTo(QueryHistoryService.sha256("SELECT 1"));
+                "SELECT query_hash FROM neurosql_app.query_history WHERE query_text = 'SELECT 1' AND workspace_id = ? AND user_id = ?",
+                String.class, firstWorkspace, firstUser)).isEqualTo(QueryHistoryService.sha256("SELECT 1"));
         assertThat(jdbc.queryForObject(
                 "SELECT row_count FROM neurosql_app.query_history WHERE outcome = 'FAILED'",
                 Integer.class)).isNull();
