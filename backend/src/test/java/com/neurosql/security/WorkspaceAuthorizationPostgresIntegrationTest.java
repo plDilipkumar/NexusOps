@@ -208,7 +208,7 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         QueryHistoryReadService reader =
                 new QueryHistoryReadService(new JdbcQueryHistoryRepository(jdbc));
         QueryHistoryReadService.QueryHistoryPage firstPage =
-                reader.list(firstUser, firstWorkspace, 2, null);
+                reader.list(firstUser, firstWorkspace, 2, null, null);
 
         assertThat(firstPage.items())
                 .extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
@@ -217,22 +217,22 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         assertThat(firstPage.nextCursor()).isNotBlank();
 
         QueryHistoryReadService.QueryHistoryPage secondPage =
-                reader.list(firstUser, firstWorkspace, 2, firstPage.nextCursor());
+                reader.list(firstUser, firstWorkspace, 2, firstPage.nextCursor(), null);
         assertThat(secondPage.items())
                 .extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
                 .containsExactly("SELECT 1");
         assertThat(secondPage.hasMore()).isFalse();
         assertThat(secondPage.nextCursor()).isNull();
 
-        assertThat(reader.list(secondUser, firstWorkspace, 10, null).items())
+        assertThat(reader.list(secondUser, firstWorkspace, 10, null, null).items())
                 .extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
                 .containsExactly("SELECT other user");
-        assertThat(reader.list(firstUser, secondWorkspace, 10, null).items())
+        assertThat(reader.list(firstUser, secondWorkspace, 10, null, null).items())
                 .extracting(JdbcQueryHistoryRepository.HistoryEntry::queryText)
                 .containsExactly("SELECT other workspace");
 
         assertThat(org.assertj.core.api.Assertions.catchThrowable(
-                () -> reader.list(secondUser, firstWorkspace, 10, firstPage.nextCursor())))
+                () -> reader.list(secondUser, firstWorkspace, 10, firstPage.nextCursor(), null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

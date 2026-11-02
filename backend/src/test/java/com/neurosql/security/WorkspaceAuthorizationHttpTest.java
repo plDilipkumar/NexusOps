@@ -253,7 +253,7 @@ class WorkspaceAuthorizationHttpTest {
                 4,
                 false,
                 Instant.parse("2026-11-02T10:15:30.123456Z"));
-        when(queryHistoryReadService.list(USER_ID, WORKSPACE_ID, 1, null))
+        when(queryHistoryReadService.list(USER_ID, WORKSPACE_ID, 1, null, null))
                 .thenReturn(new QueryHistoryReadService.QueryHistoryPage(List.of(entry), "next-page", true));
 
         mockMvc.perform(get("/api/sql/history")
@@ -271,7 +271,7 @@ class WorkspaceAuthorizationHttpTest {
 
         verify(workspaceAuthorizationService)
                 .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
-        verify(queryHistoryReadService).list(USER_ID, WORKSPACE_ID, 1, null);
+        verify(queryHistoryReadService).list(USER_ID, WORKSPACE_ID, 1, null, null);
     }
 
     @Test
