@@ -1,7 +1,5 @@
 package com.neurosql.security;
 
-import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
