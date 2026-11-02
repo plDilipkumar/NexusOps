@@ -24,10 +24,12 @@ import com.neurosql.api.DurableSessionController;
 import com.neurosql.api.SchemaController;
 import com.neurosql.api.SqlExecutionController;
 import com.neurosql.api.QueryHistoryController;
+import com.neurosql.api.SavedQueriesController;
 import com.neurosql.api.ReadOnlyQueryExecutor;
 import com.neurosql.api.WorkspaceController;
 import com.neurosql.security.QueryHistoryService;
 import com.neurosql.security.QueryHistoryReadService;
+import com.neurosql.security.SavedQueryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -39,7 +41,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class})
+@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class, SavedQueriesController.class})
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
         "neurosql.auth.enabled=true",
@@ -48,6 +50,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
         "neurosql.auth.durable-sessions-enabled=true",
         "neurosql.auth.shared-rate-limit-enabled=true",
         "neurosql.sql-history.enabled=true",
+        "neurosql.saved-queries.enabled=true",
         "neurosql.schema-browser.enabled=true",
         "neurosql.sql-execution.enabled=true"
 })
@@ -80,6 +83,9 @@ class WorkspaceAuthorizationHttpTest {
 
     @MockBean
     private QueryHistoryReadService queryHistoryReadService;
+
+    @MockBean
+    private SavedQueryService savedQueryService;
 
     @Test
     void durableSessionMustProvideCanonicalWorkspaceId() throws Exception {
@@ -457,6 +463,100 @@ class WorkspaceAuthorizationHttpTest {
                 .andExpect(header().string(HttpHeaders.EXPIRES, "0"));
 
         org.mockito.Mockito.verifyNoInteractions(loginService);
+    }
+
+
+    @Test
+    void activeViewerCanListWorkspaceSavedQueries() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        UUID savedId = UUID.fromString("4f3bd8a0-9172-4d40-8b58-0ec90adf7c4c");
+        Instant updatedAt = Instant.parse("2026-11-02T10:30:00.123456Z");
+        var entry = new JdbcSavedQueryRepository.SavedQueryEntry(
+                savedId, WORKSPACE_ID, USER_ID, "Monthly revenue", "Finance report",
+                "SELECT sum(amount) FROM invoices", updatedAt, updatedAt);
+        when(savedQueryService.list(WORKSPACE_ID, 1, null))
+                .thenReturn(new SavedQueryService.SavedQueryPage(List.of(entry), null, false));
+
+        mockMvc.perform(get("/api/sql/saved-queries")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.items[0].savedQueryId").value(savedId.toString()))
+                .andExpect(jsonPath("$.items[0].name").value("Monthly revenue"))
+                .andExpect(jsonPath("$.items[0].queryText").value("SELECT sum(amount) FROM invoices"))
+                .andExpect(jsonPath("$.hasMore").value(false));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(savedQueryService).list(WORKSPACE_ID, 1, null);
+    }
+
+    @Test
+    void activeMemberCanCreateWorkspaceSavedQuery() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.MEMBER))
+                .thenReturn(true);
+        UUID savedId = UUID.fromString("b81ac18d-6432-4b1b-8cc2-39abf5e1b302");
+        Instant createdAt = Instant.parse("2026-11-02T10:31:00.123456Z");
+        var entry = new JdbcSavedQueryRepository.SavedQueryEntry(
+                savedId, WORKSPACE_ID, USER_ID, "Open invoices", "",
+                "SELECT * FROM invoices WHERE status = 'OPEN'", createdAt, createdAt);
+        when(savedQueryService.create(
+                WORKSPACE_ID, USER_ID, "Open invoices", null,
+                "SELECT * FROM invoices WHERE status = 'OPEN'")).thenReturn(entry);
+
+        mockMvc.perform(post("/api/sql/saved-queries")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Open invoices","queryText":"SELECT * FROM invoices WHERE status = 'OPEN'"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.savedQueryId").value(savedId.toString()))
+                .andExpect(jsonPath("$.ownerUserId").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.name").value("Open invoices"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.MEMBER);
+        verify(savedQueryService).create(
+                WORKSPACE_ID, USER_ID, "Open invoices", null,
+                "SELECT * FROM invoices WHERE status = 'OPEN'");
+    }
+
+    @Test
+    void viewerCannotCreateWorkspaceSavedQuery() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.MEMBER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/saved-queries")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Restricted","queryText":"SELECT 1"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(savedQueryService);
+    }
+
+    @Test
+    void legacyBasicOwnerCannotReadDurableSavedQueries() throws Exception {
+        mockMvc.perform(get("/api/sql/saved-queries")
+                        .with(httpBasic("test-owner", "test-owner-password-123")))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(savedQueryService);
     }
 
     private void authenticateSession() {
