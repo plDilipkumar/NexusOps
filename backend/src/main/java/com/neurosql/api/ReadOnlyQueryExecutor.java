@@ -77,7 +77,8 @@ public final class ReadOnlyQueryExecutor {
                               OR has_table_privilege(current_user, relation_info.oid, 'DELETE')
                               OR has_table_privilege(current_user, relation_info.oid, 'TRUNCATE')
                               OR has_table_privilege(current_user, relation_info.oid, 'TRIGGER')
-                              OR has_table_privilege(current_user, relation_info.oid, 'REFERENCES'))
+                              OR has_table_privilege(current_user, relation_info.oid, 'REFERENCES')
+                              OR has_table_privilege(current_user, relation_info.oid, 'MAINTAIN'))
                    ) AS table_write_privileges_denied,
                    NOT EXISTS (
                        SELECT 1

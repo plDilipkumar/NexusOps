@@ -106,6 +106,17 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
     }
 
     @Test
+    void rejectsPostgresMaintenancePrivilegeEvenWithoutDmlGrants() {
+        adminJdbc.execute("GRANT MAINTAIN ON TABLE " + schemaName + ".probe TO " + readOnlyRole);
+        try {
+            assertThatThrownBy(() -> runtimeExecutor().execute("SELECT 1"))
+                    .isInstanceOf(ReadOnlyQueryExecutor.QueryExecutionUnavailableException.class);
+        } finally {
+            adminJdbc.execute("REVOKE MAINTAIN ON TABLE " + schemaName + ".probe FROM " + readOnlyRole);
+        }
+    }
+
+    @Test
     void rejectsDatabaseAdministratorEvenForSelect() {
         assertThatThrownBy(() -> executor(adminJdbc).execute("SELECT 1"))
                 .isInstanceOf(ReadOnlyQueryExecutor.QueryExecutionUnavailableException.class);
