@@ -20,6 +20,11 @@ test("parses a valid private query-history page",()=>{
   assert.deepEqual(parseQueryHistoryPage(page),page);
 });
 
+test("accepts canceled history records from the proposed schema contract",()=>{
+  const canceled={...entry,outcome:"CANCELED",rowCount:null};
+  assert.deepEqual(parseQueryHistoryPage({...page,items:[canceled]}).items,[canceled]);
+});
+
 test("rejects malformed entries, duplicate IDs, and inconsistent cursors",()=>{
   assert.throws(()=>parseQueryHistoryPage({...page,hasMore:true}),/pagination metadata/);
   assert.throws(()=>parseQueryHistoryPage({...page,items:[entry,entry]}),/invalid query history entry/);
@@ -42,11 +47,27 @@ test("requests the first page with bearer and workspace headers and no-store cac
   assert.equal(parsed.pathname,"/api/sql/history");
   assert.equal(parsed.searchParams.get("limit"),"25");
   assert.equal(parsed.searchParams.get("cursor"),null);
+  assert.equal(parsed.searchParams.get("outcome"),null);
   assert.equal(init?.method,"GET");
   assert.equal(init?.cache,"no-store");
   const headers=init?.headers as Record<string,string>;
   assert.equal(headers.Authorization,"Bearer "+token);
   assert.equal(headers["X-NeuroSQL-Workspace-Id"],workspaceId);
+});
+
+test("sends the selected outcome filter with the history request",async()=>{
+  let url="";
+  const fetcher:typeof fetch=async(input)=>{
+    url=String(input);
+    return new Response(JSON.stringify(page),{status:200});
+  };
+  await fetchQueryHistoryPage({
+    apiBaseUrl:"https://api.example.test",
+    token,
+    workspaceId,
+    outcome:"FAILED",
+  },fetcher);
+  assert.equal(new URL(url).searchParams.get("outcome"),"FAILED");
 });
 
 test("passes an opaque cursor as a query parameter for the next page",async()=>{
@@ -59,11 +80,14 @@ test("passes an opaque cursor as a query parameter for the next page",async()=>{
   assert.equal(new URL(url).searchParams.get("cursor"),"eyJjdXJzb3IifQ");
 });
 
-test("rejects invalid credentials and workspace before network access",async()=>{
+test("rejects invalid credentials, workspace, and outcome before network access",async()=>{
   let calls=0;
   const fetcher:typeof fetch=async()=>{calls+=1;return new Response(JSON.stringify(page),{status:200});};
   await assert.rejects(fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token:"bad",workspaceId},fetcher),/valid NeuroSQL session/);
   await assert.rejects(fetchQueryHistoryPage({apiBaseUrl:"https://api.example.test",token,workspaceId:"bad"},fetcher),/valid workspace/);
+  await assert.rejects(fetchQueryHistoryPage({
+    apiBaseUrl:"https://api.example.test",token,workspaceId,outcome:"DELETE" as "ALL",
+  },fetcher),/valid query-history outcome filter/);
   assert.equal(calls,0);
 });
 

@@ -18,11 +18,12 @@ class QueryHistoryCursorTest {
     private static final Instant CREATED_AT = Instant.parse("2026-11-02T10:15:30.123456Z");
 
     @Test
-    void roundTripsMicrosecondTimestampAndHistoryIdWithinItsScope() {
-        String encoded = QueryHistoryCursor.encode(WORKSPACE_ID, USER_ID, CREATED_AT, HISTORY_ID);
+    void roundTripsMicrosecondTimestampHistoryIdAndOutcomeFilter() {
+        String encoded = QueryHistoryCursor.encode(
+                WORKSPACE_ID, USER_ID, CREATED_AT, HISTORY_ID, "FAILED");
 
         QueryHistoryCursor.Position decoded =
-                QueryHistoryCursor.decode(encoded, WORKSPACE_ID, USER_ID);
+                QueryHistoryCursor.decode(encoded, WORKSPACE_ID, USER_ID, "FAILED");
 
         assertThat(decoded.createdAt()).isEqualTo(CREATED_AT);
         assertThat(decoded.historyId()).isEqualTo(HISTORY_ID);
@@ -30,31 +31,41 @@ class QueryHistoryCursorTest {
 
     @Test
     void rejectsMalformedAndNonCanonicalCursors() {
-        assertThatThrownBy(() -> QueryHistoryCursor.decode("not-a-cursor", WORKSPACE_ID, USER_ID))
+        assertThatThrownBy(() -> QueryHistoryCursor.decode(
+                "not-a-cursor", WORKSPACE_ID, USER_ID, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Invalid history cursor.");
 
-        String padded = QueryHistoryCursor.encode(WORKSPACE_ID, USER_ID, CREATED_AT, HISTORY_ID) + "=";
-        assertThatThrownBy(() -> QueryHistoryCursor.decode(padded, WORKSPACE_ID, USER_ID))
+        String padded = QueryHistoryCursor.encode(
+                WORKSPACE_ID, USER_ID, CREATED_AT, HISTORY_ID, null) + "=";
+        assertThatThrownBy(() -> QueryHistoryCursor.decode(
+                padded, WORKSPACE_ID, USER_ID, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void rejectsCursorReplayAcrossUsersOrWorkspaces() {
-        String encoded = QueryHistoryCursor.encode(WORKSPACE_ID, USER_ID, CREATED_AT, HISTORY_ID);
+    void rejectsCursorReplayAcrossUsersWorkspacesOrOutcomeFilters() {
+        String encoded = QueryHistoryCursor.encode(
+                WORKSPACE_ID, USER_ID, CREATED_AT, HISTORY_ID, "FAILED");
 
         assertThatThrownBy(() -> QueryHistoryCursor.decode(
-                encoded, UUID.randomUUID(), USER_ID)).isInstanceOf(IllegalArgumentException.class);
+                encoded, UUID.randomUUID(), USER_ID, "FAILED")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> QueryHistoryCursor.decode(
-                encoded, WORKSPACE_ID, UUID.randomUUID())).isInstanceOf(IllegalArgumentException.class);
+                encoded, WORKSPACE_ID, UUID.randomUUID(), "FAILED")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> QueryHistoryCursor.decode(
+                encoded, WORKSPACE_ID, USER_ID, "SUCCEEDED")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void rejectsOversizedCursorAndNonMicrosecondTimestamp() {
-        assertThatThrownBy(() -> QueryHistoryCursor.decode("a".repeat(513), WORKSPACE_ID, USER_ID))
+    void rejectsOversizedCursorNonMicrosecondTimestampAndUnknownOutcome() {
+        assertThatThrownBy(() -> QueryHistoryCursor.decode(
+                "a".repeat(513), WORKSPACE_ID, USER_ID, null))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> QueryHistoryCursor.encode(
-                WORKSPACE_ID, USER_ID, Instant.parse("2026-11-02T10:15:30.123456789Z"), HISTORY_ID))
+                WORKSPACE_ID, USER_ID, Instant.parse("2026-11-02T10:15:30.123456789Z"), HISTORY_ID, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> QueryHistoryCursor.encode(
+                WORKSPACE_ID, USER_ID, CREATED_AT, HISTORY_ID, "DELETE"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

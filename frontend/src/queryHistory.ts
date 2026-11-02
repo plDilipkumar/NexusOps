@@ -1,7 +1,10 @@
+export type QueryHistoryOutcome = "SUCCEEDED" | "FAILED" | "CANCELED";
+export type QueryHistoryOutcomeFilter = "ALL" | QueryHistoryOutcome;
+
 export type QueryHistoryEntry = {
   historyId: string;
   queryText: string;
-  outcome: "SUCCEEDED" | "FAILED";
+  outcome: QueryHistoryOutcome;
   rowCount: number | null;
   executionTimeMillis: number;
   truncated: boolean;
@@ -19,6 +22,7 @@ type FetchHistoryOptions = {
   token: string;
   workspaceId: string;
   cursor?: string | null;
+  outcome?: QueryHistoryOutcomeFilter;
   signal?: AbortSignal;
 };
 
@@ -28,6 +32,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BEARER = /^[A-Za-z0-9_-]{43}$/;
+const OUTCOME_FILTERS: readonly string[] = ["ALL", "SUCCEEDED", "FAILED", "CANCELED"];
 
 export function parseQueryHistoryPage(payload: unknown): QueryHistoryPage {
   if (!isRecord(payload) || !Array.isArray(payload.items) || payload.items.length > 100) {
@@ -53,7 +58,7 @@ export function parseQueryHistoryPage(payload: unknown): QueryHistoryPage {
       typeof item.queryText !== "string" ||
       item.queryText.length < 1 ||
       item.queryText.length > 50_000 ||
-      (item.outcome !== "SUCCEEDED" && item.outcome !== "FAILED") ||
+      (item.outcome !== "SUCCEEDED" && item.outcome !== "FAILED" && item.outcome !== "CANCELED") ||
       (item.rowCount !== null && (!Number.isSafeInteger(item.rowCount) || (item.rowCount as number) < 0)) ||
       !Number.isSafeInteger(item.executionTimeMillis) ||
       (item.executionTimeMillis as number) < 0 ||
@@ -104,9 +109,15 @@ export async function fetchQueryHistoryPage(
     throw new Error("The history cursor is invalid. Refresh the history and try again.");
   }
 
+  const outcome = options.outcome ?? "ALL";
+  if (!OUTCOME_FILTERS.includes(outcome)) {
+    throw new Error("Choose a valid query-history outcome filter.");
+  }
+
   const url = new URL("/api/sql/history", options.apiBaseUrl.replace(/\/$/, "") + "/");
   url.searchParams.set("limit", "25");
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
+  if (outcome !== "ALL") url.searchParams.set("outcome", outcome);
 
   const response = await fetcher(url.toString(), {
     method: "GET",

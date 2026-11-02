@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 import {AlertCircle,CheckCircle2,Clock3,History,LoaderCircle,RefreshCw,RotateCcw,Timer} from "lucide-react";
-import {fetchQueryHistoryPage,type QueryHistoryEntry} from "./queryHistory.ts";
+import {fetchQueryHistoryPage,type QueryHistoryEntry,type QueryHistoryOutcomeFilter} from "./queryHistory.ts";
 
 type Props = {
   apiBaseUrl: string;
@@ -17,6 +17,7 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
   const [loadingMore,setLoadingMore]=useState(false);
   const [error,setError]=useState("");
   const [reloadKey,setReloadKey]=useState(0);
+  const [outcome,setOutcome]=useState<QueryHistoryOutcomeFilter>("ALL");
   const generation=useRef(0);
   const initialController=useRef<AbortController|null>(null);
   const moreController=useRef<AbortController|null>(null);
@@ -42,7 +43,7 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
     const controller=new AbortController();
     initialController.current=controller;
     setLoading(true);
-    void fetchQueryHistoryPage({apiBaseUrl,token,workspaceId,signal:controller.signal})
+    void fetchQueryHistoryPage({apiBaseUrl,token,workspaceId,outcome,signal:controller.signal})
       .then(page=>{
         if(requestGeneration!==generation.current)return;
         setItems(page.items);
@@ -66,7 +67,7 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
       moreController.current?.abort();
       generation.current+=1;
     };
-  },[apiBaseUrl,token,workspaceId,reloadKey]);
+  },[apiBaseUrl,token,workspaceId,reloadKey,outcome]);
 
   const loadMore=async()=>{
     if(!token||!workspaceId||!nextCursor||loadingMore)return;
@@ -77,7 +78,7 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
     setLoadingMore(true);
     setError("");
     try{
-      const page=await fetchQueryHistoryPage({apiBaseUrl,token,workspaceId,cursor:nextCursor,signal:controller.signal});
+      const page=await fetchQueryHistoryPage({apiBaseUrl,token,workspaceId,cursor:nextCursor,outcome,signal:controller.signal});
       if(requestGeneration!==generation.current)return;
       setItems(current=>{
         const known=new Set(current.map(item=>item.historyId));
@@ -122,30 +123,44 @@ export function QueryHistoryPanel({apiBaseUrl,token,workspaceId,onRestore}:Props
     </article> : <>
       <div className="history-toolbar">
         <span><CheckCircle2 size={14}/> User-private · workspace-scoped</span>
+        <label className="history-filter">
+          Outcome
+          <select aria-label="Filter history by outcome" value={outcome} onChange={event=>setOutcome(event.target.value as QueryHistoryOutcomeFilter)}>
+            <option value="ALL">All outcomes</option>
+            <option value="SUCCEEDED">Succeeded</option>
+            <option value="FAILED">Failed</option>
+            <option value="CANCELED">Canceled</option>
+          </select>
+        </label>
         <span>{items.length} loaded</span>
       </div>
       {error&&<div className="history-error" role="alert"><AlertCircle size={15}/>{error}</div>}
       {loading ? <div className="history-state"><LoaderCircle size={18} className="history-spin"/> Loading query history…</div> :
         items.length===0&&!error ? <article className="history-empty">
-          <History size={25}/><b>No query history yet</b><p>Run a read-only SQL query from the Workspace. Completed executions will appear here when query history is enabled by the API.</p>
+          <History size={25}/><b>{outcome==="ALL"?"No query history yet":"No matching executions"}</b>
+          <p>{outcome==="ALL"?"Run a read-only SQL query from the Workspace. Completed executions will appear here when query history is enabled by the API.":"Try another outcome filter to see more executions."}</p>
         </article> :
         items.length>0 ? <div className="history-list">
-          {items.map(entry=><article className="history-entry" key={entry.historyId}>
-            <div className="history-entry-top">
-              <span className={entry.outcome==="SUCCEEDED"?"history-status success":"history-status failed"}>
-                {entry.outcome==="SUCCEEDED"?<CheckCircle2 size={13}/>:<AlertCircle size={13}/>}
-                {entry.outcome==="SUCCEEDED"?"Succeeded":"Failed"}
-              </span>
-              <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time>
-            </div>
-            <pre>{entry.queryText}</pre>
-            <div className="history-entry-bottom">
-              <span><Timer size={13}/>{entry.executionTimeMillis} ms</span>
-              <span><History size={13}/>{entry.rowCount===null?"No rows returned":entry.rowCount+" rows"}</span>
-              {entry.truncated&&<span className="history-truncated">Result truncated</span>}
-              <button type="button" className="history-restore" onClick={()=>restore(entry)}><RotateCcw size={13}/> Restore in editor</button>
-            </div>
-          </article>)}
+          {items.map(entry=>{
+            const statusClass=entry.outcome==="SUCCEEDED"?"success":entry.outcome==="FAILED"?"failed":"cancelled";
+            const statusLabel=entry.outcome==="SUCCEEDED"?"Succeeded":entry.outcome==="FAILED"?"Failed":"Canceled";
+            return <article className="history-entry" key={entry.historyId}>
+              <div className="history-entry-top">
+                <span className={"history-status "+statusClass}>
+                  {entry.outcome==="SUCCEEDED"?<CheckCircle2 size={13}/>:<AlertCircle size={13}/>}
+                  {statusLabel}
+                </span>
+                <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time>
+              </div>
+              <pre>{entry.queryText}</pre>
+              <div className="history-entry-bottom">
+                <span><Timer size={13}/>{entry.executionTimeMillis} ms</span>
+                <span><History size={13}/>{entry.rowCount===null?"No rows returned":entry.rowCount+" rows"}</span>
+                {entry.truncated&&<span className="history-truncated">Result truncated</span>}
+                <button type="button" className="history-restore" onClick={()=>restore(entry)}><RotateCcw size={13}/> Restore in editor</button>
+              </div>
+            </article>;
+          })}
         </div> : null}
       {hasMore&&<div className="history-more"><button type="button" className="secondary" onClick={()=>void loadMore()} disabled={loadingMore}>
         {loadingMore?<LoaderCircle size={14} className="history-spin"/>:<Clock3 size={14}/>}

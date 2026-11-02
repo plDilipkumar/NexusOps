@@ -1,7 +1,8 @@
 package com.neurosql.security;
 
-import java.util.Objects;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -27,6 +28,8 @@ public class JdbcQueryHistoryRepository {
                  row_count, execution_time_ms, truncated)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """;
+
+    private static final Set<String> OUTCOMES = Set.of("SUCCEEDED", "FAILED", "CANCELED");
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -61,6 +64,7 @@ public class JdbcQueryHistoryRepository {
             FROM neurosql_app.query_history
             WHERE workspace_id = ?
               AND user_id = ?
+              AND (?::varchar IS NULL OR outcome = ?::varchar)
             ORDER BY created_at DESC, history_id DESC
             LIMIT ?
             """;
@@ -72,6 +76,7 @@ public class JdbcQueryHistoryRepository {
             WHERE workspace_id = ?
               AND user_id = ?
               AND (created_at, history_id) < (?::timestamptz, ?::uuid)
+              AND (?::varchar IS NULL OR outcome = ?::varchar)
             ORDER BY created_at DESC, history_id DESC
             LIMIT ?
             """;
@@ -84,11 +89,15 @@ public class JdbcQueryHistoryRepository {
             UUID workspaceId,
             UUID userId,
             int limit,
-            QueryHistoryCursor.Position before) {
+            QueryHistoryCursor.Position before,
+            String outcome) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(userId, "userId");
         if (limit < 1 || limit > QueryHistoryReadService.MAX_PAGE_SIZE + 1) {
             throw new IllegalArgumentException("History read limit is outside the supported range.");
+        }
+        if (outcome != null && !OUTCOMES.contains(outcome)) {
+            throw new IllegalArgumentException("History outcome filter is invalid.");
         }
 
         if (before == null) {
@@ -97,6 +106,8 @@ public class JdbcQueryHistoryRepository {
                     (resultSet, rowNumber) -> mapHistoryEntry(resultSet),
                     workspaceId,
                     userId,
+                    outcome,
+                    outcome,
                     limit);
         }
 
@@ -107,6 +118,8 @@ public class JdbcQueryHistoryRepository {
                 userId,
                 before.createdAt().toString(),
                 before.historyId().toString(),
+                outcome,
+                outcome,
                 limit);
     }
 
@@ -130,5 +143,4 @@ public class JdbcQueryHistoryRepository {
             boolean truncated,
             java.time.Instant createdAt) {
     }
-
 }

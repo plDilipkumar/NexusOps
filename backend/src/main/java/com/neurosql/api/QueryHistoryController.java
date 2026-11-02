@@ -42,6 +42,7 @@ public class QueryHistoryController {
     public ResponseEntity<?> listHistory(
             @RequestParam(defaultValue = "25") int limit,
             @RequestParam(required = false) String cursor,
+            @RequestParam(name = "outcome", required = false) String outcome,
             Authentication authentication,
             HttpServletRequest request) {
         DurableSessionAuthenticationFilter.SessionPrincipal principal = durablePrincipal(authentication);
@@ -61,7 +62,7 @@ public class QueryHistoryController {
 
         try {
             QueryHistoryReadService.QueryHistoryPage page =
-                    history.list(principal.userId(), workspaceId, limit, cursor);
+                    history.list(principal.userId(), workspaceId, limit, cursor, outcome);
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
                     .header(HttpHeaders.PRAGMA, "no-cache")
