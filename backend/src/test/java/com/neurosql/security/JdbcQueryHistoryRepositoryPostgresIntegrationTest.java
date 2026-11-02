@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -23,6 +25,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
     private JdbcTemplate jdbc;
     private JdbcQueryHistoryRepository repository;
+    private final List<UUID> insertedHistoryIds = new ArrayList<>();
 
     @BeforeEach
     void setUpDisposablePostgresFixture() {
@@ -54,6 +57,15 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
                 )
                 """);
         repository = new JdbcQueryHistoryRepository(jdbc);
+    }
+
+    @AfterEach
+    void removeOnlyThisTestClassFixtures() {
+        if (jdbc != null) {
+            for (UUID historyId : insertedHistoryIds) {
+                jdbc.update("DELETE FROM neurosql_app.query_history WHERE history_id = ?", historyId);
+            }
+        }
     }
 
     @Test
@@ -121,13 +133,14 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
 
     private void insert(UUID workspaceId, UUID userId, String outcome, String sql, Instant createdAt) {
         Integer rowCount = "SUCCEEDED".equals(outcome) ? 1 : null;
+        UUID historyId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO neurosql_app.query_history
                     (history_id, workspace_id, user_id, query_text, query_hash, outcome,
                      row_count, execution_time_ms, truncated, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                UUID.randomUUID(),
+                historyId,
                 workspaceId,
                 userId,
                 sql,
@@ -137,6 +150,7 @@ class JdbcQueryHistoryRepositoryPostgresIntegrationTest {
                 3,
                 false,
                 Timestamp.from(createdAt));
+        insertedHistoryIds.add(historyId);
     }
 
     private static String requiredEnvironment(String name) {
