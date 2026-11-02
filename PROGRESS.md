@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-02 (IST)
+Last verified: 2026-11-02 06:58 UTC (12:28 IST)
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -714,3 +714,14 @@ Last verified: 2026-11-02 (IST)
 - [ ] Server-side query cancellation, durable query history, saved queries, AI SQL generation/explanation, and complete production end-to-end verification remain unfinished. Query history/saved-query persistence requires a reviewed migration prepared and tested on a temporary Neon branch, then explicit user approval before any change to Neon `main`.
 - [ ] Draft PR #7 remains unapproved/unmerged; proposed V1–V4 authentication/workspace migrations have not been applied to Neon `main`. PR #9 remains open and unmerged. Durable authentication, shared login throttling, registration/email delivery, and workspace administration remain disabled in production.
 - [x] No credentials were committed, no paid resources were introduced, no production schema/roles/data or environment variables were changed, and no production backend deployment was triggered.
+
+
+## Query history and saved-query persistence schema prepared — draft PR #7 (2026-11-02)
+- [x] Re-inspected `PROGRESS.md`, repository/PR state, dedicated Neon project `neurosql` and database `neurosql_db`, Vercel project/deployments, and Render service/deploy history before selecting the next unfinished milestone after the SQL editor and EXPLAIN viewer.
+- [x] Prepared proposed V5 schema in separate draft PR #7: workspace/user-scoped append-only query history plus workspace-scoped saved SQL, composite membership foreign keys, case-insensitive per-workspace saved-name uniqueness, and least-privilege runtime grants. The migration and its contract test are under `docs/database/proposed/` on branch `draft/durable-auth-workspace-schema`.
+- [x] Applied and tested V5 only on Neon temporary branch `br-morning-scene-b35jbi7a`, cloned from the existing V1–V4 temporary auth-schema branch. Direct PostgreSQL 17.11 tests passed; read-only verification found eight application tables, twenty-two indexes, and zero fixture rows in query history/saved queries.
+- [x] GitHub Actions run #232 passed backend tests, frontend production build, and the PostgreSQL 17 schema-contract job including V5. Production smoke was skipped because PR #7 is an unmerged draft.
+- [ ] The persistence API/UI, per-operation workspace authorization, SQL-text privacy handling, and bounded retention/cleanup remain unimplemented. V5 is not yet a live application feature.
+- [ ] PR #7 remains draft/unapproved/unmerged. V1–V5 are not applied to Neon `main`; stop for explicit user approval before any production migration. Production authentication and SQL execution remain disabled.
+- [x] Neon production `main` still has zero visible application tables. Vercel's latest inspected READY deployment remains older commit `789f3ec`; no V5 deployment was found. Render's latest live backend remains commit `746d58d`. No production deployment or environment changes were made.
+- [x] No credentials were committed, no paid resources were introduced, and no production database or service was modified.
