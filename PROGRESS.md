@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-02 09:32 UTC (15:02 IST)
+Last verified: 2026-11-02 (saved-query API milestone; CI run #268 passed)
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
