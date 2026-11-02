@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — SQL cancellation wired into the React workspace; GitHub Actions run #302 passed.
+Last verified: 2026-11-03 — gated registration and verification-resend HTTP endpoints added; GitHub Actions run #304 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -974,5 +974,27 @@ Last verified: 2026-11-03 — SQL cancellation wired into the React workspace; G
 - [ ] PR #9 remains open/unmerged. Draft PR #7 remains unapproved/unmerged; proposed V1–V5 migrations remain unapplied to Neon `main`. The production application/control-plane LOGIN and dedicated SQL read-only LOGIN remain unverified. No schema migration was required for this milestone.
 - [x] No production database writes/migrations, role changes, environment changes, deployments, credentials, or paid resources were introduced.
 
+
+## Gated registration and verification-resend HTTP API — PR #9 (2026-11-03)
+
+- [x] Re-read this progress tracker, current PR #9 and draft PR #7, and inspected the existing durable-session controller, registration service, account/action-token repositories, verification workflow, resend preparation, SMTP adapter, rate limiter, trusted-client resolver, security/CORS configuration, and frontend auth entry points before choosing this step.
+- [x] Added `AccountLifecycleController` with `POST /api/auth/register` and `POST /api/auth/verification/resend`. It is absent unless durable sessions, shared login throttling, email delivery, and a non-empty SMTP host are all configured; no production flag was enabled.
+- [x] Both endpoints return HTTP 202 with the same generic message for duplicate/new registration, known/unknown resend addresses, and delivery failures. Responses are `no-store`; raw verification tokens and SMTP diagnostics are never serialized.
+- [x] Added bounded request validation for email, password payload size, and display name. Password-policy/registration validation failures return a generic 400 response; email quotas return 429 with `Retry-After`.
+- [x] The existing process-local verification request limiter is applied by normalized email. An IP quota is added only when operator-controlled `NEUROSQL_SECURITY_TRUSTED_PROXY_CIDRS` is configured; otherwise forwarded headers are ignored and the shared Render proxy address is not incorrectly treated as every user's IP. This limiter is still process-local and is not sufficient by itself for a public multi-instance rollout.
+- [x] Added seven MockMvc tests for registration, resend, generic anti-enumeration responses, rate-limit handling, validation-error redaction, CORS preflight, and ignoring untrusted `X-Forwarded-For`.
+- [x] GitHub Actions run #304 (ID `41523203121`, https://github.com/plDilipkumar/NexusOps/actions/runs/41523203121) passed on code commit `b907218f2510f83f98da6032e81017d08b10d856`: backend Maven verification ran 283 tests with 0 failures/errors and 50 expected database-gated skips; disposable PostgreSQL 17 integration passed 50 tests with 0 failures/errors/skips; frontend tests passed (47), and TypeScript/Vite production build passed. Production API/database smoke was skipped because PR #9 is unmerged.
+- [x] Read-only Neon verification on 2026-11-03: free project `neurosql` (`lingering-dew-88806235`), PostgreSQL 17.11, production branch `main` (`br-empty-credit-b360dmpc`), database `neurosql_db`; `neurosql_app` has zero tables on main. Temporary V5 review branch `br-morning-scene-b35jbi7a` has eight proposed application tables. Main has only the elevated `neurosql_owner` login among inspected roles; review branch `neurosql_auth_runtime` remains NOLOGIN. No schema changes or database writes were performed.
+- [x] Vercel linkage was rechecked through Git deployment context: Hobby project `neurosql` (`prj_bWhKWqbbb5EaNRdez05bEsMPe35a`) is linked to `plDilipkumar/NexusOps`. Project currently reports `live=false`, latest deployment READY with no production target, and no deployment was found for commit `b907218f2510f83f98da6032e81017d08b10d856`.
+- [x] Render workspace was resolved to the previously confirmed Dilip Kumar workspace. Service `neurosql-api` (`srv-dbgb6vt9fdbs73da93n0`) remains on the free plan in Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, one instance, auto-deploy enabled. Latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; the new feature branch is not deployed.
+- [ ] Email verification still lacks an HTTP token-consumption endpoint. `AccountActionTokenService.verifyEmail` exists, but no public verification controller route or frontend verification screen is implemented.
+- [ ] Password-reset tokens are represented by the existing token purpose, but password-reset orchestration, session revocation on password change, HTTP endpoints, and frontend recovery UI remain unfinished.
+- [ ] Registration/resend frontend screens are not implemented. SMTP delivery remains disabled by default; provider credentials/settings have not been configured or tested.
+- [ ] The verification-request limiter is process-local. Before publicly enabling registration/resend, add durable/distributed IP and email throttling (or another verified abuse-control design) and configure trusted proxy CIDRs; do not trust arbitrary forwarded headers.
+- [ ] PR #9 remains open/unmerged. Draft PR #7 remains unapproved/unmerged; proposed V1–V5 migrations remain unapplied to Neon `main`. Production durable auth, SMTP delivery, registration, query history, saved queries, and SQL execution remain disabled.
+- [x] No Neon migrations, production database writes, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
 ### Next milestone
-- [ ] Prioritize account onboarding and recovery only after re-reading the existing registration/verification services and controller routes to avoid duplicating completed backend work. Verify whether registration, email verification, resend, and password reset have complete HTTP endpoints; then add only the missing frontend workflow and tests. Keep email delivery disabled until its provider credentials are configured outside source control.
+- [ ] Add a token-consuming `POST /api/auth/verify-email` endpoint using the existing one-time token service, with generic invalid/expired/replayed-token handling, no token logging, no-store responses, and controller/integration tests. Keep it feature-gated with the same durable-auth/schema requirements.
+- [ ] Then implement password-reset orchestration that atomically consumes a PASSWORD_RESET token, updates the BCrypt hash, and revokes all active sessions; verify transaction and session-revocation behavior against disposable PostgreSQL before adding its HTTP/UI flow.
+- [ ] Add registration, resend, verification, and recovery frontend screens only after their HTTP contracts are tested. Keep email delivery disabled until provider credentials are configured securely outside source control.
