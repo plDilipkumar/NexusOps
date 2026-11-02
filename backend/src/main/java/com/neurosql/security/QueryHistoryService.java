@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service;
 @ConditionalOnExpression(
         "'${neurosql.auth.durable-sessions-enabled:false}' == 'true' and "
                 + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true' and "
-                + "'${neurosql.sql-history.enabled:false}' == 'true')
+                + "'${neurosql.sql-history.enabled:false}' == 'true'")
 public class QueryHistoryService {
     private static final Logger LOGGER = LoggerFactory.getLogger(QueryHistoryService.class);
     private static final int MAX_QUERY_CHARACTERS = 50_000;
