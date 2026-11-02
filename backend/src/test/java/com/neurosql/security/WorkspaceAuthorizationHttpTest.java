@@ -21,6 +21,8 @@ import java.util.UUID;
 
 import com.neurosql.api.DurableSessionController;
 import com.neurosql.api.SchemaController;
+import com.neurosql.api.SqlExecutionController;
+import com.neurosql.api.ReadOnlyQueryExecutor;
 import com.neurosql.api.WorkspaceController;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,14 +35,15 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class})
+@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class})
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
         "neurosql.auth.enabled=true",
         "neurosql.auth.username=test-owner",
         "neurosql.auth.password=test-owner-password-123",
         "neurosql.auth.durable-sessions-enabled=true",
-        "neurosql.schema-browser.enabled=true"
+        "neurosql.schema-browser.enabled=true",
+        "neurosql.sql-execution.enabled=true"
 })
 class WorkspaceAuthorizationHttpTest {
     private static final String TOKEN = "A".repeat(43);
@@ -53,6 +56,9 @@ class WorkspaceAuthorizationHttpTest {
 
     @MockBean
     private JdbcTemplate jdbcTemplate;
+
+    @MockBean
+    private ReadOnlyQueryExecutor queryExecutor;
 
     @MockBean
     private SessionLifecycleService sessions;
@@ -121,6 +127,49 @@ class WorkspaceAuthorizationHttpTest {
 
         verifyNoInteractions(workspaceAuthorizationService);
     }
+    @Test
+    void activeViewerCanExecuteReadOnlySqlForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(queryExecutor.execute("SELECT 1")).thenReturn(new ReadOnlyQueryExecutor.QueryResponse(
+                List.of(new ReadOnlyQueryExecutor.ColumnInfo("answer", "int4", java.sql.Types.INTEGER)),
+                List.of(List.of("1")),
+                1,
+                false,
+                2));
+
+        mockMvc.perform(post("/api/sql/execute")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[0][0]").value("1"))
+                .andExpect(jsonPath("$.rowCount").value(1));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(queryExecutor).execute("SELECT 1");
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotExecuteSql() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/execute")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(queryExecutor);
+    }
+
 
     @Test
     void newSchemaPathsAndMethodsFailClosedUntilTheyHaveAnExplicitPolicy() throws Exception {
