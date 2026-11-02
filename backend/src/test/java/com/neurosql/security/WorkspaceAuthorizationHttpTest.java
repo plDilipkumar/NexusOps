@@ -160,13 +160,13 @@ class WorkspaceAuthorizationHttpTest {
                 .thenReturn(true);
         when(queryExecutor.explain("SELECT 1")).thenReturn(
                 new ReadOnlyQueryExecutor.ExplainResponse(
-                        "[{\\"Plan\\":{\\"Node Type\\":\\"Result\\"}}]", 1, false));
+                        "[{\"Plan\":{\"Node Type\":\"Result\"}}]", 1, false));
 
         mockMvc.perform(post("/api/sql/explain")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
                         .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"sql\\":\\"SELECT 1\\"}"))
+                        .content("{\"sql\":\"SELECT 1\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.analyze").value(false));
 
@@ -185,7 +185,7 @@ class WorkspaceAuthorizationHttpTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
                         .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"sql\\":\\"SELECT 1\\"}"))
+                        .content("{\"sql\":\"SELECT 1\"}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error").value("workspace_access_denied"));
 

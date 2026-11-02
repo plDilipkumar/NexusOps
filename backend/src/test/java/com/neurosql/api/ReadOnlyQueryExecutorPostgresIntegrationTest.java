@@ -93,7 +93,7 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
         ReadOnlyQueryExecutor.ExplainResponse result =
                 runtimeExecutor().explain("SELECT " + schemaName + ".attempt_write()");
 
-        assertThat(result.planJson()).contains("\\"Plan\\"");
+        assertThat(result.planJson()).contains("\"Plan\"");
         assertThat(result.analyze()).isFalse();
         assertThat(result.elapsedTimeMillis()).isGreaterThanOrEqualTo(0);
         // EXPLAIN without ANALYZE plans the SECURITY DEFINER call but never invokes it.

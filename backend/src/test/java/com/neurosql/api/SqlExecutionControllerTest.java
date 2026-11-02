@@ -101,7 +101,7 @@ class SqlExecutionControllerTest {
     void explainEndpointRequiresAuthentication() throws Exception {
         mockMvc.perform(post("/api/sql/explain")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"sql\\":\\"SELECT 1\\"}"))
+                        .content("{\"sql\":\"SELECT 1\"}"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -109,17 +109,17 @@ class SqlExecutionControllerTest {
     void authenticatedOwnerReceivesNonAnalyzingPlanWithNoStoreHeaders() throws Exception {
         when(executor.explain(eq("SELECT 42"))).thenReturn(
                 new ReadOnlyQueryExecutor.ExplainResponse(
-                        "[{\\"Plan\\":{\\"Node Type\\":\\"Result\\"}}]", 4, false));
+                        "[{\"Plan\":{\"Node Type\":\"Result\"}}]", 4, false));
 
         mockMvc.perform(post("/api/sql/explain")
                         .with(httpBasic("sql-test-owner", "Sql-Test-Owner-Password-2026!"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\\"sql\\":\\"SELECT 42\\"}"))
+                        .content("{\"sql\":\"SELECT 42\"}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")))
                 .andExpect(jsonPath("$.analyze").value(false))
                 .andExpect(jsonPath("$.planJson").value(
-                        "[{\\"Plan\\":{\\"Node Type\\":\\"Result\\"}}]"));
+                        "[{\"Plan\":{\"Node Type\":\"Result\"}}]"));
     }
 
     @Test
