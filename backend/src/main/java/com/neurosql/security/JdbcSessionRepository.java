@@ -55,6 +55,13 @@ public class JdbcSessionRepository {
               AND revoked_at IS NULL
             """;
 
+    static final String REVOKE_ALL_SESSIONS_FOR_USER_SQL = """
+            UPDATE neurosql_app.user_sessions
+            SET revoked_at = GREATEST(now(), created_at)
+            WHERE user_id = ?
+              AND revoked_at IS NULL
+            """;
+
     private static final Pattern TOKEN_HASH_PATTERN = Pattern.compile("[0-9a-f]{64}");
 
     private final JdbcTemplate jdbcTemplate;
@@ -123,6 +130,20 @@ public class JdbcSessionRepository {
             return false;
         }
         return jdbcTemplate.update(REVOKE_SESSION_SQL, Timestamp.from(revokedAt), tokenHash) > 0;
+    }
+
+    /**
+     * Revokes every previously unrevoked session for an account. PostgreSQL's
+     * clock is used and the timestamp is clamped to created_at to preserve the
+     * schema check even if a session was created with a future application clock.
+     *
+     * @return the number of session rows revoked
+     */
+    public int revokeAllForUser(UUID userId) {
+        if (userId == null) {
+            throw new IllegalArgumentException("A user is required.");
+        }
+        return jdbcTemplate.update(REVOKE_ALL_SESSIONS_FOR_USER_SQL, userId);
     }
 
     private boolean isValidHash(String tokenHash) {

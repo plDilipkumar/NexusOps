@@ -47,6 +47,15 @@ public class JdbcAccountRepository {
             FOR UPDATE
             """;
 
+    static final String UPDATE_PASSWORD_HASH_FOR_ACTIVE_VERIFIED_USER_SQL = """
+            UPDATE neurosql_app.app_users
+            SET password_hash = ?,
+                updated_at = now()
+            WHERE user_id = ?
+              AND status = 'ACTIVE'
+              AND email_verified_at IS NOT NULL
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public JdbcAccountRepository(JdbcTemplate jdbcTemplate) {
@@ -74,6 +83,22 @@ public class JdbcAccountRepository {
                 passwordHash,
                 normalizedDisplayName);
         return createdUsers.stream().findFirst();
+    }
+
+    /**
+     * Replaces credentials only for an active account whose email is verified.
+     *
+     * @return one when the account was updated, otherwise zero; callers must
+     *         roll back any preceding token consumption when zero is returned
+     */
+    public int updatePasswordHashForActiveVerifiedUser(UUID userId, String passwordHash) {
+        if (userId == null) {
+            throw new IllegalArgumentException("A user is required.");
+        }
+        if (passwordHash == null || passwordHash.length() < 50 || passwordHash.length() > 255) {
+            throw new IllegalArgumentException("A supported encoded password hash is required.");
+        }
+        return jdbcTemplate.update(UPDATE_PASSWORD_HASH_FOR_ACTIVE_VERIFIED_USER_SQL, passwordHash, userId);
     }
 
     static String normalizeRegistrationEmail(String email) {
