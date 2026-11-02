@@ -333,7 +333,7 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
                 otherWorkspace, created.savedQueryId(), "Cross workspace", "", "SELECT 9"))
                 .isEmpty();
         assertThat(savedQueries.delete(otherWorkspace, created.savedQueryId())).isFalse();
-        assertThat(savedQueries.list(workspace, 25, null).items())
+        assertThat(savedQueries.list(workspace, 25, null, null).items())
                 .extracting(JdbcSavedQueryRepository.SavedQueryEntry::savedQueryId)
                 .containsExactly(created.savedQueryId());
 
@@ -347,7 +347,7 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         assertThat(updated.updatedAt()).isAfter(created.updatedAt());
 
         assertThat(savedQueries.delete(workspace, created.savedQueryId())).isTrue();
-        assertThat(savedQueries.list(workspace, 25, null).items()).isEmpty();
+        assertThat(savedQueries.list(workspace, 25, null, null).items()).isEmpty();
     }
 
     @Test
@@ -363,7 +363,7 @@ class WorkspaceAuthorizationPostgresIntegrationTest {
         assertThat(org.assertj.core.api.Assertions.catchThrowable(
                 () -> savedQueries.update(workspace, second.savedQueryId(), "monthly", "", "SELECT 3")))
                 .isInstanceOf(SavedQueryService.DuplicateNameException.class);
-        assertThat(savedQueries.list(workspace, 25, null).items())
+        assertThat(savedQueries.list(workspace, 25, null, null).items())
                 .extracting(JdbcSavedQueryRepository.SavedQueryEntry::name)
                 .containsExactlyInAnyOrder("Monthly", "Quarterly");
     }

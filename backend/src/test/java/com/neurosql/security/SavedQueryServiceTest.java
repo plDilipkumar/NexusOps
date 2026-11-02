@@ -163,9 +163,9 @@ class SavedQueryServiceTest {
 
     @Test
     void rejectsInvalidPageSizeAndCrossWorkspaceCursorBeforeReading() {
-        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 0, null))
+        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 0, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 101, null))
+        assertThatThrownBy(() -> service.list(WORKSPACE_ID, 101, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
 
         String cursor = SavedQueryCursor.encode(
