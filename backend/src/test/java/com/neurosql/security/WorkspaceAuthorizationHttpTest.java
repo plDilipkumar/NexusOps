@@ -179,7 +179,8 @@ class WorkspaceAuthorizationHttpTest {
                 .andExpect(status().isUnprocessableEntity());
 
         verify(queryHistoryService).recordFailed(
-                USER_ID, WORKSPACE_ID, "SELECT broken FROM", org.mockito.ArgumentMatchers.anyLong());
+                eq(USER_ID), eq(WORKSPACE_ID), eq("SELECT broken FROM"),
+                org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
