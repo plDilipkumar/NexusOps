@@ -55,6 +55,14 @@ public class QueryHistoryService {
         append(userId, workspaceId, sql, "FAILED", null, executionTimeMillis, false);
     }
 
+    public void recordCanceled(
+            UUID userId,
+            UUID workspaceId,
+            String sql,
+            long executionTimeMillis) {
+        append(userId, workspaceId, sql, "CANCELED", null, executionTimeMillis, false);
+    }
+
     private void append(
             UUID userId,
             UUID workspaceId,

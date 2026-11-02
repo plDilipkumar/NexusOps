@@ -4,6 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -129,6 +134,37 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
     }
 
     @Test
+    void cancelsAnActivePostgresStatementAndReleasesTheRegistryEntry() throws Exception {
+        ActiveQueryRegistry registry = new ActiveQueryRegistry();
+        UUID executionId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        ActiveQueryRegistry.Handle handle = registry.begin(executionId, userId, workspaceId);
+        ExecutorService queryThread = Executors.newSingleThreadExecutor();
+        String marker = "neurosql_cancel_" + UUID.randomUUID().toString().replace("-", "");
+        String sql = "SELECT pg_sleep(20) /* " + marker + " */";
+        Future<ReadOnlyQueryExecutor.QueryResponse> future =
+                queryThread.submit(() -> runtimeExecutor(25).execute(sql, handle));
+
+        try {
+            awaitActiveQuery(marker);
+            assertThat(registry.cancel(executionId, userId, workspaceId))
+                    .isEqualTo(ActiveQueryRegistry.CancelResult.REQUESTED);
+            assertThatThrownBy(() -> future.get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .hasCauseInstanceOf(ReadOnlyQueryExecutor.QueryCancelledException.class);
+            assertThat(registry.activeCount()).isZero();
+            assertThat(runtimeJdbc.queryForObject("SELECT 1", Integer.class)).isEqualTo(1);
+            assertThat(activeQueryCount(marker)).isZero();
+        } finally {
+            handle.close();
+            future.cancel(true);
+            queryThread.shutdownNow();
+            queryThread.awaitTermination(2, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
     void rejectsPostgresMaintenancePrivilegeEvenWithoutDmlGrants() {
         adminJdbc.execute("GRANT MAINTAIN ON TABLE " + schemaName + ".probe TO " + readOnlyRole);
         try {
@@ -146,14 +182,41 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
     }
 
     private static ReadOnlyQueryExecutor runtimeExecutor() {
-        return executor(runtimeJdbc);
+        return runtimeExecutor(5);
+    }
+
+    private static ReadOnlyQueryExecutor runtimeExecutor(int timeoutSeconds) {
+        return executor(runtimeJdbc, timeoutSeconds);
     }
 
     private static ReadOnlyQueryExecutor executor(JdbcTemplate jdbc) {
+        return executor(jdbc, 5);
+    }
+
+    private static ReadOnlyQueryExecutor executor(JdbcTemplate jdbc, int timeoutSeconds) {
         PlatformTransactionManager transactionManager =
                 new DataSourceTransactionManager(jdbc.getDataSource());
         return new ReadOnlyQueryExecutor(
-                jdbc, transactionManager, validator, expectedDatabase, readOnlyRole, MAX_ROWS, 5);
+                jdbc, transactionManager, validator, expectedDatabase, readOnlyRole, MAX_ROWS, timeoutSeconds);
+    }
+
+    private static void awaitActiveQuery(String marker) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (activeQueryCount(marker) > 0) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("The PostgreSQL query did not become active before the test deadline.");
+    }
+
+    private static int activeQueryCount(String marker) {
+        return adminJdbc.queryForObject(
+                "SELECT count(*) FROM pg_stat_activity "
+                        + "WHERE datname = current_database() AND state = 'active' AND strpos(query, ?) > 0",
+                Integer.class,
+                marker);
     }
 
     private static int rowCount() {

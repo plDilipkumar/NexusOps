@@ -28,6 +28,7 @@ import com.neurosql.api.SqlExecutionController;
 import com.neurosql.api.QueryHistoryController;
 import com.neurosql.api.SavedQueriesController;
 import com.neurosql.api.ReadOnlyQueryExecutor;
+import com.neurosql.api.ActiveQueryRegistry;
 import com.neurosql.api.WorkspaceController;
 import com.neurosql.security.QueryHistoryService;
 import com.neurosql.security.QueryHistoryReadService;
@@ -70,6 +71,9 @@ class WorkspaceAuthorizationHttpTest {
 
     @MockBean
     private ReadOnlyQueryExecutor queryExecutor;
+
+    @MockBean
+    private ActiveQueryRegistry activeQueryRegistry;
 
     @MockBean
     private SessionLifecycleService sessions;
@@ -616,6 +620,60 @@ class WorkspaceAuthorizationHttpTest {
                 .andExpect(jsonPath("$.error").value("workspace_access_denied"));
 
         verifyNoInteractions(savedQueryService);
+    }
+
+    @Test
+    void activeViewerCanRequestCancellationForTheirWorkspaceQuery() throws Exception {
+        authenticateSession();
+        UUID executionId = UUID.fromString("dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b");
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(activeQueryRegistry.cancel(executionId, USER_ID, WORKSPACE_ID))
+                .thenReturn(ActiveQueryRegistry.CancelResult.REQUESTED);
+
+        mockMvc.perform(post("/api/sql/cancel")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\\"executionId\\":\\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.status").value("CANCEL_REQUESTED"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(activeQueryRegistry).cancel(executionId, USER_ID, WORKSPACE_ID);
+    }
+
+    @Test
+    void viewerCannotCancelQueriesWithoutWorkspaceMembership() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/cancel")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\\"executionId\\":\\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(activeQueryRegistry);
+    }
+
+    @Test
+    void executionCorsAllowsTheClientExecutionIdentifierHeader() throws Exception {
+        mockMvc.perform(options("/api/sql/execute")
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers",
+                                "authorization,content-type,x-neurosql-workspace-id,x-neurosql-execution-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://neurosql.vercel.app"))
+                .andExpect(header().string("Access-Control-Allow-Headers",
+                        org.hamcrest.Matchers.containsString("x-neurosql-execution-id")));
     }
 
     @Test

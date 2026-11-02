@@ -142,7 +142,8 @@ public class SecurityConfig {
                 "http://localhost:5173"));
         readOnlyCors.setAllowedMethods(List.of("GET", "OPTIONS"));
         readOnlyCors.setAllowedHeaders(List.of(
-                "Accept", "Authorization", "Content-Type", WorkspaceAuthorizationFilter.WORKSPACE_HEADER));
+                "Accept", "Authorization", "Content-Type", WorkspaceAuthorizationFilter.WORKSPACE_HEADER,
+                com.neurosql.api.ActiveQueryRegistry.EXECUTION_ID_HEADER));
         readOnlyCors.setMaxAge(3600L);
 
         CorsConfiguration validationCors = new CorsConfiguration(readOnlyCors);

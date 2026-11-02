@@ -21,6 +21,11 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "neurosql.sql-execution", name = "enabled", havingValue = "true")
 public class SqlExecutionConfiguration {
+    @Bean
+    ActiveQueryRegistry activeQueryRegistry() {
+        return new ActiveQueryRegistry();
+    }
+
     @Bean(destroyMethod = "close")
     ReadOnlyQueryExecutor readOnlyQueryExecutor(
             ReadOnlySqlValidator validator,

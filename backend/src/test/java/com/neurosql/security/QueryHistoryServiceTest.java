@@ -49,6 +49,21 @@ class QueryHistoryServiceTest {
     }
 
     @Test
+    void recordsCancelledExecutionWithoutInventingARowCount() {
+        service.recordCanceled(USER_ID, WORKSPACE_ID, "SELECT pg_sleep(20)", 812);
+
+        verify(repository).append(
+                eq(WORKSPACE_ID),
+                eq(USER_ID),
+                eq("SELECT pg_sleep(20)"),
+                eq(QueryHistoryService.sha256("SELECT pg_sleep(20)")),
+                eq("CANCELED"),
+                eq(null),
+                eq(812),
+                eq(false));
+    }
+
+    @Test
     void historyWriteFailureDoesNotChangeQueryExecutionOutcome() {
         org.mockito.Mockito.doThrow(new DataAccessResourceFailureException("database detail"))
                 .when(repository).append(

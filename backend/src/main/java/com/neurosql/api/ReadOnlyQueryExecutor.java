@@ -176,25 +176,39 @@ public final class ReadOnlyQueryExecutor implements AutoCloseable {
     }
 
     public QueryResponse execute(String sql) {
-        ReadOnlySqlValidator.ValidationResponse validation = validator.validate(sql);
-        if (!validation.valid()) {
-            throw new QueryRejectedException(validation.errors());
-        }
+        return execute(sql, null);
+    }
 
+    public QueryResponse execute(String sql, ActiveQueryRegistry.Handle activeQuery) {
         try {
-            return Objects.requireNonNull(transaction.execute(status -> {
-                // This must be the first statement in the transaction. It is a
-                // server-enforced boundary even if a validator misses a write.
-                jdbc.execute("SET TRANSACTION READ ONLY");
-                jdbc.execute("SET LOCAL statement_timeout = '" + (queryTimeoutSeconds * 1_000) + "ms'");
-                assertReadOnlyRuntimeRole();
-                return executeBoundedQuery(sql);
-            }), "The read-only query transaction returned no result.");
-        } catch (QueryRejectedException | QueryExecutionUnavailableException | QueryExecutionException known) {
-            throw known;
-        } catch (DataAccessException | TransactionException failure) {
-            // Do not expose SQL, schema names, driver messages, or connection details.
-            throw new QueryExecutionException();
+            ReadOnlySqlValidator.ValidationResponse validation = validator.validate(sql);
+            if (!validation.valid()) {
+                throw new QueryRejectedException(validation.errors());
+            }
+            try {
+                return Objects.requireNonNull(transaction.execute(status -> {
+                    // This must be the first statement in the transaction. It is a
+                    // server-enforced boundary even if a validator misses a write.
+                    jdbc.execute("SET TRANSACTION READ ONLY");
+                    jdbc.execute("SET LOCAL statement_timeout = '" + (queryTimeoutSeconds * 1_000) + "ms'");
+                    assertReadOnlyRuntimeRole();
+                    return executeBoundedQuery(sql, activeQuery);
+                }), "The read-only query transaction returned no result.");
+            } catch (QueryCancelledException cancelled) {
+                throw cancelled;
+            } catch (QueryRejectedException | QueryExecutionUnavailableException | QueryExecutionException known) {
+                throw known;
+            } catch (DataAccessException | TransactionException failure) {
+                if (activeQuery != null && activeQuery.cancellationRequested()) {
+                    throw new QueryCancelledException();
+                }
+                // Do not expose SQL, schema names, driver messages, or connection details.
+                throw new QueryExecutionException();
+            }
+        } finally {
+            if (activeQuery != null) {
+                activeQuery.close();
+            }
         }
     }
 
@@ -246,13 +260,16 @@ public final class ReadOnlyQueryExecutor implements AutoCloseable {
         }
     }
 
-    private QueryResponse executeBoundedQuery(String sql) {
+    private QueryResponse executeBoundedQuery(String sql, ActiveQueryRegistry.Handle activeQuery) {
         long startedAt = System.nanoTime();
         PreparedStatementCreator statementCreator = connection -> {
             PreparedStatement statement = connection.prepareStatement(sql);
             statement.setMaxRows(maximumRows + 1);
             statement.setFetchSize(Math.min(maximumRows + 1, 100));
             statement.setQueryTimeout(queryTimeoutSeconds);
+            if (activeQuery != null) {
+                activeQuery.attachStatement(statement);
+            }
             return statement;
         };
         ResultSetExtractor<QueryResponse> resultExtractor = resultSet -> {
@@ -362,6 +379,12 @@ public final class ReadOnlyQueryExecutor implements AutoCloseable {
     public static final class QueryExecutionUnavailableException extends RuntimeException {
         public QueryExecutionUnavailableException() {
             super("A dedicated read-only database identity is not ready.");
+        }
+    }
+
+    public static final class QueryCancelledException extends RuntimeException {
+        public QueryCancelledException() {
+            super("The query was cancelled.");
         }
     }
 

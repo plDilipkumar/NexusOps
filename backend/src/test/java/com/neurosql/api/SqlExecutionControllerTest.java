@@ -39,6 +39,9 @@ class SqlExecutionControllerTest {
     @MockitoBean
     private ReadOnlyQueryExecutor executor;
 
+    @MockitoBean
+    private ActiveQueryRegistry activeQueries;
+
     @Test
     void executionEndpointRequiresAuthentication() throws Exception {
         mockMvc.perform(post("/api/sql/execute")
@@ -95,6 +98,23 @@ class SqlExecutionControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0]").value(
                         "Only SELECT or WITH queries are accepted."));
+    }
+
+    @Test
+    void cancellationEndpointRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/api/sql/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\\"executionId\\":\\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void legacyOwnerCannotCancelDurableWorkspaceQueries() throws Exception {
+        mockMvc.perform(post("/api/sql/cancel")
+                        .with(httpBasic("sql-test-owner", "Sql-Test-Owner-Password-2026!"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\\"executionId\\":\\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\\"}"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
