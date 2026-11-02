@@ -12,7 +12,31 @@ type ExecuteReadOnlyQueryOptions = {
   sql: string;
   headers: Record<string, string>;
   signal?: AbortSignal;
+  executionId?: string;
 };
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function secureRandomUuid(): string {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+  if (typeof cryptoApi?.getRandomValues !== "function") {
+    throw new Error("Secure random query identifiers are unavailable in this browser.");
+  }
+  const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
+}
+
+export function createExecutionId(randomUuid: () => string = secureRandomUuid): string {
+  const executionId = randomUuid();
+  if (!UUID_PATTERN.test(executionId)) {
+    throw new Error("A valid query execution identifier could not be created.");
+  }
+  return executionId.toLowerCase();
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -84,6 +108,7 @@ function failureMessage(status: number, payload: unknown): string {
   if (status === 401) return "Your sign-in is no longer valid. Sign in again.";
   if (status === 403) return "Your account cannot run queries in the selected workspace.";
   if (status === 404) return "SQL execution is not enabled on the API.";
+  if (status === 409) return "The query was cancelled.";
   if (status === 429) return "Too many query requests. Try again later.";
   if (status === 503) return "The restricted read-only database role is not ready. Query execution is unavailable.";
   if (status === 422) return "The query could not be completed. Check the SQL and visible schema, then try again.";
@@ -102,13 +127,25 @@ export async function executeReadOnlyQuery(
     throw new Error("Sign in before running a query.");
   }
 
-  const response = await fetcher(options.apiBaseUrl.replace(/\/$/, "") + "/api/sql/execute", {
+  const requestHeaders: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
+  if (options.executionId !== undefined) {
+    if (!UUID_PATTERN.test(options.executionId)) {
+      throw new Error("The query execution identifier is invalid.");
+    }
+    if (!/^Bearer \S+$/.test(authorization) || !options.headers["X-NeuroSQL-Workspace-Id"]) {
+      throw new Error("Server-side cancellation requires an authenticated durable workspace session.");
+    }
+    requestHeaders["X-NeuroSQL-Execution-Id"] = options.executionId.toLowerCase();
+  }
+
+  const baseUrl = options.apiBaseUrl.endsWith("/") ? options.apiBaseUrl.slice(0, -1) : options.apiBaseUrl;
+  const response = await fetcher(baseUrl + "/api/sql/execute", {
     method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers: requestHeaders,
     body: JSON.stringify({ sql }),
     cache: "no-store",
     signal: options.signal,
@@ -122,4 +159,60 @@ export async function executeReadOnlyQuery(
   }
   if (!response.ok) throw new Error(failureMessage(response.status, payload));
   return parseQueryResult(payload);
+}
+
+
+export type CancelQueryResult = "requested" | "not-active";
+
+type CancelReadOnlyQueryOptions = {
+  apiBaseUrl: string;
+  executionId: string;
+  headers: Record<string, string>;
+};
+
+function cancelFailureMessage(status: number): string {
+  if (status === 400) return "The query execution identifier was rejected.";
+  if (status === 401) return "Your sign-in is no longer valid. Sign in again.";
+  if (status === 403) return "Query cancellation requires an authenticated durable workspace session.";
+  if (status === 429) return "Too many cancellation requests. Try again shortly.";
+  if (status === 503) return "The server could not cancel the query. It may have finished.";
+  return "The cancellation request failed (HTTP " + status + ").";
+}
+
+export async function cancelReadOnlyQuery(
+  options: CancelReadOnlyQueryOptions,
+  fetcher: typeof fetch = fetch,
+): Promise<CancelQueryResult> {
+  if (!UUID_PATTERN.test(options.executionId)) {
+    throw new Error("The query execution identifier is invalid.");
+  }
+  const authorization = options.headers.Authorization ?? options.headers.authorization;
+  if (!authorization || !/^Bearer \S+$/.test(authorization) || !options.headers["X-NeuroSQL-Workspace-Id"]) {
+    throw new Error("Sign in with a durable workspace session before cancelling a query.");
+  }
+
+  const baseUrl = options.apiBaseUrl.endsWith("/") ? options.apiBaseUrl.slice(0, -1) : options.apiBaseUrl;
+  const response = await fetcher(baseUrl + "/api/sql/cancel", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+    body: JSON.stringify({ executionId: options.executionId.toLowerCase() }),
+    cache: "no-store",
+  });
+  if (response.status === 404) return "not-active";
+
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) throw new Error(cancelFailureMessage(response.status));
+  if (response.status !== 202 || !isRecord(payload) || payload.status !== "CANCEL_REQUESTED") {
+    throw new Error("The API returned an invalid query-cancellation response.");
+  }
+  return "requested";
 }
