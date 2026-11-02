@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — gated registration and verification-resend HTTP endpoints added; GitHub Actions run #304 passed.
+Last verified: 2026-11-03 — gated email-verification HTTP endpoint added; GitHub Actions run #306 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -994,7 +994,24 @@ Last verified: 2026-11-03 — gated registration and verification-resend HTTP en
 - [ ] PR #9 remains open/unmerged. Draft PR #7 remains unapproved/unmerged; proposed V1–V5 migrations remain unapplied to Neon `main`. Production durable auth, SMTP delivery, registration, query history, saved queries, and SQL execution remain disabled.
 - [x] No Neon migrations, production database writes, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
+## Gated email-verification HTTP endpoint — PR #9 (2026-11-03)
+
+- [x] Re-read this progress tracker and inspected PR #9/#7, the current feature-branch source, existing account-action token service/repository, registration/resend workflow, security filters, CORS configuration, and current CI before choosing this step.
+- [x] Added `AccountVerificationController` with `POST /api/auth/verify-email`. It uses the existing `AccountActionTokenService.verifyEmail` operation; it does not duplicate token issuance, hashing, or consumption logic.
+- [x] The controller is gated on both `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=true` and `NEUROSQL_AUTH_SHARED_RATE_LIMIT_ENABLED=true`. It deliberately does not require SMTP to be enabled: verification consumes an already-issued token and does not send mail.
+- [x] Request validation accepts only a canonical-shape 43-character base64url token. Success returns HTTP 200; invalid, expired, wrong-purpose, already-verified, inactive-account, and replayed-token outcomes share the same generic HTTP 400 response. Both response paths set `Cache-Control: no-store` and `Pragma: no-cache`.
+- [x] Raw tokens are not echoed or logged by the controller. The existing repository hashes the token before querying and performs token consumption plus account verification in one PostgreSQL data-modifying statement.
+- [x] Added five MockMvc tests for successful verification, generic invalid/replayed responses, token non-disclosure, malformed/missing-token rejection before service access, no-store headers, and CORS preflight.
+- [x] GitHub Actions run #306 (ID `41533042631`, https://github.com/plDilipkumar/NexusOps/actions/runs/41533042631) passed on code commit `188abe669851980a738b72b5f062b0a846447ad5`: backend Maven verification ran 288 tests with 0 failures/errors and 50 expected database-gated skips; the disposable PostgreSQL 17 integration job passed 50 tests with 0 failures/errors/skips; frontend tests passed (47), and the TypeScript/Vite production build passed. Production API/database smoke was skipped because PR #9 is unmerged.
+- [x] The PostgreSQL integration job re-exercised the existing email-verification token path against disposable PostgreSQL 17: valid tokens verify an active unverified account exactly once; replay and wrong-purpose tokens do not verify an account. This is CI-only PostgreSQL, not Neon production.
+- [ ] No separate per-IP limiter is attached to the verify endpoint yet. Tokens are 256-bit random and the route remains feature-gated, but request-volume throttling and trusted-proxy configuration must be reviewed before any public activation; the existing registration/resend limiter is process-local and not sufficient for a multi-instance rollout.
+- [ ] Neon read-only inspection was attempted repeatedly during this run, but the Neon API returned HTTP 502 for project, branch, table, and role reads. Therefore no fresh Neon state is claimed for this run. The last successful inspection recorded above (2026-11-03) found production `neurosql_db` on `main` with zero application tables and the proposed schema only on temporary review branches. No Neon writes or migrations were attempted.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby plan. Project metadata reports `live=false`; the latest listed deployment is READY with no production target. A deployment lookup for code commit `188abe669851980a738b72b5f062b0a846447ad5` returned zero deployments.
+- [x] Render workspace was resolved to the previously confirmed Dilip Kumar workspace. Service `neurosql-api` (`srv-dbgb6vt9fdbs73da93n0`) remains on the free plan in Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, one instance, auto-deploy enabled. Latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; this feature commit is not deployed.
+- [ ] PR #9 remains open/unmerged. Draft PR #7 remains unapproved/unmerged; proposed V1–V5 migrations remain unapplied to Neon `main`. Production durable auth, SMTP delivery, registration, email verification, query history, saved queries, and SQL execution remain disabled.
+- [x] No Neon migrations, production database writes, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
 ### Next milestone
-- [ ] Add a token-consuming `POST /api/auth/verify-email` endpoint using the existing one-time token service, with generic invalid/expired/replayed-token handling, no token logging, no-store responses, and controller/integration tests. Keep it feature-gated with the same durable-auth/schema requirements.
-- [ ] Then implement password-reset orchestration that atomically consumes a PASSWORD_RESET token, updates the BCrypt hash, and revokes all active sessions; verify transaction and session-revocation behavior against disposable PostgreSQL before adding its HTTP/UI flow.
-- [ ] Add registration, resend, verification, and recovery frontend screens only after their HTTP contracts are tested. Keep email delivery disabled until provider credentials are configured securely outside source control.
+- [ ] Implement password-reset orchestration using the existing `PASSWORD_RESET` token purpose: atomically consume a valid token, update the BCrypt password hash, and revoke every active session for that user in the same transaction. Add repository/service tests plus disposable PostgreSQL integration tests for rollback, expiry, replay, and session revocation before adding an HTTP endpoint.
+- [ ] After the password-reset contract is tested, add registration, resend, email-verification, and recovery frontend screens. Keep SMTP delivery disabled until provider credentials are configured securely outside source control.
+- [ ] Before any public account lifecycle rollout, replace process-local request quotas with a verified shared/distributed abuse-control design and configure trusted proxy CIDRs; do not trust arbitrary forwarded headers.
