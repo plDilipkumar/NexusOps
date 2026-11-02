@@ -27,6 +27,12 @@ public class QueryHistoryReadService {
         this.repository = Objects.requireNonNull(repository, "repository");
     }
 
+    /** Backward-compatible overload for callers that do not use date filters. */
+    public QueryHistoryPage list(
+            UUID userId, UUID workspaceId, int pageSize, String cursor, String rawOutcome) {
+        return list(userId, workspaceId, pageSize, cursor, rawOutcome, null, null);
+    }
+
     public QueryHistoryPage list(UUID userId, UUID workspaceId, int pageSize, String cursor,
             String rawOutcome, String rawFromDate, String rawToDate) {
         Objects.requireNonNull(userId, "userId");
