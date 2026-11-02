@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executeReadOnlyQuery, parseQueryResult } from "../src/sqlExecution.ts";
+import { cancelReadOnlyQuery, createExecutionId, executeReadOnlyQuery, parseQueryResult } from "../src/sqlExecution.ts";
 
 const validResult = {
   columns: [{ name: "answer", databaseType: "int4", jdbcType: 4 }],
@@ -40,6 +40,7 @@ test("posts a trimmed SQL draft with no-store and the supplied auth/workspace he
       Authorization: "Bearer " + "A".repeat(43),
       "X-NeuroSQL-Workspace-Id": "123e4567-e89b-12d3-a456-426614174002",
     },
+    executionId: "123e4567-e89b-42d3-a456-426614174000",
   }, fetcher);
 
   assert.deepEqual(result, validResult);
@@ -48,6 +49,7 @@ test("posts a trimmed SQL draft with no-store and the supplied auth/workspace he
   assert.equal(capturedInit?.cache, "no-store");
   assert.equal(capturedInit?.headers && (capturedInit.headers as Record<string, string>)["X-NeuroSQL-Workspace-Id"], "123e4567-e89b-12d3-a456-426614174002");
   assert.equal(capturedInit?.body, JSON.stringify({ sql: "SELECT 42" }));
+  assert.equal((capturedInit?.headers as Record<string, string>)["X-NeuroSQL-Execution-Id"], "123e4567-e89b-42d3-a456-426614174000");
 });
 
 test("surfaces validator rejections without exposing arbitrary API error fields", async () => {
@@ -94,4 +96,102 @@ test("rejects blank, oversized, and unauthenticated requests before network acce
   await assert.rejects(executeReadOnlyQuery({ ...base, sql: "x".repeat(10_001) }, fetcher), /10,000 characters/);
   await assert.rejects(executeReadOnlyQuery({ ...base, sql: "SELECT 1", headers: {} }, fetcher), /Sign in/);
   assert.equal(calls, 0);
+});
+
+
+test("creates canonical lowercase execution identifiers from a secure UUID source", () => {
+  assert.equal(
+    createExecutionId(() => "123E4567-E89B-42D3-A456-426614174000"),
+    "123e4567-e89b-42d3-a456-426614174000",
+  );
+  assert.throws(() => createExecutionId(() => "not-a-uuid"), /valid query execution identifier/);
+});
+
+test("requires a durable workspace session before attaching a cancellation identifier", async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify(validResult), { status: 200 });
+  };
+  await assert.rejects(
+    executeReadOnlyQuery({
+      apiBaseUrl: "https://api.example.test",
+      sql: "SELECT 1",
+      headers: { Authorization: "Basic dGVzdDp0ZXN0" },
+      executionId: "123e4567-e89b-42d3-a456-426614174000",
+    }, fetcher),
+    /durable workspace session/,
+  );
+  assert.equal(calls, 0);
+});
+
+test("posts a workspace-scoped cancellation request and validates the accepted response", async () => {
+  let capturedUrl = "";
+  let capturedInit: RequestInit | undefined;
+  const fetcher: typeof fetch = async (input, init) => {
+    capturedUrl = String(input);
+    capturedInit = init;
+    return new Response(JSON.stringify({ status: "CANCEL_REQUESTED" }), {
+      status: 202,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const result = await cancelReadOnlyQuery({
+    apiBaseUrl: "https://api.example.test/",
+    executionId: "123e4567-e89b-42d3-a456-426614174000",
+    headers: {
+      Authorization: "Bearer " + "A".repeat(43),
+      "X-NeuroSQL-Workspace-Id": "123e4567-e89b-12d3-a456-426614174002",
+    },
+  }, fetcher);
+
+  assert.equal(result, "requested");
+  assert.equal(capturedUrl, "https://api.example.test/api/sql/cancel");
+  assert.equal(capturedInit?.method, "POST");
+  assert.equal(capturedInit?.cache, "no-store");
+  assert.equal(capturedInit?.body, JSON.stringify({ executionId: "123e4567-e89b-42d3-a456-426614174000" }));
+  assert.equal((capturedInit?.headers as Record<string, string>).Authorization, "Bearer " + "A".repeat(43));
+  assert.equal((capturedInit?.headers as Record<string, string>)["X-NeuroSQL-Workspace-Id"], "123e4567-e89b-12d3-a456-426614174002");
+});
+
+test("treats a completed or unknown execution as not active", async () => {
+  const result = await cancelReadOnlyQuery({
+    apiBaseUrl: "https://api.example.test",
+    executionId: "123e4567-e89b-42d3-a456-426614174000",
+    headers: {
+      Authorization: "Bearer " + "A".repeat(43),
+      "X-NeuroSQL-Workspace-Id": "123e4567-e89b-12d3-a456-426614174002",
+    },
+  }, async () => new Response(JSON.stringify({ message: "No active query was found." }), { status: 404 }));
+  assert.equal(result, "not-active");
+});
+
+test("rejects cancellation for malformed identifiers and legacy Basic authentication before network access", async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ status: "CANCEL_REQUESTED" }), { status: 202 });
+  };
+  const base = {
+    apiBaseUrl: "https://api.example.test",
+    headers: {
+      Authorization: "Basic dGVzdDp0ZXN0",
+      "X-NeuroSQL-Workspace-Id": "123e4567-e89b-12d3-a456-426614174002",
+    },
+  };
+  await assert.rejects(cancelReadOnlyQuery({ ...base, executionId: "bad-id" }, fetcher), /identifier is invalid/);
+  await assert.rejects(cancelReadOnlyQuery({ ...base, executionId: "123e4567-e89b-42d3-a456-426614174000" }, fetcher), /durable workspace session/);
+  assert.equal(calls, 0);
+});
+
+test("maps rejected cancellation responses to sanitized errors", async () => {
+  const headers = {
+    Authorization: "Bearer " + "A".repeat(43),
+    "X-NeuroSQL-Workspace-Id": "123e4567-e89b-12d3-a456-426614174002",
+  };
+  await assert.rejects(
+    cancelReadOnlyQuery({ apiBaseUrl: "https://api.example.test", executionId: "123e4567-e89b-42d3-a456-426614174000", headers },
+      async () => new Response(JSON.stringify({ message: "secret database detail" }), { status: 503 })),
+    /server could not cancel the query/,
+  );
 });
