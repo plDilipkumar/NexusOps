@@ -742,3 +742,9 @@ Last verified: 2026-11-02 06:58 UTC (12:28 IST)
 - [ ] The new separation is code/configuration groundwork only; no production environment variables were changed and no live SQL query was run. Query-history/saved-query persistence remains gated on V5 approval, a separate application/control-plane identity with the required grants, and the API/UI implementation.
 - [ ] Draft PR #7 remains open and unapproved; proposed V1–V5 have not been applied to Neon main. PR #9 remains open and unmerged. Production authentication, SQL execution, and EXPLAIN remain disabled.
 - [x] No credentials were committed, no paid resources were introduced, and no production schema, roles, data, environment variables, or deployments were changed.
+
+
+## Read-only Neon role inventory after SQL datasource split — PR #9 (2026-11-02)
+- [x] Read-only role inventory on Neon production main confirms the only neurosql_* role is neurosql_owner. It can log in and has CREATEDB, CREATEROLE, REPLICATION, and BYPASSRLS attributes; it is not suitable for user-submitted SQL.
+- [x] Read-only role inventory on the temporary V5 review branch confirms neurosql_auth_runtime is NOLOGIN and has no elevated role attributes; neurosql_owner remains elevated. No neurosql_sql_readonly LOGIN identity exists on either inspected branch.
+- [x] This confirms the separate SQL datasource must remain unconfigured and SQL execution/EXPLAIN must remain disabled until a supported least-privilege LOGIN role can be provisioned and independently verified. No role creation, grants, SQL writes, or environment changes were made.
