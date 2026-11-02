@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @ConditionalOnExpression(
         "'${neurosql.auth.durable-sessions-enabled:false}' == 'true' and "
                 + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true' and "
-                + "'${neurosql.sql-history.enabled:false}' == 'true')
+                + "'${neurosql.sql-history.enabled:false}' == 'true'")
 public class JdbcQueryHistoryRepository {
     static final String INSERT_SQL = """
             INSERT INTO neurosql_app.query_history
