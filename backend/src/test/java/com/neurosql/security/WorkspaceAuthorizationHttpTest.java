@@ -253,7 +253,7 @@ class WorkspaceAuthorizationHttpTest {
                 4,
                 false,
                 Instant.parse("2026-11-02T10:15:30.123456Z"));
-        when(queryHistoryReadService.list(USER_ID, WORKSPACE_ID, 1, null, null, "2026-11-01", "2026-11-02"))
+        when(queryHistoryReadService.list(USER_ID, WORKSPACE_ID, 1, null, null, "2026-11-01", "2026-11-02", "select 1"))
                 .thenReturn(new QueryHistoryReadService.QueryHistoryPage(List.of(entry), "next-page", true));
 
         mockMvc.perform(get("/api/sql/history")
@@ -261,7 +261,8 @@ class WorkspaceAuthorizationHttpTest {
                         .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
                         .param("limit", "1")
                         .param("from", "2026-11-01")
-                        .param("to", "2026-11-02"))
+                        .param("to", "2026-11-02")
+                        .param("q", "select 1"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
                         org.hamcrest.Matchers.containsString("no-store")))
@@ -273,7 +274,7 @@ class WorkspaceAuthorizationHttpTest {
 
         verify(workspaceAuthorizationService)
                 .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
-        verify(queryHistoryReadService).list(USER_ID, WORKSPACE_ID, 1, null, null, "2026-11-01", "2026-11-02");
+        verify(queryHistoryReadService).list(USER_ID, WORKSPACE_ID, 1, null, null, "2026-11-01", "2026-11-02", "select 1");
     }
 
     @Test
