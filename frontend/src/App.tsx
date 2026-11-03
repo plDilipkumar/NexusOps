@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,type FormEvent} from "react";
-import {Activity,ArrowRight,Bookmark,CheckCircle2,ChevronDown,Clock3,Database,FileCode2,Gauge,History,Layers3,LockKeyhole,Play,Plus,Settings2,ShieldCheck,Sparkles,Square,Table2,TerminalSquare} from "lucide-react";
+import {Activity,ArrowRight,Bookmark,Braces,CheckCircle2,ChevronDown,Clock3,Database,FileCode2,Gauge,History,Layers3,LockKeyhole,Play,Plus,Settings2,ShieldCheck,Sparkles,Square,Table2,TerminalSquare} from "lucide-react";
 import {buildDurableSchemaHeaders,createRequestGuard,parseIssuedSession,parseSessionIdentity,parseWorkspaceList,type DurableWorkspace} from "./durableAuth.ts";
 import {captureEmailVerificationToken} from "./accountOnboarding.ts";
 import {AccountOnboardingPanel} from "./AccountOnboardingPanel.tsx";
