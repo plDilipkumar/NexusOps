@@ -47,7 +47,7 @@ export function passwordResetPasswordError(password: string): string | null {
 }
 
 function apiUrl(apiBaseUrl: string, path: string): string {
-  return apiBaseUrl.replace(/\\/$/, "") + path;
+  return apiBaseUrl.replace(/\/$/, "") + path;
 }
 
 function requestOptions(body: Record<string, string>): RequestInit {
@@ -69,7 +69,7 @@ export async function requestPasswordReset(
   fetcher: typeof fetch = fetch,
 ): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
-  if (!normalizedEmail || normalizedEmail.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)) {
+  if (!normalizedEmail || normalizedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     throw new Error("Enter a valid email address.");
   }
 
