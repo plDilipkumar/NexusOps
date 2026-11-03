@@ -122,9 +122,20 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
     setSelectedWorkspaceId(firstWorkspace.workspaceId);
     await loadDurableSchema(issuedToken,firstWorkspace.workspaceId);
   }catch(error){
-    if(issuedToken){try{await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+issuedToken},cache:"no-store"});}catch{/* Best-effort revocation; never log the token. */}}
+    let revocationWarning="";
+    if(issuedToken){
+      try{
+        const revocationResponse=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+issuedToken},cache:"no-store"});
+        if(revocationResponse.status!==204&&revocationResponse.status!==401){
+          revocationWarning="The server could not confirm revocation of the provisional session. It may remain valid until it expires.";
+        }
+      }catch{
+        revocationWarning="The server could not confirm revocation of the provisional session. It may remain valid until it expires.";
+      }
+    }
     setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setDurablePassword("");
-    setSchemaError(error instanceof Error?error.message:"Unable to sign in.");
+    const loginError=error instanceof Error?error.message:"Unable to sign in.";
+    setSchemaError(revocationWarning?loginError+" "+revocationWarning:loginError);
   }finally{setDurableAuthLoading(false);}
 };
 const logoutDurable=async()=>{
