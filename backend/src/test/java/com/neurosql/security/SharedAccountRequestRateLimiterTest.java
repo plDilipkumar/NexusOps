@@ -116,6 +116,11 @@ class SharedAccountRequestRateLimiterTest {
         }
 
         @Override
+        public void recordFailure(String identity) {
+            recordFailure(identity, 5);
+        }
+
+        @Override
         public void recordFailure(String identity, int maxAttempts) {
             thresholds.put(identity, maxAttempts);
             int current = attempts.getOrDefault(identity, 0);
