@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — AI SQL explanation API added behind durable workspace authorization; GitHub Actions run #366 passed.
+Last verified: 2026-11-03 — workspace AI SQL explanation action added; GitHub Actions run #369 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1242,8 +1242,8 @@ Last verified: 2026-11-03 — AI SQL explanation API added behind durable worksp
 - [x] No production database writes, migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next AI milestone
-- [ ] Add an explicit Explain query action to the frontend and connect it to `POST /api/sql/ai/explain`. Send only the selected SQL text, display the returned explanation as plain text, and clearly disclose that SQL text is sent to the configured provider while result rows are never sent.
-- [ ] Add frontend coverage for cancellation, stale workspace/session responses, sanitized failures, and the explicit user action. Never execute or rewrite the selected query automatically.
+- [x] Added an explicit Explain SQL action connected to `POST /api/sql/ai/explain`. It sends only the selected SQL text, renders the returned explanation as plain text, and discloses that SQL text is sent to the configured provider while result rows are never sent.
+- [x] Added frontend coverage for request cancellation, stale workspace/session response invalidation, sanitized failures, response bounds, and the explicit request helper. The UI never executes or rewrites the selected query automatically.
 - [ ] Keep AI explanation disabled in production until the proposed schema is approved, restricted application/read-only LOGIN roles and HMAC configuration are verified, and the provider endpoint/model/key are deliberately configured outside source control.
 
 ## AI SQL query explanation API — PR #9 (2026-11-03)
@@ -1261,3 +1261,23 @@ Last verified: 2026-11-03 — AI SQL explanation API added behind durable worksp
 - [ ] Frontend Explain query interaction is not implemented yet. No live AI provider request or browser-to-provider test was performed; the AI flags remain disabled by default and no provider credentials are configured.
 - [ ] PR #9 remains open/unmerged and draft PR #7 remains unapproved/unmerged. Do not apply V1–V6 to Neon `main` without explicit user approval. Durable auth, account lifecycle, query history, saved queries, SQL execution, and AI features remain unavailable in production until the database schema and restricted runtime credentials are approved and verified.
 - [x] No production schema/data/role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+## Frontend AI SQL explanation action — PR #9 (2026-11-03)
+
+- [x] Re-read the current feature-branch progress tracker and inspected the latest PR #9 head, frontend SQL editor/EXPLAIN/Copilot contracts, backend AI explanation response, Neon production and V6 review branches/roles, Vercel repository linkage/deployments, and the confirmed Render workspace/service/deploy history before selecting this milestone.
+- [x] Added `frontend/src/AiSqlExplanationPanel.tsx` and connected it to the Workspace. The explicit Explain SQL button is gated by `VITE_AI_SQL_EXPLANATION_ENABLED`, which defaults to `false`; it requires a durable session and selected workspace.
+- [x] Added `frontend/src/aiSqlExplanation.ts` for the `POST /api/sql/ai/explain` request. The JSON body contains only the selected SQL text; the request uses the active bearer session and workspace header, `cache: no-store`, and `credentials: omit`. It sends no schema metadata, query results, or table rows.
+- [x] The panel renders the bounded explanation as plain text, shows the statement type and bounded warnings, uses fixed status-specific error messages, and displays a clear provider-privacy notice. It does not execute, rewrite, or insert SQL.
+- [x] Added abort handling and request-generation/context guards. SQL edits, workspace/session changes, feature/API context changes, query/plan activity, and unmount abort pending requests; stale responses cannot overwrite a newer context.
+- [x] Added frontend tests for response validation and bounds, SQL-only request payload, durable workspace headers, no-store/credential omission, AbortSignal forwarding, stale-request invalidation, and sanitized HTTP failures.
+- [x] GitHub Actions run #369 (ID `41607134328`, https://github.com/plDilipkumar/NexusOps/actions/runs/41607134328) passed on final code commit `896f9bf0a1584ce2354625c6398dc6cf15b6c9a2`: backend Maven verification ran 362 tests with 0 failures/errors and 63 expected database-gated skips; the disposable PostgreSQL 17 integration job passed 63 tests with 0 failures/errors/skips; frontend tests passed 86/86; TypeScript compilation and Vite production build passed (1,594 modules transformed). The production API/database smoke test was skipped because PR #9 remains unmerged.
+- [x] Initial run #368 caught a JavaScript runtime typo in the new control-character validator (`codePointsAt`); corrected it and added a render-time request-context comparison in commit `896f9bf0a1584ce2354625c6398dc6cf15b6c9a2`. Final run #369 passed all jobs.
+- [x] Fresh read-only Neon inspection reconfirmed free project `neurosql` (`lingering-dew-88806235`), PostgreSQL 17.11, production branch `main` (`br-empty-credit-b360dmpc`), and dedicated database `neurosql_db`. Production `main` still has zero application tables and only the elevated `neurosql_owner` LOGIN. Temporary V6 review branch `br-silent-cherry-b3k2vqtj` contains the eight proposed `neurosql_app` tables; `neurosql_auth_runtime` remains `NOLOGIN`. No schema, data, or role changes were made.
+- [x] Vercel Hobby project `neurosql` remains linked to `plDilipkumar/NexusOps`; project metadata reports `live=false`, and a deployment lookup for code commit `896f9bf0a1584ce2354625c6398dc6cf15b6c9a2` returned zero deployments. No deployment or plan change was triggered.
+- [x] Render `neurosql-api` remains on the free plan in the confirmed workspace, Singapore, one instance, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. Its latest live deployment remains `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; this feature branch is not deployed.
+- [ ] No live AI provider request was made and no provider key is configured. The frontend and backend AI flags remain disabled by default; if deliberately enabled, the SQL text submitted for explanation is sent to the configured provider.
+- [ ] PR #9 remains open/unmerged and draft PR #7 remains unapproved/unmerged. Proposed V1–V6 migrations are not applied to Neon `main`. Production durable auth, account lifecycle, query history, saved queries, SQL execution, and AI features remain blocked on explicit schema approval, verified least-privilege application and read-only LOGIN roles, secure HMAC configuration, and deliberate provider configuration.
+- [x] No production schema/data/role changes, deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Add AI-assisted performance recommendations using the existing non-ANALYZE EXPLAIN plan as bounded input. Distinguish estimated plan costs from measured runtime, reuse workspace authorization and the shared AI quota, and never execute or automatically apply suggested SQL.
