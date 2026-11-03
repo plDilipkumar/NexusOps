@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — keyboard-only workspace navigation and focus-visible browser coverage added; GitHub Actions run #384 passed.
+Last verified: 2026-11-03 — accessible skip-to-main-content navigation added and browser-verified; GitHub Actions run #387 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1369,3 +1369,22 @@ Last verified: 2026-11-03 — keyboard-only workspace navigation and focus-visib
 
 ### Next milestone
 - [ ] Add a keyboard-accessible skip-to-main-content link and browser coverage to ensure keyboard users can bypass the workspace navigation and land at the SQL workspace without changing the existing responsive layout.
+
+
+## Accessible skip-to-main-content navigation — PR #9 (2026-11-03)
+
+- [x] Re-read the active feature-branch progress tracker and inspected the repository/PR, Neon project `neurosql` and dedicated database `neurosql_db`, Vercel project/deployments, and the confirmed Render workspace/service/deploy history before selecting this milestone.
+- [x] Added a keyboard-first “Skip to main content” link before the sidebar in the application DOM. It remains visually off-canvas until focused, appears with a high-contrast 3px focus outline, and respects reduced-motion preferences.
+- [x] Added a focusable `#main-content` target to the main workspace content section. Activating the skip link updates the URL fragment and transfers keyboard focus to that section.
+- [x] Extended Playwright coverage to verify that the skip link is the first keyboard destination, becomes visible on focus, and moves focus to `#main-content` with Enter on desktop (1440x900) and mobile (390x844).
+- [x] Updated the existing keyboard-navigation test to verify that the skip link precedes all five workspace destinations in the Tab order. Existing responsive navigation coverage still exercises 1440x900, 851x900, 850x900, 390x844, and 320x740; keyboard navigation remains checked at desktop and mobile.
+- [x] The first implementation CI run #386 (ID `41658152618`) caught a browser-test timing assumption: the assertion ran before the CSS focus transition moved the link into the viewport. The product implementation was not changed; the test now waits for the focused link to finish entering the viewport before asserting visibility.
+- [x] GitHub Actions run #387 (ID `41658409609`, https://github.com/plDilipkumar/NexusOps/actions/runs/41658409609) passed on code commit `7240edf369054c47fe7c6d7cf3747abfa3e9c9e8`: backend Maven verification ran 371 tests with 0 failures/errors and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63 with 0 failures/errors/skips; frontend tests passed 96/96; TypeScript compilation and Vite production build passed (1,596 modules transformed); Playwright passed five responsive viewport profiles, skip-link checks at desktop/mobile, and keyboard navigation at desktop/mobile. The production API/database smoke test was skipped because PR #9 is not merged.
+- [x] Fresh read-only Neon inspection confirmed free PostgreSQL 17 project `neurosql` in Singapore. Production `main` contains the dedicated `neurosql_db` database with zero application tables and only the elevated `neurosql_owner` login. The separate V6 review branch `neurosql-rate-limit-v6-review-20261103` contains eight proposed `neurosql_app` tables; `neurosql_auth_runtime` remains NOLOGIN and `neurosql_sql_readonly` is not provisioned. No database writes, migrations, or role changes were made.
+- [x] Vercel Hobby project `neurosql` remains associated with `plDilipkumar/NexusOps`; the latest production-target deployment remains READY for older `main` commit `6425ab4`. No deployment for the new feature commit was found, and no deployment or plan change was triggered.
+- [x] Render `neurosql-api` remains on the free plan in the confirmed workspace, linked to repository branch `main` with Docker context `backend`; latest live deployment remains `dep-dbgfqe6gekts738l9eng` for older commit `746d58d`. No Render deployment or environment change was made.
+- [ ] PR #9 remains open and unmerged; schema PR #7 remains a draft and unapproved. Production durable authentication, SQL execution/EXPLAIN, and AI features remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, and deliberate AI provider configuration. No live AI provider request or production API/database test was performed.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Add browser-level coverage for account registration and password-recovery form flows using local mocked API responses only; do not send real email, configure provider credentials, or enable production authentication.
