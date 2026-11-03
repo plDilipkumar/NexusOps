@@ -410,6 +410,59 @@ async function testWorkspaceListFailureRevokesProvisionalSession() {
   }
 }
 
+
+async function testProvisionalRevocationFailure({ issuedToken, networkFailure }) {
+  const page = await browser.newPage();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const logoutAuthorization = [];
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ token: issuedToken, expiresAt }),
+    }),
+    "/api/auth/me": async route => route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "unauthorized" }),
+    }),
+    "/api/auth/logout": async route => {
+      logoutAuthorization.push(route.request().headers().authorization);
+      if (networkFailure) {
+        await route.abort("failed");
+      } else {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "internal database detail", debug: "must not reach the browser" }),
+        });
+      }
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    await assertLoginAlert(page, "The new session could not be validated.");
+    await assertLoginAlert(page, "The server could not confirm revocation of the provisional session. It may remain valid until it expires.");
+    await assertLoginAlert(page, "It may remain valid until it expires.");
+    assert.deepEqual(logoutAuthorization, ["Bearer " + issuedToken],
+      "The provisional token must be sent only to the mocked revocation endpoint");
+    await assertNoDurableWorkspaceState(page);
+    const alertText = await page.getByRole("alert").textContent() ?? "";
+    assert.equal(alertText.includes("internal database detail"), false,
+      "Revocation response details must not be exposed in the browser");
+    assert.equal(alertText.includes(issuedToken), false, "The bearer token must never be shown in the warning");
+    assert.equal(page.url().includes(issuedToken), false, "The bearer token must never appear in the URL");
+    assert.equal(unexpected.length, 0, "Revocation failure must not cause unmocked API requests");
+    console.log(networkFailure
+      ? "Network failure during provisional revocation is reported without retaining local credentials (mock API only)"
+      : "HTTP failure during provisional revocation is reported without retaining local credentials (mock API only)");
+  } finally {
+    await page.close();
+  }
+}
+
 try {
   await waitForPreview();
   browser = await chromium.launch({ headless: true });
@@ -418,6 +471,8 @@ try {
   await testInvalidCredentialsDoNotCreateClientSession();
   await testRejectedIdentityRevokesProvisionallyIssuedSession();
   await testWorkspaceListFailureRevokesProvisionalSession();
+  await testProvisionalRevocationFailure({ issuedToken: "E".repeat(43), networkFailure: false });
+  await testProvisionalRevocationFailure({ issuedToken: "F".repeat(43), networkFailure: true });
 } finally {
   await browser?.close();
   preview.kill("SIGTERM");
