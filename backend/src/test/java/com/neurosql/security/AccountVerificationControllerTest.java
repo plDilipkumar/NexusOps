@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.neurosql.api.AccountVerificationController;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -35,6 +36,8 @@ class AccountVerificationControllerTest {
     private static final String INVALID_MESSAGE =
             "This verification link is invalid or has expired. Request a new verification email.";
     private static final String INVALID_REQUEST_MESSAGE = "A valid verification token is required.";
+    private static final String TEMPORARY_FAILURE_MESSAGE =
+            "Email verification is temporarily unavailable. Try again later.";
 
     @Autowired
     private MockMvc mockMvc;
@@ -43,10 +46,22 @@ class AccountVerificationControllerTest {
     private AccountActionTokenService actionTokens;
 
     @MockBean
+    private SharedAccountRequestRateLimiter requestRateLimiter;
+
+    @MockBean
+    private TrustedClientAddressResolver clientAddressResolver;
+
+    @MockBean
     private SessionLifecycleService sessions;
 
     @MockBean
     private WorkspaceAuthorizationService workspaceAuthorizationService;
+
+    @BeforeEach
+    void allowRequestsWithoutConfiguredTrustedProxyRanges() {
+        when(requestRateLimiter.acquireVerificationConsumption(null))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
+    }
 
     @Test
     void validTokenReturnsSuccessWithoutEchoingTokenOrAllowingCaching() throws Exception {
@@ -64,7 +79,9 @@ class AccountVerificationControllerTest {
                 .getContentAsString();
 
         assertThat(response).doesNotContain(TOKEN);
+        verify(requestRateLimiter).acquireVerificationConsumption(null);
         verify(actionTokens).verifyEmail(TOKEN);
+        verifyNoInteractions(clientAddressResolver);
     }
 
     @Test
@@ -92,11 +109,12 @@ class AccountVerificationControllerTest {
 
         assertThat(firstResponse).isEqualTo(replayResponse);
         assertThat(firstResponse).doesNotContain(TOKEN);
+        verify(requestRateLimiter, org.mockito.Mockito.times(2)).acquireVerificationConsumption(null);
         org.mockito.Mockito.verify(actionTokens, org.mockito.Mockito.times(2)).verifyEmail(TOKEN);
     }
 
     @Test
-    void malformedTokenIsRejectedWithSafeMessageBeforeTokenServiceAccess() throws Exception {
+    void malformedTokenIsRejectedBeforeRateLimiterOrTokenServiceAccess() throws Exception {
         String response = mockMvc.perform(post("/api/auth/verify-email")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"token\":\"not-a-token\"}"))
@@ -107,29 +125,94 @@ class AccountVerificationControllerTest {
                 .getContentAsString();
 
         assertThat(response).doesNotContain("not-a-token");
-        verifyNoInteractions(actionTokens);
+        verifyNoInteractions(actionTokens, requestRateLimiter);
     }
 
     @Test
-    void missingTokenIsRejectedBeforeTokenServiceAccess() throws Exception {
+    void missingTokenIsRejectedBeforeRateLimiterOrTokenServiceAccess() throws Exception {
         mockMvc.perform(post("/api/auth/verify-email")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(INVALID_REQUEST_MESSAGE));
 
-        verifyNoInteractions(actionTokens);
+        verifyNoInteractions(actionTokens, requestRateLimiter);
     }
 
     @Test
-    void unreadableJsonReturnsSafeMessage() throws Exception {
+    void unreadableJsonReturnsSafeMessageBeforeRateLimiterOrTokenServiceAccess() throws Exception {
         mockMvc.perform(post("/api/auth/verify-email")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"token\":"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(INVALID_REQUEST_MESSAGE));
 
+        verifyNoInteractions(actionTokens, requestRateLimiter);
+    }
+
+    @Test
+    void rateLimitedVerificationDoesNotConsumeToken() throws Exception {
+        when(requestRateLimiter.acquireVerificationConsumption(null))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(false, 300));
+
+        mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + TOKEN + "\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "300"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.message").value("Too many verification attempts. Try again later."));
+
         verifyNoInteractions(actionTokens);
+    }
+
+    @Test
+    void sharedLimiterFailureFailsClosedWithoutConsumingToken() throws Exception {
+        when(requestRateLimiter.acquireVerificationConsumption(null))
+                .thenThrow(new IllegalStateException("sensitive database details"));
+
+        String response = mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + TOKEN + "\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.message").value(TEMPORARY_FAILURE_MESSAGE))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(response).doesNotContain("sensitive");
+        verifyNoInteractions(actionTokens);
+    }
+
+    @Test
+    void tokenPersistenceFailureReturnsGenericUnavailableResponse() throws Exception {
+        when(actionTokens.verifyEmail(TOKEN)).thenThrow(new IllegalStateException("database details"));
+
+        String response = mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + TOKEN + "\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").value(TEMPORARY_FAILURE_MESSAGE))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(response).doesNotContain("database details");
+    }
+
+    @Test
+    void forwardedAddressIsIgnoredWhenTrustedProxyRangesAreNotConfigured() throws Exception {
+        when(actionTokens.verifyEmail(TOKEN)).thenReturn(true);
+
+        mockMvc.perform(post("/api/auth/verify-email")
+                        .header("X-Forwarded-For", "198.51.100.25")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + TOKEN + "\"}"))
+                .andExpect(status().isOk());
+
+        verify(requestRateLimiter).acquireVerificationConsumption(null);
+        verifyNoInteractions(clientAddressResolver);
     }
 
     @Test
