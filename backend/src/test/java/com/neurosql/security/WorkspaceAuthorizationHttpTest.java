@@ -26,6 +26,8 @@ import com.neurosql.api.AiSqlGenerationController;
 import com.neurosql.api.AiSqlGenerationService;
 import com.neurosql.api.AiSqlExplanationController;
 import com.neurosql.api.AiSqlExplanationService;
+import com.neurosql.api.AiSqlPerformanceRecommendationController;
+import com.neurosql.api.AiSqlPerformanceRecommendationService;
 import com.neurosql.api.DurableSessionController;
 import com.neurosql.api.SchemaController;
 import com.neurosql.api.SqlExecutionController;
@@ -48,7 +50,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class, SavedQueriesController.class, AiSqlGenerationController.class, AiSqlExplanationController.class})
+@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class, SavedQueriesController.class, AiSqlGenerationController.class, AiSqlExplanationController.class, AiSqlPerformanceRecommendationController.class})
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
         "neurosql.auth.enabled=true",
@@ -60,7 +62,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
         "neurosql.saved-queries.enabled=true",
         "neurosql.schema-browser.enabled=true",
         "neurosql.sql-execution.enabled=true",
-        "neurosql.ai.sql-generation.enabled=true"
+        "neurosql.ai.sql-generation.enabled=true",
+        "neurosql.ai.sql-performance.enabled=true"
 })
 class WorkspaceAuthorizationHttpTest {
     private static final String TOKEN = "A".repeat(43);
@@ -103,6 +106,9 @@ class WorkspaceAuthorizationHttpTest {
 
     @MockBean
     private AiSqlExplanationService aiSqlExplanationService;
+
+    @MockBean
+    private AiSqlPerformanceRecommendationService aiSqlPerformanceRecommendationService;
 
     @MockBean
     private SharedAccountRequestRateLimiter sharedAccountRequestRateLimiter;
@@ -325,6 +331,77 @@ class WorkspaceAuthorizationHttpTest {
                         org.hamcrest.Matchers.containsString("no-store")));
 
         verifyNoInteractions(aiSqlExplanationService);
+    }
+
+    @Test
+    void activeViewerCanRequestAiPerformanceRecommendationsForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlRequest(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
+        when(aiSqlPerformanceRecommendationService.recommend(any()))
+                .thenReturn(new AiSqlPerformanceRecommendationService.RecommendationResponse(
+                        "Review the scan against representative workload evidence.",
+                        "SELECT",
+                        false,
+                        List.of("Planner estimates are not measured runtime.")));
+
+        mockMvc.perform(post("/api/sql/ai/performance")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.recommendations").value(
+                        "Review the scan against representative workload evidence."))
+                .andExpect(jsonPath("$.statementType").value("SELECT"))
+                .andExpect(jsonPath("$.planTruncated").value(false));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(sharedAccountRequestRateLimiter).acquireAiSqlRequest(USER_ID);
+        verify(aiSqlPerformanceRecommendationService).recommend(any());
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotRequestAiPerformanceRecommendations() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/ai/performance")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(sharedAccountRequestRateLimiter, aiSqlPerformanceRecommendationService);
+    }
+
+    @Test
+    void aiPerformanceRecommendationsShareTheAiQuotaAndReturnRetryAfter() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlRequest(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(false, 120));
+
+        mockMvc.perform(post("/api/sql/ai/performance")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "120"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")));
+
+        verifyNoInteractions(aiSqlPerformanceRecommendationService);
     }
 
     @Test
