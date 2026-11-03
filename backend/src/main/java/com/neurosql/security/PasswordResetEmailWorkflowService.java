@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
                 + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true' and "
                 + "'${neurosql.auth.email.enabled:false}' == 'true' and "
                 + "'${spring.mail.host:}' != '' and "
+                + "'${neurosql.auth.email.verification-url:}' != '' and "
                 + "'${neurosql.auth.email.password-reset-url:}' != ''")
 public class PasswordResetEmailWorkflowService {
     private static final Logger LOGGER = LoggerFactory.getLogger(PasswordResetEmailWorkflowService.class);

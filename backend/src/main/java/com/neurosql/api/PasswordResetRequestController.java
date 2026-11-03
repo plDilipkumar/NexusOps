@@ -36,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
                 + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true' and "
                 + "'${neurosql.auth.email.enabled:false}' == 'true' and "
                 + "'${spring.mail.host:}' != '' and "
+                + "'${neurosql.auth.email.verification-url:}' != '' and "
                 + "'${neurosql.auth.email.password-reset-url:}' != ''")
 public class PasswordResetRequestController {
     private static final String ACCEPTED_MESSAGE =

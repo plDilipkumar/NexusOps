@@ -29,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
         "neurosql.auth.shared-rate-limit-enabled=true",
         "neurosql.auth.email.enabled=true",
         "neurosql.auth.rate-limit-hmac-key=test-only-password-reset-hmac-key-32-bytes",
+        "neurosql.auth.email.verification-url=https://neurosql.vercel.app/verify-email",
         "neurosql.auth.email.password-reset-url=https://neurosql.vercel.app/reset-password",
         "spring.mail.host=smtp.example.test"
 })
