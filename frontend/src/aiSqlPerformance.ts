@@ -106,18 +106,60 @@ export async function recommendAiSqlPerformance(
   return parseAiSqlPerformanceResponse(payload);
 }
 
-export function createAiSqlPerformanceRequestGuard() {
+export type AiSqlPerformanceRequestContext = Readonly<{
+  apiBaseUrl: string;
+  enabled: boolean;
+  token: string | null;
+  workspaceId: string;
+  sql: string;
+  busy: boolean;
+}>;
+
+export function isAiSqlPerformanceRequestContextCurrent(
+  current: AiSqlPerformanceRequestContext,
+  expected: AiSqlPerformanceRequestContext,
+): boolean {
+  return current.apiBaseUrl === expected.apiBaseUrl
+    && current.enabled === expected.enabled
+    && current.token === expected.token
+    && current.workspaceId === expected.workspaceId
+    && current.sql === expected.sql
+    && current.busy === expected.busy;
+}
+
+/**
+ * Owns one in-flight performance request for a panel instance.
+ * Starting a replacement or invalidating the panel aborts the previous request.
+ */
+export function createAiSqlPerformanceRequestLifecycle() {
   let generation = 0;
+  let activeController: AbortController | null = null;
+
   return {
-    begin(): number {
-      generation += 1;
-      return generation;
-    },
-    isCurrent(requestId: number): boolean {
-      return requestId === generation;
+    begin() {
+      activeController?.abort();
+      const controller = new AbortController();
+      activeController = controller;
+      const requestId = ++generation;
+
+      return {
+        signal: controller.signal,
+        isCurrent(): boolean {
+          return requestId === generation
+            && activeController === controller
+            && !controller.signal.aborted;
+        },
+        finish(): void {
+          if (requestId === generation && activeController === controller) {
+            activeController = null;
+          }
+        },
+      };
     },
     invalidate(): void {
       generation += 1;
+      activeController?.abort();
+      activeController = null;
     },
   };
 }
