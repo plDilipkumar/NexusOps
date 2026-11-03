@@ -32,6 +32,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class JdbcLoginAttemptRateLimiter implements DurableLoginAttemptRateLimiter {
     static final int MAX_TRACKED_IDENTITIES = 10_000;
     private static final int CLEANUP_BATCH_SIZE = 100;
+    private static final int MAX_FAILURE_ATTEMPTS = 30;
     private static final int CLEANUP_EVERY_OPERATIONS = 64;
     private static final int ADVISORY_LOCK_NAMESPACE = 1_314_079_052; // "NSQL"
     private static final int ADVISORY_LOCK_KEY = 1;
@@ -77,7 +78,7 @@ public class JdbcLoginAttemptRateLimiter implements DurableLoginAttemptRateLimit
                             UNION ALL
                             SELECT now()
                         ) AS recent
-                    ) >= 5 THEN now() + INTERVAL '15 minutes'
+                    ) >= ? THEN now() + INTERVAL '15 minutes'
                     ELSE NULL
                 END,
                 updated_at = now()
@@ -137,6 +138,14 @@ public class JdbcLoginAttemptRateLimiter implements DurableLoginAttemptRateLimit
 
     @Override
     public void recordFailure(String identity) {
+        recordFailure(identity, 5);
+    }
+
+    @Override
+    public void recordFailure(String identity, int maxAttempts) {
+        if (maxAttempts < 2 || maxAttempts > MAX_FAILURE_ATTEMPTS) {
+            throw new IllegalArgumentException("The shared rate-limit threshold must be between 2 and 30.");
+        }
         String hash = identityHasher.hash(identity);
         transactions.executeWithoutResult(transaction -> {
             boolean exists = lockIdentity(hash);
@@ -161,7 +170,8 @@ public class JdbcLoginAttemptRateLimiter implements DurableLoginAttemptRateLimit
                 }
             }
             if (exists) {
-                jdbc.update(UPDATE_FAILURE_SQL, hash);
+                // Placeholder order follows the SQL: threshold in SET, identity in WHERE.
+                jdbc.update(UPDATE_FAILURE_SQL, maxAttempts, hash);
             }
             maybeCleanupWithinTransaction();
         });
