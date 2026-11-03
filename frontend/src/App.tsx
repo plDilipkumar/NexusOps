@@ -57,7 +57,7 @@ const [accountOnboarding,setAccountOnboarding]=useState<{mode:"register"|"verify
 const [durableSession,setDurableSession]=useState<DurableSession|null>(null);
 const [durableWorkspaces,setDurableWorkspaces]=useState<DurableWorkspace[]>([]);
 const [selectedWorkspaceId,setSelectedWorkspaceId]=useState("");const [savedQuerySeed,setSavedQuerySeed]=useState("");
-const [durableAuthLoading,setDurableAuthLoading]=useState(false);const durableSchemaRequests=useRef(createRequestGuard());
+const [durableAuthLoading,setDurableAuthLoading]=useState(false);const durableAuthOperation=useRef(0);const durableSchemaRequests=useRef(createRequestGuard());
 const queryAbortController=useRef<AbortController|null>(null);const queryGeneration=useRef(0);const activeExecutionRef=useRef<ActiveExecution|null>(null);const explainAbortController=useRef<AbortController|null>(null);const explainGeneration=useRef(0);
 const cancelActiveExecutionSilently=()=>{
   const activeExecution=activeExecutionRef.current;
@@ -97,7 +97,7 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
   const email=durableEmail.trim().toLowerCase();
   const password=durablePassword;
   if(!email||!password){setSchemaError("Enter your email and password.");return;}
-  invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setDurableAuthLoading(true);setSchemaError("");setSchemaData(null);
+  durableAuthOperation.current+=1;invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setDurableAuthLoading(true);setSchemaError("");setSchemaData(null);
   let issuedToken:string|null=null;
   try{
     const response=await fetch(API_BASE_URL+"/api/auth/login",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({email,password}),cache:"no-store"});
@@ -141,9 +141,11 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
 const logoutDurable=async()=>{
   invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setSavedQuerySeed("");
   const token=durableSession?.token;
+  const operation=++durableAuthOperation.current;
+  setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setDurableEmail("");setDurablePassword("");setSchemaData(null);setSchemaError("");setExpandedTables({});
   let revocationConfirmed=!token;
-  if(token){try{const response=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store"});revocationConfirmed=response.status===204||response.status===401;}catch{/* The local token is still cleared; surface that server revocation was not confirmed. */}}
-  setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setDurableEmail("");setDurablePassword("");setSchemaData(null);setSchemaError(revocationConfirmed?"":"Signed out locally, but the server could not confirm session revocation. The session may remain valid until it expires.");setExpandedTables({});
+  if(token){try{const response=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store"});revocationConfirmed=response.status===204||response.status===401;}catch{/* Local sign-out is immediate; the warning below reports unconfirmed server revocation. */}}
+  if(!revocationConfirmed&&durableAuthOperation.current===operation)setSchemaError("Signed out locally, but the server could not confirm session revocation. The session may remain valid until it expires.");
 };
 const selectDurableWorkspace=(workspaceId:string)=>{
   invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setSavedQuerySeed("");
