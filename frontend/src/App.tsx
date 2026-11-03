@@ -123,7 +123,7 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
     await loadDurableSchema(issuedToken,firstWorkspace.workspaceId);
   }catch(error){
     if(issuedToken){try{await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+issuedToken},cache:"no-store"});}catch{/* Best-effort revocation; never log the token. */}}
-    setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);
+    setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setDurablePassword("");
     setSchemaError(error instanceof Error?error.message:"Unable to sign in.");
   }finally{setDurableAuthLoading(false);}
 };
