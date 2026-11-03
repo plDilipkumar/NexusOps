@@ -317,8 +317,15 @@ class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
         assertThat(unverified).isEmpty();
         assertThat(inactive).isEmpty();
         assertThat(jdbc.queryForObject(
-                "SELECT count(*) FROM neurosql_app.account_action_tokens WHERE purpose = 'PASSWORD_RESET'",
-                Integer.class)).isZero();
+                """
+                SELECT count(*)
+                FROM neurosql_app.account_action_tokens
+                WHERE purpose = 'PASSWORD_RESET'
+                  AND user_id IN (?, ?)
+                """,
+                Integer.class,
+                unverifiedUser,
+                inactiveUser)).isZero();
     }
 
     private UUID insertVerifiedUser() {
