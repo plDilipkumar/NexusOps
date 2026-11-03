@@ -144,7 +144,7 @@ class SharedAccountRequestRateLimiterPostgresIntegrationTest {
 
         int requestCount = 40;
         ExecutorService executor = Executors.newFixedThreadPool(8);
-        CountDownLatch ready = new CountDownLatch(requestCount);
+        CountDownLatch ready = new CountDownLatch(8);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<SharedAccountRequestRateLimiter.Decision>> futures = new ArrayList<>();
         try {
