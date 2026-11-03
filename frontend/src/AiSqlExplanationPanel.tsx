@@ -28,6 +28,8 @@ export function AiSqlExplanationPanel({
   const [running, setRunning] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const requestGuard = useRef(createAiSqlExplanationRequestGuard());
+  const currentContext = useRef({ apiBaseUrl, enabled, token, workspaceId, sql, busy });
+  currentContext.current = { apiBaseUrl, enabled, token, workspaceId, sql, busy };
 
   useEffect(() => {
     requestGuard.current.invalidate();
@@ -62,6 +64,14 @@ export function AiSqlExplanationPanel({
     const activeController = new AbortController();
     controller.current = activeController;
     const requestId = requestGuard.current.begin();
+    const requestContext = currentContext.current;
+    const isCurrent = () => requestGuard.current.isCurrent(requestId)
+      && currentContext.current.apiBaseUrl === requestContext.apiBaseUrl
+      && currentContext.current.enabled === requestContext.enabled
+      && currentContext.current.token === requestContext.token
+      && currentContext.current.workspaceId === requestContext.workspaceId
+      && currentContext.current.sql === requestContext.sql
+      && currentContext.current.busy === requestContext.busy;
     setResult(null);
     setError("");
     setRunning(true);
@@ -74,15 +84,15 @@ export function AiSqlExplanationPanel({
         workspaceId,
         signal: activeController.signal,
       });
-      if (requestGuard.current.isCurrent(requestId)) setResult(next);
+      if (isCurrent()) setResult(next);
     } catch (requestError) {
-      if (requestGuard.current.isCurrent(requestId) && !activeController.signal.aborted) {
+      if (isCurrent() && !activeController.signal.aborted) {
         setError(requestError instanceof Error
           ? requestError.message
           : "The AI explanation could not be generated.");
       }
     } finally {
-      if (requestGuard.current.isCurrent(requestId)) {
+      if (isCurrent()) {
         setRunning(false);
         controller.current = null;
       }

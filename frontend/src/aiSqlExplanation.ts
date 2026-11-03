@@ -24,7 +24,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function hasUnsafeControlCharacters(value: string): boolean {
-  return value.codePointsAt(0) === undefined || Array.from(value).some((character) => {
+  return Array.from(value).some((character) => {
     const codePoint = character.codePointAt(0) ?? 0;
     return codePoint < 32 && codePoint !== 9 && codePoint !== 10 && codePoint !== 13;
   });
