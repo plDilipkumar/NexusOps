@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Gauge, Sparkles } from "lucide-react";
 import {
-  createAiSqlPerformanceRequestGuard,
+  createAiSqlPerformanceRequestLifecycle,
+  isAiSqlPerformanceRequestContextCurrent,
   recommendAiSqlPerformance,
+  type AiSqlPerformanceRequestContext,
   type AiSqlPerformanceResult,
 } from "./aiSqlPerformance.ts";
 
@@ -26,23 +28,18 @@ export function AiSqlPerformancePanel({
   const [result, setResult] = useState<AiSqlPerformanceResult | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
-  const controller = useRef<AbortController | null>(null);
-  const requestGuard = useRef(createAiSqlPerformanceRequestGuard());
-  const currentContext = useRef({ apiBaseUrl, enabled, token, workspaceId, sql, busy });
+  const requestLifecycle = useRef(createAiSqlPerformanceRequestLifecycle());
+  const currentContext = useRef<AiSqlPerformanceRequestContext>({ apiBaseUrl, enabled, token, workspaceId, sql, busy });
   currentContext.current = { apiBaseUrl, enabled, token, workspaceId, sql, busy };
 
   useEffect(() => {
-    requestGuard.current.invalidate();
-    controller.current?.abort();
-    controller.current = null;
+    requestLifecycle.current.invalidate();
     setResult(null);
     setError("");
     setRunning(false);
 
     return () => {
-      requestGuard.current.invalidate();
-      controller.current?.abort();
-      controller.current = null;
+      requestLifecycle.current.invalidate();
     };
   }, [enabled, apiBaseUrl, token, workspaceId, sql, busy]);
 
@@ -60,18 +57,10 @@ export function AiSqlPerformancePanel({
       return;
     }
 
-    controller.current?.abort();
-    const activeController = new AbortController();
-    controller.current = activeController;
-    const requestId = requestGuard.current.begin();
+    const request = requestLifecycle.current.begin();
     const requestContext = currentContext.current;
-    const isCurrent = () => requestGuard.current.isCurrent(requestId)
-      && currentContext.current.apiBaseUrl === requestContext.apiBaseUrl
-      && currentContext.current.enabled === requestContext.enabled
-      && currentContext.current.token === requestContext.token
-      && currentContext.current.workspaceId === requestContext.workspaceId
-      && currentContext.current.sql === requestContext.sql
-      && currentContext.current.busy === requestContext.busy;
+    const isCurrent = () => request.isCurrent()
+      && isAiSqlPerformanceRequestContextCurrent(currentContext.current, requestContext);
     setResult(null);
     setError("");
     setRunning(true);
@@ -82,11 +71,11 @@ export function AiSqlPerformancePanel({
         sql,
         token,
         workspaceId,
-        signal: activeController.signal,
+        signal: request.signal,
       });
       if (isCurrent()) setResult(next);
     } catch (requestError) {
-      if (isCurrent() && !activeController.signal.aborted) {
+      if (isCurrent() && !request.signal.aborted) {
         setError(requestError instanceof Error
           ? requestError.message
           : "Performance recommendations could not be generated.");
@@ -94,7 +83,7 @@ export function AiSqlPerformancePanel({
     } finally {
       if (isCurrent()) {
         setRunning(false);
-        controller.current = null;
+        request.finish();
       }
     }
   };
