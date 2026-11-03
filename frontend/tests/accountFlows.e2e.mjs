@@ -193,13 +193,13 @@ async function testPasswordResetConfirmation() {
     await page.waitForFunction(() => !window.location.search.includes("token=") && !window.location.search.includes("flow="));
     assert.equal(page.url().includes(token), false, "Password-reset token must be removed from the address bar");
 
-    await page.getByLabel("New password").fill(password);
-    await page.getByLabel("Confirm new password").fill("different-password");
+    await page.getByLabel("New password", { exact: true }).fill(password);
+    await page.getByLabel("Confirm new password", { exact: true }).fill("different-password");
     await page.getByRole("button", { name: "Update password", exact: true }).click();
     assert.match((await page.getByRole("alert").textContent()) ?? "", /passwords do not match/i);
     assert.equal(requests.length, 0, "Mismatched reset passwords must not reach the API");
 
-    await page.getByLabel("Confirm new password").fill(password);
+    await page.getByLabel("Confirm new password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Update password", exact: true }).click();
     await assertStatusContains(page, "Your password has been reset. Please sign in again.");
     assert.deepEqual(requests, [{ token, newPassword: password }],
