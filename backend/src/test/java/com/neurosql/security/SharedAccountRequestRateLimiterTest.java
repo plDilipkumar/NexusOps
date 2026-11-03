@@ -20,43 +20,87 @@ class SharedAccountRequestRateLimiterTest {
     }
 
     @Test
-    void usesNormalizedEmailAndRejectsTheAttemptThatCreatesTheSharedBlock() {
+    void registrationAndVerificationResendUseIndependentEmailBuckets() {
         for (int attempt = 0; attempt < 4; attempt++) {
-            SharedAccountRequestRateLimiter.Decision decision = limiter.acquirePasswordReset(
+            assertThat(limiter.acquireRegistration(
                     attempt == 0 ? " Alice@Example.test " : "ALICE@example.test",
-                    null);
-            assertThat(decision.permitted()).isTrue();
-            assertThat(decision.retryAfterSeconds()).isZero();
+                    null).permitted()).isTrue();
         }
 
         SharedAccountRequestRateLimiter.Decision blocked =
-                limiter.acquirePasswordReset("alice@example.test", null);
+                limiter.acquireRegistration("alice@example.test", null);
+        SharedAccountRequestRateLimiter.Decision resend =
+                limiter.acquireVerificationResend("alice@example.test", null);
 
         assertThat(blocked.permitted()).isFalse();
         assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
-        assertThat(shared.attempts).containsEntry(
-                "neurosql:account-request:password-reset:email:alice@example.test", 5);
+        assertThat(resend.permitted()).isTrue();
+        assertThat(shared.thresholds).containsEntry(
+                "neurosql:account-lifecycle:email:registration:alice@example.test", 5);
+        assertThat(shared.thresholds).containsEntry(
+                "neurosql:account-lifecycle:email:verification-resend:alice@example.test", 5);
     }
 
     @Test
-    void optionalClientIpQuotaIsSharedAcrossDifferentEmails() {
-        for (int attempt = 0; attempt < 4; attempt++) {
-            assertThat(limiter.acquirePasswordReset(
-                    "person" + attempt + "@example.test", "203.0.113.7").permitted()).isTrue();
+    void registrationAndResendShareThirtyAttemptClientIpBucket() {
+        String ip = "203.0.113.7";
+        for (int attempt = 0; attempt < 29; attempt++) {
+            SharedAccountRequestRateLimiter.Decision decision = attempt % 2 == 0
+                    ? limiter.acquireRegistration("person" + attempt + "@example.test", ip)
+                    : limiter.acquireVerificationResend("person" + attempt + "@example.test", ip);
+            assertThat(decision.permitted()).isTrue();
         }
 
         SharedAccountRequestRateLimiter.Decision blocked =
-                limiter.acquirePasswordReset("another@example.test", "203.0.113.7");
+                limiter.acquireVerificationResend("another@example.test", ip);
 
         assertThat(blocked.permitted()).isFalse();
         assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
         assertThat(shared.attempts).containsEntry(
-                "neurosql:account-request:password-reset:ip:203.0.113.7", 5);
+                "neurosql:account-lifecycle:ip:203.0.113.7", 30);
+        assertThat(shared.thresholds).containsEntry(
+                "neurosql:account-lifecycle:ip:203.0.113.7", 30);
+    }
+
+    @Test
+    void verificationConsumptionHasAnIndependentThirtyAttemptIpBucket() {
+        String ip = "2001:db8::1";
+        for (int attempt = 0; attempt < 29; attempt++) {
+            assertThat(limiter.acquireVerificationConsumption(ip).permitted()).isTrue();
+        }
+
+        SharedAccountRequestRateLimiter.Decision blocked =
+                limiter.acquireVerificationConsumption("2001:0db8:0:0:0:0:0:1");
+
+        assertThat(blocked.permitted()).isFalse();
+        assertThat(shared.attempts).containsEntry(
+                "neurosql:account-lifecycle:verification-consume:ip:2001:db8:0:0:0:0:0:1", 30);
+        // Token-consumption attempts do not consume the registration/resend IP bucket.
+        assertThat(limiter.acquireRegistration("new@example.test", ip).permitted()).isTrue();
+    }
+
+    @Test
+    void passwordResetKeepsItsOwnFiveAttemptBuckets() {
+        for (int attempt = 0; attempt < 4; attempt++) {
+            assertThat(limiter.acquirePasswordReset("reset@example.test", null).permitted()).isTrue();
+        }
+
+        assertThat(limiter.acquirePasswordReset("RESET@example.test", null).permitted()).isFalse();
+        assertThat(limiter.acquireRegistration("reset@example.test", null).permitted()).isTrue();
+    }
+
+    @Test
+    void missingTrustedClientAddressDoesNotCreateAnIpBucket() {
+        assertThat(limiter.acquireRegistration("alice@example.test", null).permitted()).isTrue();
+        assertThat(limiter.acquireVerificationConsumption(null).permitted()).isTrue();
+        assertThat(shared.attempts).containsOnlyKeys(
+                "neurosql:account-lifecycle:email:registration:alice@example.test");
     }
 
     @Test
     void malformedClientAddressIsRejectedBeforeRecordingAttempts() {
-        assertThatThrownBy(() -> limiter.acquirePasswordReset("alice@example.test", "untrusted-proxy.example"))
+        assertThatThrownBy(() -> limiter.acquireRegistration(
+                "alice@example.test", "untrusted-proxy.example"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("valid client IP");
         assertThat(shared.attempts).isEmpty();
@@ -64,16 +108,18 @@ class SharedAccountRequestRateLimiterTest {
 
     private static final class FakeSharedLimiter implements DurableLoginAttemptRateLimiter {
         private final Map<String, Integer> attempts = new HashMap<>();
+        private final Map<String, Integer> thresholds = new HashMap<>();
 
         @Override
         public long retryAfterSeconds(String identity) {
-            return attempts.getOrDefault(identity, 0) >= 5 ? 900 : 0;
+            return attempts.getOrDefault(identity, 0) >= thresholds.getOrDefault(identity, 5) ? 900 : 0;
         }
 
         @Override
-        public void recordFailure(String identity) {
+        public void recordFailure(String identity, int maxAttempts) {
+            thresholds.put(identity, maxAttempts);
             int current = attempts.getOrDefault(identity, 0);
-            if (current < 5) {
+            if (current < maxAttempts) {
                 attempts.put(identity, current + 1);
             }
         }
@@ -81,6 +127,7 @@ class SharedAccountRequestRateLimiterTest {
         @Override
         public void recordSuccess(String identity) {
             attempts.remove(identity);
+            thresholds.remove(identity);
         }
     }
 }
