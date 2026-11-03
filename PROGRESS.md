@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — workspace AI SQL explanation action added; GitHub Actions run #369 passed.
+Last verified: 2026-11-03 — AI SQL performance recommendation API added; GitHub Actions run #373 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1280,4 +1280,22 @@ Last verified: 2026-11-03 — workspace AI SQL explanation action added; GitHub 
 - [x] No production schema/data/role changes, deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next milestone
-- [ ] Add AI-assisted performance recommendations using the existing non-ANALYZE EXPLAIN plan as bounded input. Distinguish estimated plan costs from measured runtime, reuse workspace authorization and the shared AI quota, and never execute or automatically apply suggested SQL.
+- [x] Added the gated AI SQL performance recommendation API using the existing non-ANALYZE EXPLAIN path, bounded plan sanitization, workspace authorization, and the shared AI quota.
+- [ ] Add an explicit frontend performance-recommendation action and panel. It must request a fresh server-side plan for the current SQL, cancel stale requests on SQL/workspace/session changes, label planner estimates clearly, and never execute or apply suggested SQL.
+
+
+## AI SQL performance recommendation API — PR #9 (2026-11-03)
+
+- [x] Re-read the current feature-branch progress tracker and inspected the latest repository/PR source, AI provider and explanation services, non-ANALYZE EXPLAIN executor, workspace authorization policy, dedicated Neon project/database/branches/roles, Vercel project/deployment metadata, and confirmed Render workspace/service/deploy history before selecting this milestone.
+- [x] Added POST /api/sql/ai/performance. The endpoint validates one read-only SELECT/WITH statement and asks the existing ReadOnlyQueryExecutor for EXPLAIN (FORMAT JSON, COSTS TRUE, VERBOSE FALSE, SETTINGS FALSE). It never uses EXPLAIN ANALYZE and never executes the query.
+- [x] Added a strict plan sanitizer. The provider receives only a bounded tree of node types, selected schema/object identifiers, planner costs, estimated rows/width, and safe structural flags. Filter expressions, index conditions, SQL text, literal values, actual timing/row fields, and result rows are excluded. Raw plan input is capped at 65,536 characters; provider context is capped at 16,000 characters, 80 nodes, and depth 12.
+- [x] The prompt and response warnings distinguish planner cost units and estimated rows from measured runtime/actual row counts. Recommendations are advisory, must be checked against workload evidence, and are not executable SQL or automatically applied changes.
+- [x] Added a dedicated NEUROSQL_AI_SQL_PERFORMANCE_ENABLED flag, false by default. The endpoint additionally requires AI provider configuration, durable sessions, the shared PostgreSQL-backed AI quota, and the separate SQL execution data plane. The controller requires a durable session and the workspace filter grants only VIEWER-or-higher membership; responses are no-store.
+- [x] Added service tests for SQL/literal/filter redaction, read-only validation, malformed and ANALYZE plan rejection, bounded plan truncation, provider output validation, and non-execution. Added workspace HTTP tests for viewer authorization and quota enforcement.
+- [x] GitHub Actions run #373 (ID 41614373817, https://github.com/plDilipkumar/NexusOps/actions/runs/41614373817) passed on final code commit 964e0a1fabd3a8d6d465fc8e5b887d6408d312d5: backend Maven verification ran 371 tests with 0 failures/errors and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63; frontend tests passed 86/86; TypeScript compilation and Vite production build passed (1,594 modules transformed). Production API/database smoke was skipped because PR #9 remains unmerged.
+- [x] Fresh read-only Neon checks: free project neurosql (lingering-dew-88806235) remains PostgreSQL 17.11 in AWS ap-southeast-1. Production main (br-empty-credit-b360dmpc) contains dedicated database neurosql_db with no non-system application tables; only neurosql_owner is a LOGIN role there, with CREATEDB/CREATEROLE privileges. Temporary V6 review branch br-silent-cherry-b3k2vqtj contains the eight proposed tables under neurosql_app; neurosql_auth_runtime is NOLOGIN and neurosql_sql_readonly is not provisioned. No database writes or role changes were made.
+- [x] Vercel project neurosql remains on Hobby/free with live=false; latest production-target deployment is still the older main commit 6425ab4. A deployment lookup for code commit 964e0a1fabd3a8d6d465fc8e5b887d6408d312d5 returned zero deployments. No deployment or plan upgrade was triggered.
+- [x] Render neurosql-api remains on the free plan in the confirmed workspace, Singapore, repository branch main, Docker context backend, and commit auto-deploy enabled. Latest live deployment remains dep-dbgfqe6gekts738l9eng for commit 746d58da4d47b1fb49a6796dda8b424c8a6c969d; the feature branch is not deployed.
+- [ ] No live AI provider request or real database EXPLAIN request was performed. No provider key is configured, and the dedicated neurosql_sql_readonly LOGIN is absent. The new endpoint is code/CI verified only and remains disabled by default.
+- [ ] PR #9 remains open/unmerged; draft PR #7 remains unapproved/unmerged. Proposed V1–V6 migrations are not applied to Neon main. Production durable authentication, shared throttling, SQL execution/EXPLAIN, and AI features remain blocked on explicit schema approval, verified least-privilege LOGIN roles, secure HMAC configuration, and deliberate provider configuration.
+- [x] No production schema/data/role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
