@@ -1,3 +1,5 @@
+import {accountPasswordError} from "./accountOnboarding.ts";
+
 const RESET_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export type CapturedPasswordResetToken = {
@@ -15,12 +17,20 @@ export function capturePasswordResetToken(
   replaceUrl: (cleanUrl: string) => void,
 ): CapturedPasswordResetToken {
   const url = new URL(href);
+  const flows = url.searchParams.getAll("flow");
+  if (flows.includes("email-verification")) {
+    return { present: false, token: null };
+  }
+  if (flows.length > 0 && (flows.length !== 1 || flows[0] !== "password-reset")) {
+    return { present: false, token: null };
+  }
   const values = url.searchParams.getAll("token");
-  if (values.length === 0) {
+  if (values.length === 0 && flows.length === 0) {
     return { present: false, token: null };
   }
 
   url.searchParams.delete("token");
+  if (flows.length === 1 && flows[0] === "password-reset") url.searchParams.delete("flow");
   replaceUrl(`${url.pathname}${url.search}${url.hash}`);
 
   const candidate = values.length === 1 ? values[0] : null;
@@ -31,19 +41,7 @@ export function capturePasswordResetToken(
 }
 
 export function passwordResetPasswordError(password: string): string | null {
-  if (Array.from(password).length < 12) {
-    return "Use at least 12 characters for your new password.";
-  }
-  if (new TextEncoder().encode(password).length > 72) {
-    return "Your new password is too long. Use no more than 72 UTF-8 bytes.";
-  }
-  for (const character of password) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)) {
-      return "Your new password cannot contain control characters.";
-    }
-  }
-  return null;
+  return accountPasswordError(password, "new password");
 }
 
 function apiUrl(apiBaseUrl: string, path: string): string {

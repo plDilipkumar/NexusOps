@@ -1,6 +1,8 @@
 import {useEffect,useRef,useState,type FormEvent} from "react";
 import {Activity,ArrowRight,Bookmark,Braces,CheckCircle2,ChevronDown,Clock3,Database,FileCode2,Gauge,History,Layers3,LockKeyhole,Play,Plus,Search,Settings2,ShieldCheck,Sparkles,Square,Table2,TerminalSquare,WandSparkles,Zap} from "lucide-react";
 import {buildDurableSchemaHeaders,createRequestGuard,parseIssuedSession,parseSessionIdentity,parseWorkspaceList,type DurableWorkspace} from "./durableAuth.ts";
+import {captureEmailVerificationToken} from "./accountOnboarding.ts";
+import {AccountOnboardingPanel} from "./AccountOnboardingPanel.tsx";
 import {capturePasswordResetToken} from "./passwordRecovery.ts";
 import {PasswordRecoveryPanel} from "./PasswordRecoveryPanel.tsx";
 import {cancelReadOnlyQuery,createExecutionId,executeReadOnlyQuery,type QueryResult} from "./sqlExecution.ts";
@@ -44,6 +46,7 @@ const [expandedTables,setExpandedTables]=useState<Record<string,boolean>>({});
 const [durableEmail,setDurableEmail]=useState("");
 const [durablePassword,setDurablePassword]=useState("");
 const [passwordRecovery,setPasswordRecovery]=useState<{mode:"request"|"confirm";token:string|null}|null>(null);
+const [accountOnboarding,setAccountOnboarding]=useState<{mode:"register"|"verify"|"resend";token:string|null}|null>(null);
 const [durableSession,setDurableSession]=useState<DurableSession|null>(null);
 const [durableWorkspaces,setDurableWorkspaces]=useState<DurableWorkspace[]>([]);
 const [selectedWorkspaceId,setSelectedWorkspaceId]=useState("");const [savedQuerySeed,setSavedQuerySeed]=useState("");
@@ -237,7 +240,14 @@ const restoreHistoryQuery=(query:string)=>{invalidateQuery();setSql(query);setSa
 const openSaveQuery=()=>{if(!canCreateSavedQuery)return;setSavedQuerySeed(sql);setNotice("");setActive("Saved queries");};
 
 useEffect(()=>{
-  const captured=capturePasswordResetToken(window.location.href,cleanUrl=>window.history.replaceState(window.history.state,"",cleanUrl));
+  const replaceUrl=(cleanUrl:string)=>window.history.replaceState(window.history.state,"",cleanUrl);
+  const verification=captureEmailVerificationToken(window.location.href,replaceUrl);
+  if(verification.present){
+    setActive("Schema explorer");
+    setAccountOnboarding({mode:"verify",token:verification.token});
+    return;
+  }
+  const captured=capturePasswordResetToken(window.location.href,replaceUrl);
   if(captured.present){
     setActive("Schema explorer");
     setPasswordRecovery({mode:"confirm",token:captured.token});
@@ -275,14 +285,18 @@ return <div className="shell"><aside className="sidebar"><div className="brand">
     ) : (
       passwordRecovery ? (
         <PasswordRecoveryPanel apiBaseUrl={API_BASE_URL} initialMode={passwordRecovery.mode} initialToken={passwordRecovery.token} onBack={()=>setPasswordRecovery(null)}/>
+      ) : accountOnboarding ? (
+        <AccountOnboardingPanel apiBaseUrl={API_BASE_URL} initialMode={accountOnboarding.mode} initialToken={accountOnboarding.token} onBack={()=>setAccountOnboarding(null)}/>
       ) : (
         <form className="schema-login" onSubmit={handleDurableLogin}>
           <div className="schema-login-icon"><LockKeyhole size={19}/></div><h3>Sign in to NeuroSQL</h3><p>Use an active, email-verified NeuroSQL account. Your bearer token stays in memory and is cleared when you sign out or the session expires.</p>
           <label>Email<input type="email" autoComplete="username" value={durableEmail} onChange={event=>setDurableEmail(event.target.value)} maxLength={254} required /></label>
           <label>Password<input type="password" autoComplete="current-password" value={durablePassword} onChange={event=>setDurablePassword(event.target.value)} maxLength={256} required /></label>
           <button type="submit" className="run" disabled={durableAuthLoading}>{durableAuthLoading?"Signing in…":"Sign in and load workspaces"} <ArrowRight size={14}/></button>
-          <button type="button" className="secondary" onClick={()=>{setSchemaError("");setPasswordRecovery({mode:"request",token:null});}}>Forgot password?</button>
-          <small>Accounts must be provisioned and email-verified. Registration is not available yet.</small>
+          <button type="button" className="secondary" onClick={()=>{setSchemaError("");setAccountOnboarding(null);setPasswordRecovery({mode:"request",token:null});}}>Forgot password?</button>
+          <button type="button" className="secondary" onClick={()=>{setSchemaError("");setPasswordRecovery(null);setAccountOnboarding({mode:"register",token:null});}}>Create account</button>
+          <button type="button" className="secondary" onClick={()=>{setSchemaError("");setPasswordRecovery(null);setAccountOnboarding({mode:"resend",token:null});}}>Resend verification email</button>
+          <small>Use an email-verified account. New accounts must verify their email before signing in.</small>
         </form>
       )
     )

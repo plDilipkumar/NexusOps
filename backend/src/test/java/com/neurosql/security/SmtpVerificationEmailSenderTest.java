@@ -45,7 +45,7 @@ class SmtpVerificationEmailSenderTest {
         assertThat(message.getValue().getTo()).containsExactly("alice@example.test");
         assertThat(message.getValue().getSubject()).isEqualTo("Verify your NeuroSQL email");
         assertThat(message.getValue().getText())
-                .contains(VERIFICATION_URL + "?token=" + TOKEN)
+                .contains(VERIFICATION_URL + "?flow=email-verification&token=" + TOKEN)
                 .contains("expires in 24 hours");
     }
 
@@ -110,7 +110,7 @@ class SmtpVerificationEmailSenderTest {
         assertThat(message.getValue().getTo()).containsExactly("alice@example.test");
         assertThat(message.getValue().getSubject()).isEqualTo("Reset your NeuroSQL password");
         assertThat(message.getValue().getText())
-                .contains(PASSWORD_RESET_URL + "?token=" + TOKEN)
+                .contains(PASSWORD_RESET_URL + "?flow=password-reset&token=" + TOKEN)
                 .contains("expires in 30 minutes");
     }
 

@@ -59,6 +59,7 @@ public class SmtpVerificationEmailSender implements VerificationEmailSender, Pas
         }
 
         String verificationLink = UriComponentsBuilder.fromUri(verificationUrl)
+                .queryParam("flow", "email-verification")
                 .queryParam("token", issuedToken.token())
                 .build()
                 .encode()
@@ -102,6 +103,7 @@ public class SmtpVerificationEmailSender implements VerificationEmailSender, Pas
         }
 
         String resetLink = UriComponentsBuilder.fromUri(passwordResetUrl)
+                .queryParam("flow", "password-reset")
                 .queryParam("token", issuedToken.token())
                 .build()
                 .encode()
