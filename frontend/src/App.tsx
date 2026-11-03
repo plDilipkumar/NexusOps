@@ -12,6 +12,7 @@ import {SqlResults} from "./SqlResults.tsx";
 import {QueryHistoryPanel} from "./QueryHistoryPanel.tsx";
 import {SavedQueriesPanel} from "./SavedQueriesPanel.tsx";
 import {AiSqlCopilot} from "./AiSqlCopilot.tsx";
+import {AiSqlExplanationPanel} from "./AiSqlExplanationPanel.tsx";
 import {replaceSqlDraft} from "./aiSql.ts";
 const example="SELECT customer_id, COUNT(*) AS order_count\nFROM orders\nWHERE created_at >= CURRENT_DATE - INTERVAL '30 days'\nGROUP BY customer_id\nORDER BY order_count DESC\nLIMIT 20;";
 type DatabaseHealth = { status: string; database?: string; postgresVersion?: string; timestamp?: string };
@@ -26,6 +27,7 @@ const DURABLE_AUTH_ENABLED = import.meta.env.VITE_DURABLE_AUTH_ENABLED === "true
 const SCHEMA_LOGIN_ENABLED = import.meta.env.VITE_SCHEMA_LOGIN_ENABLED === "true";
 const SQL_EXECUTION_ENABLED = import.meta.env.VITE_SQL_EXECUTION_ENABLED === "true";
 const AI_SQL_GENERATION_ENABLED = import.meta.env.VITE_AI_SQL_GENERATION_ENABLED === "true";
+const AI_SQL_EXPLANATION_ENABLED = import.meta.env.VITE_AI_SQL_EXPLANATION_ENABLED === "true";
 function basicAuthorization(username: string, password: string) {
   const bytes = new TextEncoder().encode(username + ":" + password);
   let binary = "";
@@ -349,4 +351,4 @@ return <div className="shell"><aside className="sidebar"><div className="brand">
     setSql(replaceSqlDraft(draft));
     setNotice("AI-generated SQL draft inserted into the editor. It has not been executed.");
   }}
-/></div><SqlResults result={queryResult} error={queryError} running={queryRunning}/><SqlExplainPlan result={explainResult} error={explainError} running={explainRunning}/><div className="lower"><article><div className="lowhead"><h3><Layers3 size={16}/> Schema explorer</h3><button onClick={()=>setNotice("Schema browsing API is not connected yet.")}>View all <ArrowRight size={13}/></button></div><div className="empty"><div><Table2 size={21}/></div><b>Your schema will appear here</b><p>Connect and introspect a database to browse tables, columns, and relationships.</p></div></article><article><div className="lowhead"><h3><History size={16}/> Recent activity</h3><button onClick={()=>setNotice("Query history will be persisted after API storage and authentication are implemented.")}>View history <ArrowRight size={13}/></button></div><div className="activity"><Clock3 size={17}/><div><b>Ready for your first query</b><p>Query runs and diagnostics will appear here.</p></div></div><div className="activity"><TerminalSquare size={17}/><div><b>Keyboard-first workflow</b><p>Shortcuts and saved snippets are planned.</p></div></div></article></div><div className="foot"><span>NeuroSQL · Early access build</span><span><ShieldCheck size={13}/> Secure by design · PostgreSQL compatible</span></div></>)}</section></main></div>}
+/></div><SqlResults result={queryResult} error={queryError} running={queryRunning}/><SqlExplainPlan result={explainResult} error={explainError} running={explainRunning}/><AiSqlExplanationPanel apiBaseUrl={API_BASE_URL} enabled={AI_SQL_EXPLANATION_ENABLED} token={durableSession?.token ?? null} workspaceId={selectedWorkspaceId} sql={sql} busy={queryRunning || explainRunning}/><div className="lower"><article><div className="lowhead"><h3><Layers3 size={16}/> Schema explorer</h3><button onClick={()=>setNotice("Schema browsing API is not connected yet.")}>View all <ArrowRight size={13}/></button></div><div className="empty"><div><Table2 size={21}/></div><b>Your schema will appear here</b><p>Connect and introspect a database to browse tables, columns, and relationships.</p></div></article><article><div className="lowhead"><h3><History size={16}/> Recent activity</h3><button onClick={()=>setNotice("Query history will be persisted after API storage and authentication are implemented.")}>View history <ArrowRight size={13}/></button></div><div className="activity"><Clock3 size={17}/><div><b>Ready for your first query</b><p>Query runs and diagnostics will appear here.</p></div></div><div className="activity"><TerminalSquare size={17}/><div><b>Keyboard-first workflow</b><p>Shortcuts and saved snippets are planned.</p></div></div></article></div><div className="foot"><span>NeuroSQL · Early access build</span><span><ShieldCheck size={13}/> Secure by design · PostgreSQL compatible</span></div></>)}</section></main></div>}

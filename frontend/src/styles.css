@@ -144,3 +144,20 @@
 .ai-copilot-result-actions{display:flex;justify-content:flex-end;margin-top:10px}
 .ai-copilot-result-actions button{display:flex;align-items:center;gap:6px}
 @media(max-width:600px){.ai-copilot-form textarea{min-height:82px}.ai-copilot-result pre{max-height:160px}}
+
+
+/* Workspace-scoped AI SQL explanation. */
+.ai-explanation-panel{display:grid;gap:10px;margin-top:14px;padding:14px;border:1px solid #2d405f;border-radius:11px;background:linear-gradient(145deg,#111c2e,#0c1422 78%);min-width:0}
+.ai-explanation-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ai-explanation-heading h3{display:flex;align-items:center;gap:7px;margin:0;color:#e0e9f8;font-size:12px}
+.ai-explanation-heading h3 svg{color:#a99bff}
+.ai-explanation-heading p{margin:5px 0 0;color:#8294b1;font-size:10px;line-height:1.5}
+.ai-explanation-privacy,.ai-explanation-state{margin:0;color:#8b9db9;font-size:9px;line-height:1.6}
+.ai-explanation-error{margin:0;padding:9px 10px;border:1px solid #74414e;border-radius:7px;background:#271822;color:#ffc0c9;font-size:10px;line-height:1.6}
+.ai-explanation-result{display:grid;gap:9px;padding:12px;border:1px solid #334568;border-radius:8px;background:#0a1321}
+.ai-explanation-result-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ai-explanation-result-heading b{font-size:10px;color:#dce6fb}
+.ai-explanation-result-heading span{font-size:8px;color:#a7c6b2;text-transform:uppercase;letter-spacing:.04em}
+.ai-explanation-result p{margin:0;color:#c9d6ec;font-size:10px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
+.ai-explanation-result ul{display:grid;gap:5px;margin:0;padding-left:17px;color:#8fa2c0;font-size:9px;line-height:1.6}
+@media(max-width:600px){.ai-explanation-heading{align-items:flex-start;flex-direction:column}.ai-explanation-heading button{width:100%;justify-content:center}}
