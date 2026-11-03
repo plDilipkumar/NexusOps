@@ -100,7 +100,11 @@ export async function registerAccount(
 ): Promise<void> {
   const email = normalizeEmail(input.email);
   const displayName = input.displayName.trim();
-  if (!displayName || Array.from(displayName).length > 120 || /[\\u0000-\\u001f\\u007f-\\u009f]/u.test(displayName)) {
+  const displayNameHasControl = Array.from(displayName).some(character => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+  });
+  if (!displayName || Array.from(displayName).length > 120 || displayNameHasControl) {
     throw new Error("Enter a display name of 1 to 120 characters without control characters.");
   }
   const passwordError = accountPasswordError(input.password);
