@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — frontend AI SQL performance recommendation panel added; GitHub Actions run #377 passed.
+Last verified: 2026-11-03 — AI performance panel request lifecycle coverage added; GitHub Actions run #379 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1319,5 +1319,21 @@ Last verified: 2026-11-03 — frontend AI SQL performance recommendation panel a
 - [x] No production database writes, migrations, role changes, deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next milestone
-- [ ] Add focused frontend lifecycle coverage for the performance panel's abort/stale-response behavior and verify the performance-lab navigation at narrow and desktop widths without enabling the feature in production.
+- [x] Add focused frontend lifecycle coverage for the performance panel's abort/stale-response behavior without enabling the feature in production.
+- [ ] Perform browser-based viewport verification of the performance-lab navigation at desktop and narrow widths. Static source inspection confirms the Performance lab entry scrolls to the panel and the sidebar collapses at the 850px and 520px breakpoints; a real browser viewport test remains outstanding.
 - [ ] Keep production blocked until the user approves the reviewed V1–V6 schema and the required restricted database roles/HMAC/provider settings are provisioned and verified. Do not apply migrations to Neon `main` without explicit approval.
+
+
+## AI performance panel request lifecycle coverage — PR #9 (2026-11-03)
+
+- [x] Re-read the current feature-branch tracker and inspected the active PR/repository, Neon project `neurosql` and dedicated database `neurosql_db`, Vercel project linkage/deployments, and the confirmed Render workspace/service/deploy history before selecting this step.
+- [x] Replaced the performance panel's separate request-generation guard and AbortController refs with a shared `createAiSqlPerformanceRequestLifecycle` helper. Starting a replacement request aborts the previous request; invalidation aborts the active request; an obsolete request cannot clear a newer request.
+- [x] Added `isAiSqlPerformanceRequestContextCurrent` and wired it into the panel so a result is accepted only while API base URL, feature flag, bearer session, workspace, SQL draft, and busy state all still match the request context.
+- [x] Added focused tests for active-request abort on invalidation, replacement-request cancellation, stale completion isolation, and each of the six context changes. These exercise the same lifecycle helper used by the React panel.
+- [x] GitHub Actions run #379 (ID `41630287461`, https://github.com/plDilipkumar/NexusOps/actions/runs/41630287461) passed on code commit `5ffa3bee176b4e65bf2f353d4f753146f86b7a8e`: backend Maven verification ran 371 tests with 0 failures/errors and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63; frontend tests passed 96/96; TypeScript compilation and Vite production build passed (1,596 modules transformed).
+- [x] Static navigation inspection confirmed five sidebar destinations including Performance lab, which selects the panel's page state and scrolls to the panel. Responsive CSS collapses the sidebar at 850px and reduces its width again at 520px. No real browser viewport or visual regression test was run in this step.
+- [x] Neon read-only checks reconfirmed free PostgreSQL 17 project `neurosql`, production `main` branch, and dedicated database `neurosql_db`. Production `main` still has zero application tables and only the elevated `neurosql_owner` login. The separate V6 review branch contains eight `neurosql_app` tables; `neurosql_auth_runtime` remains NOLOGIN and `neurosql_sql_readonly` is not provisioned. No production schema/data/role changes were made.
+- [x] Vercel Hobby project `neurosql` remains linked to `plDilipkumar/NexusOps`. Latest production-target deployment is READY for older `main` commit `6425ab4`; no deployment for this request-lifecycle commit was present in the inspected feature-preview records. No deployment or plan change was triggered.
+- [x] Render `neurosql-api` remains on the free plan in the confirmed Dilip Kumar workspace, linked to repository `main` with Docker context `backend`; latest live deployment remains commit `746d58d`. No Render deployment or environment change was made.
+- [ ] PR #9 remains open and unmerged; schema PR #7 remains a draft. No live AI provider key/request is available. Production authentication, SQL execution/EXPLAIN, and AI remain blocked on explicit schema approval, least-privilege LOGIN roles, secure HMAC configuration, and deliberate provider configuration.
+- [x] No production database writes/migrations, role changes, deployments, environment changes, credentials, or paid resources were introduced.
