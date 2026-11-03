@@ -463,6 +463,80 @@ async function testProvisionalRevocationFailure({ issuedToken, networkFailure })
   }
 }
 
+
+async function testUserInitiatedLogoutFailure({ issuedToken, networkFailure, delayResponse = false }) {
+  const page = await browser.newPage();
+  const logoutAuthorization = [];
+  let releaseLogout;
+  const logoutGate = new Promise(resolve => { releaseLogout = resolve; });
+  let markLogoutStarted;
+  const logoutStarted = new Promise(resolve => { markLogoutStarted = resolve; });
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ token: issuedToken, expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
+    }),
+    "/api/auth/me": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ userId, sessionId, expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
+    }),
+    "/api/auth/workspaces": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{ workspaceId: workspaceA, name: "Analytics", slug: "analytics", role: "OWNER" }]),
+    }),
+    "/api/schema": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(schemaPayload("neurosql_test")),
+    }),
+    "/api/auth/logout": async route => {
+      logoutAuthorization.push(route.request().headers().authorization);
+      markLogoutStarted();
+      if (delayResponse) await logoutGate;
+      if (networkFailure) {
+        await route.abort("failed");
+      } else {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "internal database detail", debug: "must not reach the browser" }),
+        });
+      }
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    await waitForWorkspaceReady(page, workspaceA);
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await logoutStarted;
+    await page.getByRole("heading", { name: "Sign in to NeuroSQL" }).waitFor({ state: "visible" });
+    await assertNoDurableWorkspaceState(page);
+    assert.deepEqual(logoutAuthorization, ["Bearer " + issuedToken],
+      "User-initiated logout must send the active bearer token only to the revocation endpoint");
+    assert.equal(unexpected.length, 0, "Logout failure must not cause unmocked API requests");
+    if (delayResponse) releaseLogout();
+    await assertLoginAlert(page, "Signed out locally, but the server could not confirm session revocation. The session may remain valid until it expires.");
+    const alertText = await page.getByRole("alert").textContent() ?? "";
+    assert.equal(alertText.includes("internal database detail"), false,
+      "Revocation response details must not be exposed in the browser");
+    assert.equal(alertText.includes(issuedToken), false, "The bearer token must never be shown in the warning");
+    assert.equal(page.url().includes(issuedToken), false, "The bearer token must never appear in the URL");
+    await assertNoDurableWorkspaceState(page);
+    await assertNoBrowserPersistence(page);
+    console.log(networkFailure
+      ? "User logout network failure clears local state and reports unconfirmed server revocation (mock API only)"
+      : "User logout HTTP failure clears local state immediately and reports unconfirmed server revocation (mock API only)");
+  } finally {
+    releaseLogout();
+    await page.close();
+  }
+}
+
 try {
   await waitForPreview();
   browser = await chromium.launch({ headless: true });
@@ -473,6 +547,8 @@ try {
   await testWorkspaceListFailureRevokesProvisionalSession();
   await testProvisionalRevocationFailure({ issuedToken: "E".repeat(43), networkFailure: false });
   await testProvisionalRevocationFailure({ issuedToken: "F".repeat(43), networkFailure: true });
+  await testUserInitiatedLogoutFailure({ issuedToken: "G".repeat(43), networkFailure: false, delayResponse: true });
+  await testUserInitiatedLogoutFailure({ issuedToken: "H".repeat(43), networkFailure: true });
 } finally {
   await browser?.close();
   preview.kill("SIGTERM");
