@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — AI performance panel request lifecycle coverage added; GitHub Actions run #379 passed.
+Last verified: 2026-11-03 — Playwright viewport verification added for workspace navigation; GitHub Actions run #382 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1320,7 +1320,7 @@ Last verified: 2026-11-03 — AI performance panel request lifecycle coverage ad
 
 ### Next milestone
 - [x] Add focused frontend lifecycle coverage for the performance panel's abort/stale-response behavior without enabling the feature in production.
-- [ ] Perform browser-based viewport verification of the performance-lab navigation at desktop and narrow widths. Static source inspection confirms the Performance lab entry scrolls to the panel and the sidebar collapses at the 850px and 520px breakpoints; a real browser viewport test remains outstanding.
+- [x] Performed browser-based viewport verification of workspace navigation in CI run #382: all five destinations remained visible, keyboard/screen-reader labels and active-page state were present, every destination was clickable, and no horizontal overflow occurred at 1440px, 851px, 850px, 390px, and 320px viewport widths.
 - [ ] Keep production blocked until the user approves the reviewed V1–V6 schema and the required restricted database roles/HMAC/provider settings are provisioned and verified. Do not apply migrations to Neon `main` without explicit approval.
 
 
@@ -1337,3 +1337,18 @@ Last verified: 2026-11-03 — AI performance panel request lifecycle coverage ad
 - [x] Render `neurosql-api` remains on the free plan in the confirmed Dilip Kumar workspace, linked to repository `main` with Docker context `backend`; latest live deployment remains commit `746d58d`. No Render deployment or environment change was made.
 - [ ] PR #9 remains open and unmerged; schema PR #7 remains a draft. No live AI provider key/request is available. Production authentication, SQL execution/EXPLAIN, and AI remain blocked on explicit schema approval, least-privilege LOGIN roles, secure HMAC configuration, and deliberate provider configuration.
 - [x] No production database writes/migrations, role changes, deployments, environment changes, credentials, or paid resources were introduced.
+
+## Responsive workspace navigation and browser verification — PR #9 (2026-11-03)
+
+- [x] Re-read the feature-branch progress tracker and inspected the current PR/repository, Neon project/database/branches, Vercel project linkage and deployments, and Render service/deploy history before selecting this milestone.
+- [x] Added an accessible name to the workspace navigation landmark. Each destination button now exposes an explicit accessible label, an active-page `aria-current="page"` state, and a title tooltip; no destination was removed from the compact icon-only sidebar.
+- [x] Added a Playwright browser smoke test that starts the built Vite preview, stubs the database-health API locally, and checks all five workspace destinations at desktop (1440x900), tablet-wide (851x900), tablet breakpoint (850x900), mobile (390x844), and narrow mobile (320x740).
+- [x] The browser test verifies that every navigation destination is visible, has a usable hit target, can be clicked, updates the active breadcrumb and `aria-current`, and does not cause horizontal document overflow. It does not connect to Render, Neon, or an AI provider.
+- [x] Added Playwright to frontend development dependencies and wired Chromium installation plus the responsive browser check into the frontend CI job. The existing unit-test/build pipeline remains intact.
+- [x] GitHub Actions run #382 (ID `41639779748`, https://github.com/plDilipkumar/NexusOps/actions/runs/41639779748) passed on commit `46eea9b4c806701d25d916e90361a0fcd51cbde9`: backend Maven verification ran 371 tests with 0 failures/errors and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63 with 0 failures/errors/skips; frontend unit tests passed 96/96; TypeScript compilation and Vite production build passed (1,596 modules transformed); Playwright passed all five viewport profiles. The production API/database smoke test was skipped because PR #9 is not merged.
+- [x] Fresh Neon read-only checks reconfirmed project `neurosql` on PostgreSQL 17.11. Production `main` database `neurosql_db` has zero application tables and only the elevated `neurosql_owner` LOGIN role (CREATEDB/CREATEROLE). The separate V6 review branch contains eight proposed application tables; `neurosql_auth_runtime` is still NOLOGIN and `neurosql_sql_readonly` is absent. No production or review-branch writes were made.
+- [x] Vercel project `neurosql` is still associated with the `NexusOps` Git repository on the Hobby plan. Project metadata reports `live=false`; SSO protection is enabled for deployments except custom domains. The latest production-target deployment remains READY for older `main` commit `6425ab4`; no deployment was found for this feature-branch commit. No deployment or plan change was triggered.
+- [x] Render service `neurosql-api` remains on the free plan in the confirmed workspace, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. Latest live deployment remains commit `746d58d`; this feature branch is not deployed.
+- [ ] PR #9 remains open/unmerged; schema PR #7 remains draft/unapproved. Production durable authentication, SQL execution/EXPLAIN, and AI features remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, and deliberate AI provider configuration.
+- [x] No production database writes/migrations, role changes, deployments, environment changes, credentials, or paid resources were introduced.
+- [ ] Next non-production milestone: add keyboard-only navigation and focus-visible browser coverage without enabling any gated production feature.
