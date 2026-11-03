@@ -88,7 +88,7 @@ async function testRegistrationAndResend() {
 
     await page.getByLabel("Display name").fill("  Alice Smith  ");
     await page.getByLabel("Email").fill("  ALICE@EXAMPLE.COM ");
-    await page.getByLabel("Password").fill("correct-horse-battery-7");
+    await page.getByLabel("Password", { exact: true }).fill("correct-horse-battery-7");
     await page.getByLabel("Confirm password").fill("a-different-password");
     await page.getByRole("button", { name: "Create account", exact: true }).click();
     assert.match((await page.getByRole("alert").textContent()) ?? "", /passwords do not match/i);
