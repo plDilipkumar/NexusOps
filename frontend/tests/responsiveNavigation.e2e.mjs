@@ -77,6 +77,52 @@ try {
     console.log(`Responsive navigation passed: ${viewport.name} (${viewport.width}x${viewport.height})`);
   }
 
+  const skipLinkViewports = [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "mobile", width: 390, height: 844 },
+  ];
+  for (const viewport of skipLinkViewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+    await page.keyboard.press("Tab");
+
+    const skipLink = page.getByRole("link", { name: "Skip to main content", exact: true });
+    const focusedText = await page.evaluate(() => document.activeElement?.textContent?.trim());
+    assert.equal(focusedText, "Skip to main content",
+      `${viewport.name}: skip link should be the first keyboard destination`);
+
+    const focusStyle = await skipLink.evaluate(element => {
+      const style = window.getComputedStyle(element);
+      const bounds = element.getBoundingClientRect();
+      return {
+        focusVisible: element.matches(":focus-visible"),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+        top: bounds.top,
+        bottom: bounds.bottom,
+      };
+    });
+    assert.equal(focusStyle.focusVisible, true,
+      `${viewport.name}: skip link should expose keyboard focus-visible state`);
+    assert.equal(focusStyle.outlineStyle, "solid",
+      `${viewport.name}: skip link should render a visible focus outline`);
+    assert.ok(focusStyle.outlineWidth >= 3,
+      `${viewport.name}: skip link focus outline should be at least 3px`);
+    assert.ok(focusStyle.top >= 0 && focusStyle.bottom <= viewport.height,
+      `${viewport.name}: focused skip link should be visible inside the viewport`);
+
+    await page.keyboard.press("Enter");
+    const target = await page.evaluate(() => ({
+      hash: window.location.hash,
+      activeId: document.activeElement instanceof HTMLElement ? document.activeElement.id : "",
+    }));
+    assert.equal(target.hash, "#main-content",
+      `${viewport.name}: skip link should navigate to the main content fragment`);
+    assert.equal(target.activeId, "main-content",
+      `${viewport.name}: skip link should move keyboard focus to the main content region`);
+    console.log(`Skip-to-content passed: ${viewport.name} (${viewport.width}x${viewport.height})`);
+  }
+
   const keyboardViewports = [
     { name: "desktop", width: 1440, height: 900 },
     { name: "mobile", width: 390, height: 844 },
@@ -87,6 +133,9 @@ try {
     const navigation = page.getByRole("navigation", { name: "Workspace navigation" });
     await navigation.waitFor({ state: "visible" });
 
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), "Skip to main content",
+      `${viewport.name}: skip link should precede workspace navigation in tab order`);
     await page.keyboard.press("Tab");
     for (let index = 0; index < destinations.length; index += 1) {
       const destination = destinations[index];

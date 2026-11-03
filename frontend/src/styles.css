@@ -179,3 +179,9 @@
 @media(max-width:600px){.ai-performance-heading{align-items:flex-start;flex-direction:column}.ai-performance-heading button{width:100%;justify-content:center}}
 
 .sidebar nav .nav:focus-visible{outline:2px solid #9bb8ff;outline-offset:2px;background:#182946;color:#e7ecf6}
+
+
+.skip-link{position:fixed;top:12px;left:12px;z-index:1000;transform:translateY(calc(-100% - 16px));padding:10px 14px;border:2px solid #dce8ff;border-radius:8px;background:#315bb8;color:#fff;font-size:12px;font-weight:700;text-decoration:none;box-shadow:0 4px 16px #0008;transition:transform .15s ease}
+.skip-link:focus-visible{transform:translateY(0);outline:3px solid #fff;outline-offset:3px}
+#main-content:focus{outline:2px solid #719aff;outline-offset:-2px}
+@media(prefers-reduced-motion:reduce){.skip-link{transition:none}}
