@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — AI SQL performance recommendation API added; GitHub Actions run #373 passed.
+Last verified: 2026-11-03 — frontend AI SQL performance recommendation panel added; GitHub Actions run #377 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1299,3 +1299,25 @@ Last verified: 2026-11-03 — AI SQL performance recommendation API added; GitHu
 - [ ] No live AI provider request or real database EXPLAIN request was performed. No provider key is configured, and the dedicated neurosql_sql_readonly LOGIN is absent. The new endpoint is code/CI verified only and remains disabled by default.
 - [ ] PR #9 remains open/unmerged; draft PR #7 remains unapproved/unmerged. Proposed V1–V6 migrations are not applied to Neon main. Production durable authentication, shared throttling, SQL execution/EXPLAIN, and AI features remain blocked on explicit schema approval, verified least-privilege LOGIN roles, secure HMAC configuration, and deliberate provider configuration.
 - [x] No production schema/data/role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+
+## Frontend AI SQL performance recommendation panel — PR #9 (2026-11-03)
+
+- [x] Re-read the current feature-branch progress tracker and inspected the current repository, open PR #9, Neon project/database/branches/roles, Vercel Git linkage and deployment records, and the confirmed Render workspace/service/deploy history before selecting this milestone.
+- [x] Added `frontend/src/aiSqlPerformance.ts` with a bounded response parser and a typed request helper for `POST /api/sql/ai/performance`. Requests carry the selected SQL only to the NeuroSQL backend, use the active durable bearer session and workspace header, set `cache: no-store`, omit browser credentials, and forward an AbortSignal.
+- [x] Added `frontend/src/AiSqlPerformancePanel.tsx` to the SQL workspace. The explicit “Get recommendations” action requests a fresh backend plan; it does not run or change the SQL. Recommendations render as plain text with statement type, planner-estimate warnings, and a visible notice when the plan context was truncated.
+- [x] Added request cancellation and stale-context guards for SQL edits, workspace/session changes, API/feature-flag changes, query/EXPLAIN activity, and component unmount. A late response cannot replace recommendations for a different SQL draft or workspace.
+- [x] Added safe error mapping and response bounds (4,000 recommendation characters, at most eight warnings of 500 characters each). Provider/server response details are not surfaced to the browser.
+- [x] Added the frontend flag `VITE_AI_SQL_PERFORMANCE_ENABLED`, false by default, documented it in `frontend/.env.example`, and added the new tests to the normal frontend test command.
+- [x] The privacy notice explains that SQL is sent to the NeuroSQL backend for non-ANALYZE EXPLAIN, while only bounded sanitized plan structure/estimates/object identifiers are sent to the configured AI provider. Filter expressions, literal values, result rows, and actual runtime measurements are excluded by the backend sanitizer.
+- [x] GitHub Actions run #377 (ID `41622430589`, https://github.com/plDilipkumar/NexusOps/actions/runs/41622430589) passed on final code commit `ef45a63f39c23cfd478ce5d63ec954d6b34fe425`: backend Maven verification 371 tests, 0 failures/errors, 63 expected database-gated skips; disposable PostgreSQL 17 integration 63/63 passed; frontend tests 93/93 passed; TypeScript compilation and Vite production build passed (1,596 modules transformed). The production API/database smoke job was skipped because PR #9 remains unmerged.
+- [x] Direct Neon checks reconfirmed free project `neurosql` (`lingering-dew-88806235`), PostgreSQL 17.11, and production default branch `main` (`br-empty-credit-b360dmpc`). Dedicated database `neurosql_db` still has zero application tables; the only inspected `neurosql_*` LOGIN role is elevated `neurosql_owner` (`CREATEDB` and `CREATEROLE`). Temporary V6 review branch `br-silent-cherry-b3k2vqtj` remains separate and contains the eight proposed `neurosql_app` tables. No production schema/data/role changes were made.
+- [x] Vercel Git deployment context confirms Hobby project `neurosql` is linked to `plDilipkumar/NexusOps`. A deployment lookup for final code commit `ef45a63f39c23cfd478ce5d63ec954d6b34fe425` returned zero deployments. Latest listed production deployment remains READY for older `main` commit `6425ab4`; no deployment or plan upgrade was triggered.
+- [x] Render service `neurosql-api` remains on the free plan in the confirmed Dilip Kumar workspace, Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. Latest live deployment remains `dep-dbgfqe6gekts738l9eng` for older commit `746d58d`; this feature branch is not deployed.
+- [ ] The performance panel and endpoint are code/CI verified only. The frontend and backend flags remain disabled by default; no AI provider key is configured and no live provider request or real NeuroSQL EXPLAIN request was performed.
+- [ ] PR #9 remains open/unmerged and schema PR #7 remains draft/unapproved. V1–V6 have not been applied to Neon `main`. Production durable auth, shared throttling, SQL execution/EXPLAIN, and AI features remain blocked on explicit schema approval, verified least-privilege application and read-only LOGIN roles, secure HMAC configuration, and deliberate provider configuration.
+- [x] No production database writes, migrations, role changes, deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Add focused frontend lifecycle coverage for the performance panel's abort/stale-response behavior and verify the performance-lab navigation at narrow and desktop widths without enabling the feature in production.
+- [ ] Keep production blocked until the user approves the reviewed V1–V6 schema and the required restricted database roles/HMAC/provider settings are provisioned and verified. Do not apply migrations to Neon `main` without explicit approval.
