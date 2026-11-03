@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createAiSqlPerformanceRequestGuard,
+  createAiSqlPerformanceRequestLifecycle,
+  isAiSqlPerformanceRequestContextCurrent,
   parseAiSqlPerformanceResponse,
   recommendAiSqlPerformance,
 } from "../src/aiSqlPerformance.ts";
@@ -141,12 +142,68 @@ test("rejects invalid SQL and workspace credentials before network access", asyn
   assert.equal(called, false);
 });
 
-test("request guard invalidates stale recommendations after a workspace or session change", () => {
-  const guard = createAiSqlPerformanceRequestGuard();
-  const oldRequest = guard.begin();
-  assert.equal(guard.isCurrent(oldRequest), true);
-  guard.invalidate();
-  const currentRequest = guard.begin();
-  assert.equal(guard.isCurrent(oldRequest), false);
-  assert.equal(guard.isCurrent(currentRequest), true);
+test("panel lifecycle aborts the active request when its context is invalidated", () => {
+  const lifecycle = createAiSqlPerformanceRequestLifecycle();
+  const request = lifecycle.begin();
+
+  assert.equal(request.isCurrent(), true);
+  assert.equal(request.signal.aborted, false);
+
+  lifecycle.invalidate();
+
+  assert.equal(request.signal.aborted, true);
+  assert.equal(request.isCurrent(), false);
+});
+
+test("starting a replacement request aborts the previous request without affecting the new one", () => {
+  const lifecycle = createAiSqlPerformanceRequestLifecycle();
+  const first = lifecycle.begin();
+  const second = lifecycle.begin();
+
+  assert.equal(first.signal.aborted, true);
+  assert.equal(first.isCurrent(), false);
+  assert.equal(second.signal.aborted, false);
+  assert.equal(second.isCurrent(), true);
+
+  first.finish();
+  assert.equal(second.isCurrent(), true);
+  second.finish();
+  assert.equal(second.isCurrent(), false);
+});
+
+test("panel request context changes invalidate stale SQL, workspace, session, API, flag, and busy states", () => {
+  const context = {
+    apiBaseUrl: "https://api.example.test",
+    enabled: true,
+    token,
+    workspaceId,
+    sql,
+    busy: false,
+  };
+
+  assert.equal(isAiSqlPerformanceRequestContextCurrent(context, context), true);
+  const changes: Array<Partial<typeof context>> = [
+    { apiBaseUrl: "https://other.example.test" },
+    { enabled: false },
+    { token: "b".repeat(43) },
+    { workspaceId: "8b6b8d2d-5c0e-4a15-9d71-38e0a5c9a441" },
+    { sql: "SELECT 1" },
+    { busy: true },
+  ];
+
+  for (const change of changes) {
+    assert.equal(isAiSqlPerformanceRequestContextCurrent({ ...context, ...change }, context), false);
+  }
+});
+
+test("finishing an obsolete request cannot clear a newer in-flight request", () => {
+  const lifecycle = createAiSqlPerformanceRequestLifecycle();
+  const obsolete = lifecycle.begin();
+  const current = lifecycle.begin();
+
+  obsolete.finish();
+
+  assert.equal(obsolete.signal.aborted, true);
+  assert.equal(current.isCurrent(), true);
+  assert.equal(current.signal.aborted, false);
 });
