@@ -43,12 +43,15 @@ class SharedLoginRateLimitHealthIndicatorPostgresIntegrationTest {
                     identity_hash VARCHAR(64) PRIMARY KEY
                         CHECK (identity_hash ~ '^[0-9a-f]{64}$'),
                     failure_timestamps TIMESTAMPTZ[] NOT NULL DEFAULT ARRAY[]::TIMESTAMPTZ[]
-                        CHECK (cardinality(failure_timestamps) <= 5)
+                        CHECK (cardinality(failure_timestamps) <= 30)
                         CHECK (array_position(failure_timestamps, NULL) IS NULL),
                     blocked_until TIMESTAMPTZ,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    CHECK ((cardinality(failure_timestamps) < 5 AND blocked_until IS NULL)
-                        OR (cardinality(failure_timestamps) = 5 AND blocked_until IS NOT NULL))
+                    CHECK (
+                        (blocked_until IS NULL AND cardinality(failure_timestamps) < 30)
+                        OR (blocked_until IS NOT NULL
+                            AND cardinality(failure_timestamps) BETWEEN 5 AND 30)
+                    )
                 )
                 """);
 
