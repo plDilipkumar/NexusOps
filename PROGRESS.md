@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — mocked account registration, email verification, and password-recovery browser flows verified; GitHub Actions run #391 passed.
+Last verified: 2026-11-03 — mocked durable login, identity/workspace loading, workspace switching, logout, and fixed session expiry browser flows verified; GitHub Actions run #394 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1405,3 +1405,22 @@ Last verified: 2026-11-03 — mocked account registration, email verification, a
 
 ### Next milestone
 - [ ] Add mocked browser coverage for durable login, identity/workspace loading, workspace switching, logout, and fixed session expiry. Keep every API response local/mocked and production authentication disabled until the schema and restricted roles are approved and verified.
+
+
+## Mocked durable-session lifecycle browser verification — PR #9 (2026-11-03)
+
+- [x] Re-read the active feature-branch progress tracker and inspected the current repository/PR, Neon project `neurosql` and dedicated `neurosql_db`, Vercel project linkage/deployments, and Render service/deploy history before selecting this milestone.
+- [x] Added `frontend/tests/durableSessionFlows.e2e.mjs`, exposed it as `npm run test:durable-session-flows`, and wired it into the existing frontend CI job. No production feature flag or service configuration was changed.
+- [x] The mocked browser flow covers login, `/api/auth/me` identity verification, workspace list loading, selection of the initial workspace, switching to a second workspace, schema reload with the newly selected workspace ID, and server-side logout using the bearer token.
+- [x] A separate short-lived session scenario verifies the fixed expiry timer clears the in-memory session and selected workspace and returns the UI to sign-in. Both scenarios assert that tokens are absent from the URL, localStorage, and sessionStorage.
+- [x] Every auth, identity, workspace, schema, logout, and database-health request is intercepted locally. Unexpected API requests fail the test. No request reached Render, Neon, SMTP, or an AI provider; only synthetic test credentials/tokens were used.
+- [x] The first workflow commit exposed a malformed YAML step boundary in the PostgreSQL integration job before jobs could start. Corrected the step structure in the follow-up commit; final GitHub Actions run #394 (ID `41678590763`, https://github.com/plDilipkumar/NexusOps/actions/runs/41678590763) passed on branch head `c35efff28c500e60239a7e8aef7fb512e7a55198`.
+- [x] Run #394 verification: backend Maven `verify` — 371 tests, 0 failures/errors, 63 expected database-gated skips; disposable PostgreSQL 17 integration — 63 tests, 0 failures/errors/skips; frontend unit tests — 96 passed, 0 failed; TypeScript compilation and Vite production build passed (1,596 modules transformed); Playwright responsive navigation passed at 1440x900, 851x900, 850x900, 390x844, and 320x740; skip-link and keyboard navigation passed at desktop/mobile; four existing account-onboarding browser scenarios passed; both new durable-session browser scenarios passed. The production API/database smoke test was skipped because this is an unmerged pull-request branch.
+- [x] Neon read-only inspection reconfirmed free project `neurosql` (PostgreSQL 17, Singapore), ready production branch `main` (`br-empty-credit-b360dmpc`), and dedicated database `neurosql_db`. Production `main` has zero application tables and only the `neurosql_owner` password LOGIN role. The separate V6 review branch `br-silent-cherry-b3k2vqtj` has the eight proposed `neurosql_app` tables; `neurosql_auth_runtime` remains NOLOGIN and `neurosql_sql_readonly` is absent. No Neon schema, data, or role changes were made.
+- [x] Vercel Git deployment context confirms Hobby/free team and project `neurosql` linked to `plDilipkumar/NexusOps`. The latest inspected production-target deployment remains READY for `main` commit `6425ab4`; the latest project-level deployment record is a READY non-production deployment for `work/account-action-token-schema` commit `789f3ec`. No deployment was found for feature commit `c35efff`; no manual deployment or plan upgrade was triggered.
+- [x] Render service `neurosql-api` remains on the free plan in the already-confirmed Dilip Kumar workspace, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, and commit auto-deploy enabled. The latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58d`; this feature branch was not deployed.
+- [ ] PR #9 remains open and unmerged (head `c35efff`); schema PR #7 remains draft/unapproved. Durable authentication, SQL execution/EXPLAIN, and AI remain unavailable in production until explicit approval of proposed V1–V6 schema, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, SMTP/provider configuration, and deployment/smoke verification.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Add mocked browser coverage for authentication bootstrap failure paths (invalid credentials, rejected identity response, and workspace-list failure). Verify any provisionally issued session is revoked and no partial identity/workspace state remains. Keep production authentication disabled and all external API calls mocked.
