@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — mocked durable login, identity/workspace loading, workspace switching, logout, and fixed session expiry browser flows verified; GitHub Actions run #394 passed.
+Last verified: 2026-11-03 — mocked authentication bootstrap failure paths verified; failed login clears the password field and provisional sessions are revoked; GitHub Actions run #398 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1423,4 +1423,24 @@ Last verified: 2026-11-03 — mocked durable login, identity/workspace loading, 
 - [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next milestone
-- [ ] Add mocked browser coverage for authentication bootstrap failure paths (invalid credentials, rejected identity response, and workspace-list failure). Verify any provisionally issued session is revoked and no partial identity/workspace state remains. Keep production authentication disabled and all external API calls mocked.
+- [x] Add mocked browser coverage for authentication bootstrap failure paths (invalid credentials, rejected identity response, and workspace-list failure). Completed in the section below.
+
+## Mocked authentication bootstrap failure-path verification — PR #9 (2026-11-03)
+
+- [x] Re-read this tracker and inspected the current repository branch/PR, dedicated Neon project and database, Vercel project/deployment linkage, and Render service/deployment history before selecting this milestone.
+- [x] Extended `frontend/tests/durableSessionFlows.e2e.mjs` with three isolated Playwright scenarios: invalid login credentials (401), a newly issued token rejected by `/api/auth/me` (401), and a workspace-list bootstrap failure (503).
+- [x] Invalid credentials do not start identity, workspace, schema, or logout requests because no session token was accepted. The browser remains on the sign-in screen with no workspace selector, authenticated identity, or schema data.
+- [x] Identity rejection after token issuance triggers best-effort `POST /api/auth/logout` with the provisional bearer token. Workspace loading and schema loading do not proceed.
+- [x] Workspace-list failure after identity verification triggers best-effort server-side revocation with the provisional token. Schema loading does not proceed.
+- [x] The new failure-state assertions verify the active workspace selector, signed-in identity, schema list, password input, localStorage, and sessionStorage are cleared/empty. No token appears in the URL. All API requests, including database health, are intercepted; unexpected API requests fail the test. No request reaches Render, Neon, SMTP, or an AI provider.
+- [x] Code inspection exposed a small cleanup gap: `handleDurableLogin` cleared session/workspace state after bootstrap failure but left the password in React state and the sign-in input. Updated `frontend/src/App.tsx` to clear `durablePassword` in the failure handler and added a browser assertion for the empty password field.
+- [x] GitHub Actions run #398 (ID `41688805567`, https://github.com/plDilipkumar/NexusOps/actions/runs/41688805567) passed on code head `5ee69f4a23984d4b67392ab34fe89bcd8ea0668b`: backend Maven verification ran 371 tests with 0 failures/errors and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63 with 0 failures/errors/skips; frontend unit tests passed 96/96; TypeScript compilation and Vite production build passed (1,596 modules transformed); responsive navigation passed at five viewport profiles; all four account-onboarding browser scenarios passed; all five durable-session browser scenarios (login/workspace/logout, expiry, invalid credentials, identity rejection, and workspace-list failure) passed. Production API/database smoke test was skipped because PR #9 is unmerged.
+- [x] The local container could not clone GitHub because DNS resolution for `github.com` was unavailable. The complete repository CI workflow above executed against the exact feature-branch head and is the verification source for this change.
+- [x] Read-only Neon inspection reconfirmed project `neurosql` (PostgreSQL 17.11, Singapore), production `main` branch `br-empty-credit-b360dmpc`, and dedicated database `neurosql_db`. Production `main` still has zero application tables; the only matching role is `neurosql_owner` (LOGIN, non-superuser, CREATEDB and CREATEROLE). The separate V6 review branch `br-silent-cherry-b3k2vqtj` contains the eight proposed `neurosql_app` tables. `neurosql_auth_runtime`, `neurosql_app_login`, and `neurosql_sql_readonly` are not present on production main. No schema, data, or role changes were made.
+- [x] Vercel project `neurosql` is linked through deployment metadata to `plDilipkumar/NexusOps` and remains on the Hobby/free team; project metadata reports `live=false`. The latest production-target deployment is READY for main commit `6425ab4`; no deployment exists for feature commit `5ee69f4`. The latest non-production project deployment is READY for `work/account-action-token-schema` commit `789f3ec`. No deployment or plan change was triggered.
+- [x] Render service `neurosql-api` remains on the free plan in the confirmed workspace, Singapore region, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. Its latest live deployment remains commit `746d58d`; no feature-branch deployment or environment change was made.
+- [ ] PR #9 remains open and unmerged (head `5ee69f4`); schema PR #7 remains a draft and unapproved. Durable authentication, SQL execution/EXPLAIN, and AI remain blocked on explicit approval of proposed V1–V6 schema, verified least-privilege production LOGIN roles, secure HMAC configuration, deliberate SMTP/provider configuration, and deployment/smoke verification.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Improve failed-bootstrap revocation reporting: when best-effort server-side logout returns an unexpected status or a network error, keep local credentials cleared and show a sanitized warning that the provisional session may remain valid until expiry. Add mocked browser coverage for both HTTP and network failure without exposing the bearer token.
