@@ -94,6 +94,7 @@ test("registration rejects invalid inputs before making a request", async () => 
   const fakeFetch: typeof fetch = async () => { calls += 1; return new Response(null,{status:202}); };
   await assert.rejects(()=>registerAccount("https://api.example.test",{displayName:"Alice",email:"bad",password},fakeFetch),/valid email/);
   await assert.rejects(()=>registerAccount("https://api.example.test",{displayName:" ",email:"alice@example.com",password},fakeFetch),/display name/);
+  await assert.rejects(()=>registerAccount("https://api.example.test",{displayName:"Alice\\nSmith",email:"alice@example.com",password},fakeFetch),/display name/);
   await assert.rejects(()=>registerAccount("https://api.example.test",{displayName:"Alice",email:"alice@example.com",password:"short"},fakeFetch),/at least 12/);
   assert.equal(calls,0);
 });

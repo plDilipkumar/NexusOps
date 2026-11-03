@@ -1,5 +1,5 @@
 const ACTION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
-const EMAIL_PATTERN = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export type CapturedEmailVerificationToken = {
   present: boolean;
@@ -45,7 +45,7 @@ export function accountPasswordError(password: string, label = "password"): stri
 }
 
 function apiUrl(apiBaseUrl: string, path: string): string {
-  return apiBaseUrl.replace(/\\/$/, "") + path;
+  return apiBaseUrl.replace(/\/$/, "") + path;
 }
 
 function requestOptions(body: Record<string, string>): RequestInit {
