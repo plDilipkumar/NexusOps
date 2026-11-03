@@ -273,7 +273,7 @@ return <div className="shell"><aside className="sidebar"><div className="brand">
         {durableWorkspaces.length===0&&<div className="schema-error" role="status">This account has no active workspace membership. Ask a workspace owner to assign access.</div>}
       </>
     ) : (
-      {passwordRecovery ? (
+      passwordRecovery ? (
         <PasswordRecoveryPanel apiBaseUrl={API_BASE_URL} initialMode={passwordRecovery.mode} initialToken={passwordRecovery.token} onBack={()=>setPasswordRecovery(null)}/>
       ) : (
         <form className="schema-login" onSubmit={handleDurableLogin}>
@@ -284,7 +284,7 @@ return <div className="shell"><aside className="sidebar"><div className="brand">
           <button type="button" className="secondary" onClick={()=>{setSchemaError("");setPasswordRecovery({mode:"request",token:null});}}>Forgot password?</button>
           <small>Accounts must be provisioned and email-verified. Registration is not available yet.</small>
         </form>
-      )}
+      )
     )
   ) : schemaData && schemaCredentials ? (
     <article className="schema-accessbar"><div><CheckCircle2 size={17}/><div><b>Connected to {schemaData.database}</b><small>Signed in as {schemaCredentials.username} · credentials are held in memory only</small></div></div><div className="schema-actions"><button type="button" className="secondary" disabled={schemaLoading} onClick={()=>void loadSchema(schemaCredentials)}>{schemaLoading?"Refreshing…":"Refresh schema"}</button><button type="button" className="secondary" onClick={logoutSchema}>Sign out</button></div></article>

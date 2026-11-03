@@ -71,7 +71,7 @@ export function PasswordRecoveryPanel({apiBaseUrl,initialMode,initialToken,onBac
             If an account exists for that address, a password-reset link will be sent.
           </div>
         ) : (
-          <form onSubmit={submitRequest}>
+          <form onSubmit={submitRequest} style={{display:"grid",gap:"12px"}}>
             <label>Email<input type="email" autoComplete="email" value={email} onChange={event=>setEmail(event.target.value)} maxLength={254} required /></label>
             <button type="submit" className="run" disabled={busy}>{busy?"Sending…":"Send reset link"} <ArrowRight size={14}/></button>
           </form>
@@ -86,7 +86,7 @@ export function PasswordRecoveryPanel({apiBaseUrl,initialMode,initialToken,onBac
         ) : !token ? (
           <div className="schema-error" role="alert">This password-reset link is invalid or expired. Request a new link.</div>
         ) : (
-          <form onSubmit={submitConfirmation}>
+          <form onSubmit={submitConfirmation} style={{display:"grid",gap:"12px"}}>
             <label>New password<input type="password" autoComplete="new-password" value={password} onChange={event=>setPassword(event.target.value)} maxLength={256} required /></label>
             <label>Confirm new password<input type="password" autoComplete="new-password" value={confirmation} onChange={event=>setConfirmation(event.target.value)} maxLength={256} required /></label>
             <small>Use at least 12 characters, no more than 72 UTF-8 bytes, and no control characters.</small>
