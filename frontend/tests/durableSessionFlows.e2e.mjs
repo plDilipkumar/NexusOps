@@ -645,6 +645,155 @@ async function testDelayedLogoutCannotOverwriteNewLogin() {
   }
 }
 
+
+async function submitSignInWhilePending(page, email) {
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill("synthetic-test-password-42");
+  await page.locator("form.schema-login").evaluate(form => {
+    if (!(form instanceof HTMLFormElement)) throw new Error("Durable sign-in form was not found");
+    form.requestSubmit();
+  });
+}
+
+async function testSupersededLoginResponseCannotReplaceNewSession({ stage }) {
+  const page = await browser.newPage();
+  const oldToken = "K".repeat(43);
+  const newToken = "L".repeat(43);
+  const oldAuthorization = "Bearer " + oldToken;
+  const newAuthorization = "Bearer " + newToken;
+  const requests = { login: [], identity: [], workspaces: [], schema: [], logout: [] };
+  let releaseOldStage;
+  const oldStageGate = new Promise(resolve => { releaseOldStage = resolve; });
+  let markOldStageStarted;
+  const oldStageStarted = new Promise(resolve => { markOldStageStarted = resolve; });
+  let markNewSchemaReady;
+  const newSchemaReady = new Promise(resolve => { markNewSchemaReady = resolve; });
+  let markOldRevocationCompleted;
+  const oldRevocationCompleted = new Promise(resolve => { markOldRevocationCompleted = resolve; });
+  let markNewLoginStarted;
+  const newLoginStarted = new Promise(resolve => { markNewLoginStarted = resolve; });
+
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      const email = route.request().postDataJSON().email;
+      requests.login.push(email);
+      if (email === "old@example.com") {
+        if (stage === "login") {
+          markOldStageStarted();
+          await oldStageGate;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ token: oldToken, expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
+        });
+      } else {
+        markNewLoginStarted();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ token: newToken, expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
+        });
+      }
+    },
+    "/api/auth/me": async route => {
+      const authorization = route.request().headers().authorization;
+      requests.identity.push(authorization);
+      if (authorization === oldAuthorization && stage === "identity") {
+        markOldStageStarted();
+        await oldStageGate;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ userId, sessionId, expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
+      });
+    },
+    "/api/auth/workspaces": async route => {
+      const authorization = route.request().headers().authorization;
+      requests.workspaces.push(authorization);
+      if (authorization === oldAuthorization && stage === "workspaces") {
+        markOldStageStarted();
+        await oldStageGate;
+      }
+      const oldSession = authorization === oldAuthorization;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([{
+          workspaceId: oldSession ? workspaceA : workspaceB,
+          name: oldSession ? "Old workspace" : "New workspace",
+          slug: oldSession ? "old-workspace" : "new-workspace",
+          role: "OWNER",
+        }]),
+      });
+    },
+    "/api/schema": async route => {
+      const authorization = route.request().headers().authorization;
+      requests.schema.push({
+        authorization,
+        workspaceId: route.request().headers()["x-neurosql-workspace-id"],
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(schemaPayload("neurosql_test")),
+      });
+      if (authorization === newAuthorization) markNewSchemaReady();
+    },
+    "/api/auth/logout": async route => {
+      const authorization = route.request().headers().authorization;
+      requests.logout.push(authorization);
+      await route.fulfill({ status: 204 });
+      if (authorization === oldAuthorization) markOldRevocationCompleted();
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page, "old@example.com");
+    await oldStageStarted;
+
+    // A newer login starts while the older login/identity/workspace response is still pending.
+    await submitSignInWhilePending(page, "new@example.com");
+    await newLoginStarted;
+    await newSchemaReady;
+    await waitForWorkspaceReady(page, workspaceB);
+    await page.getByText("Signed in as new@example.com", { exact: false }).waitFor({ state: "visible" });
+
+    releaseOldStage();
+    await Promise.race([
+      oldRevocationCompleted,
+      delay(5000).then(() => { throw new Error("The superseded provisional session was not revoked"); }),
+    ]);
+
+    await waitForWorkspaceReady(page, workspaceB);
+    assert.deepEqual(requests.login, ["old@example.com", "new@example.com"]);
+    assert.deepEqual(requests.schema, [{
+      authorization: newAuthorization,
+      workspaceId: workspaceB,
+    }], "Only the newer session may load workspace schema");
+    assert.deepEqual(requests.logout, [oldAuthorization],
+      "The superseded session must be revoked without touching the newer session");
+    assert.equal(await page.getByText("Signed in as new@example.com", { exact: false }).count(), 1);
+    assert.equal(await page.getByText("Signed in as old@example.com", { exact: false }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
+    assert.equal(await page.getByText("The server could not confirm revocation of the provisional session.", { exact: false }).count(), 0);
+    assert.equal(await page.getByRole("alert").count(), 0, "A stale response must not replace the newer screen with an error");
+    await assertNoBrowserPersistence(page);
+    assert.equal(unexpected.length, 0, "The superseded-response scenario must not make unmocked API requests");
+
+    const expectedIdentity = stage === "login" ? [newAuthorization] : [oldAuthorization, newAuthorization];
+    const expectedWorkspaces = stage === "workspaces" ? [oldAuthorization, newAuthorization] : [newAuthorization];
+    assert.deepEqual(requests.identity, expectedIdentity, "Identity requests must stop when the older operation is superseded");
+    assert.deepEqual(requests.workspaces, expectedWorkspaces, "Workspace requests must stop when the older operation is superseded");
+    console.log("Superseded " + stage + " response cannot replace the newer authenticated workspace (mock API only)");
+  } finally {
+    releaseOldStage();
+    await page.close();
+  }
+}
+
 try {
   await waitForPreview();
   browser = await chromium.launch({ headless: true });
@@ -658,6 +807,9 @@ try {
   await testUserInitiatedLogoutFailure({ issuedToken: "G".repeat(43), networkFailure: false, delayResponse: true });
   await testUserInitiatedLogoutFailure({ issuedToken: "H".repeat(43), networkFailure: true });
   await testDelayedLogoutCannotOverwriteNewLogin();
+  await testSupersededLoginResponseCannotReplaceNewSession({ stage: "login" });
+  await testSupersededLoginResponseCannotReplaceNewSession({ stage: "identity" });
+  await testSupersededLoginResponseCannotReplaceNewSession({ stage: "workspaces" });
 } finally {
   await browser?.close();
   preview.kill("SIGTERM");

@@ -97,8 +97,17 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
   const email=durableEmail.trim().toLowerCase();
   const password=durablePassword;
   if(!email||!password){setSchemaError("Enter your email and password.");return;}
-  durableAuthOperation.current+=1;invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setDurableAuthLoading(true);setSchemaError("");setSchemaData(null);
+  const operation=++durableAuthOperation.current;
+  const isCurrentOperation=()=>durableAuthOperation.current===operation;
+  invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setDurableAuthLoading(true);setSchemaError("");setSchemaData(null);setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setExpandedTables({});setSavedQuerySeed("");
   let issuedToken:string|null=null;
+  const revokeIssuedSession=async():Promise<boolean>=>{
+    if(!issuedToken)return true;
+    try{
+      const response=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+issuedToken},cache:"no-store"});
+      return response.status===204||response.status===401;
+    }catch{return false;}
+  };
   try{
     const response=await fetch(API_BASE_URL+"/api/auth/login",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({email,password}),cache:"no-store"});
     if(response.status===401)throw new Error("Invalid email or password.");
@@ -106,15 +115,20 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
     if(!response.ok)throw new Error("Login failed (HTTP "+response.status+").");
     const issued=parseIssuedSession(await response.json());
     issuedToken=issued.token;
+    if(!isCurrentOperation()){await revokeIssuedSession();return;}
     const authHeaders={Accept:"application/json",Authorization:"Bearer "+issuedToken};
     const identityResponse=await fetch(API_BASE_URL+"/api/auth/me",{headers:authHeaders,cache:"no-store"});
+    if(!isCurrentOperation()){await revokeIssuedSession();return;}
     if(identityResponse.status===401)throw new Error("The new session could not be validated. Please sign in again.");
     if(!identityResponse.ok)throw new Error("Unable to verify session identity (HTTP "+identityResponse.status+").");
     const identity=parseSessionIdentity(await identityResponse.json());
+    if(!isCurrentOperation()){await revokeIssuedSession();return;}
     const workspaceResponse=await fetch(API_BASE_URL+"/api/auth/workspaces",{headers:authHeaders,cache:"no-store"});
+    if(!isCurrentOperation()){await revokeIssuedSession();return;}
     if(workspaceResponse.status===401)throw new Error("The session was rejected while loading workspaces.");
     if(!workspaceResponse.ok)throw new Error("Unable to load workspaces (HTTP "+workspaceResponse.status+").");
     const workspaces=parseWorkspaceList(await workspaceResponse.json());
+    if(!isCurrentOperation()){await revokeIssuedSession();return;}
     setDurableSession({token:issuedToken,email,userId:identity.userId,sessionId:identity.sessionId,expiresAt:identity.expiresAt});
     setDurableWorkspaces(workspaces);setDurablePassword("");
     if(workspaces.length===0){setSelectedWorkspaceId("");setSchemaError("Signed in, but no active workspace membership is assigned to this account.");return;}
@@ -122,21 +136,19 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
     setSelectedWorkspaceId(firstWorkspace.workspaceId);
     await loadDurableSchema(issuedToken,firstWorkspace.workspaceId);
   }catch(error){
-    let revocationWarning="";
-    if(issuedToken){
-      try{
-        const revocationResponse=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+issuedToken},cache:"no-store"});
-        if(revocationResponse.status!==204&&revocationResponse.status!==401){
-          revocationWarning="The server could not confirm revocation of the provisional session. It may remain valid until it expires.";
-        }
-      }catch{
-        revocationWarning="The server could not confirm revocation of the provisional session. It may remain valid until it expires.";
-      }
+    if(!isCurrentOperation()){
+      await revokeIssuedSession();
+      return;
     }
+    const revocationConfirmed=await revokeIssuedSession();
+    if(!isCurrentOperation())return;
+    const revocationWarning=issuedToken&&!revocationConfirmed
+      ?" The server could not confirm revocation of the provisional session. It may remain valid until it expires."
+      :"";
     setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setDurablePassword("");
     const loginError=error instanceof Error?error.message:"Unable to sign in.";
-    setSchemaError(revocationWarning?loginError+" "+revocationWarning:loginError);
-  }finally{setDurableAuthLoading(false);}
+    setSchemaError(loginError+revocationWarning);
+  }finally{if(isCurrentOperation())setDurableAuthLoading(false);}
 };
 const logoutDurable=async()=>{
   invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setSavedQuerySeed("");

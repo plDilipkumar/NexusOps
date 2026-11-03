@@ -61,7 +61,7 @@ jobs:
       - name: Verify mocked registration, email verification, and password recovery flows
         working-directory: frontend
         run: npm run test:account-flows
-      - name: Verify mocked durable login, workspace switching, logout, and session expiry
+      - name: Verify mocked durable login, workspace switching, logout, expiry, and superseded-response races
         working-directory: frontend
         run: npm run test:durable-session-flows
 
