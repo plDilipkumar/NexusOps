@@ -1197,3 +1197,6 @@ Last verified: 2026-11-03 — registration and email-verification UI added; GitH
 
 ### Next development milestone
 - [ ] Inspect the existing AI/provider abstractions and SQL workspace contracts, then select a small first AI SQL-generation slice (prompt validation, schema-context bounds, read-only output validation, provider timeout/error redaction). Do not duplicate an existing implementation and keep AI features disabled until provider configuration is supplied securely.
+
+- [x] Follow-up GitHub Actions run #355 (https://github.com/plDilipkumar/NexusOps/actions/runs/41581273228) passed after tightening the readiness SQL to require the exact V6 capacity predicates (`<= 30` array cap and `>= 5 / <= 30` blocked-bucket range): backend 336 tests, 0 failures/errors, 62 database-gated skips; PostgreSQL 17 integration 62/62 passed; frontend 69/69 passed; TypeScript compilation and Vite production build passed. Production smoke remained skipped because PR #9 is unmerged.
+- [x] The latest PR #9 code commit for this milestone is `945f04ffde511321049ab8ca36839df44f2ceb77`; the progress-only commit follows it. PR #7 follow-up CI run #354 (https://github.com/plDilipkumar/NexusOps/actions/runs/41581258032) also passed with V6 applied via `psql --single-transaction`.
