@@ -242,6 +242,8 @@ async function assertNoDurableWorkspaceState(page) {
     "A failed login bootstrap must not display an authenticated identity");
   assert.equal(await page.locator(".schema-list").count(), 0,
     "A failed login bootstrap must not display workspace schema data");
+  assert.equal(await page.getByLabel("Password", { exact: true }).inputValue(), "",
+    "A failed login bootstrap must clear the password field");
   await assertNoBrowserPersistence(page);
 }
 
