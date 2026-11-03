@@ -19,7 +19,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Exercises account-action token SQL only against the disposable PostgreSQL 17
@@ -30,6 +32,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
         named = "NEUROSQL_TEST_JDBC_URL",
         matches = "^jdbc:postgresql://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?/neurosql_test(\\?.*)?$")
 class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
+    private DriverManagerDataSource dataSource;
     private JdbcTemplate jdbc;
     private JdbcAccountActionTokenRepository repository;
     private AccountActionTokenService service;
@@ -37,7 +40,7 @@ class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
 
     @BeforeEach
     void setUpDisposablePostgresFixture() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        dataSource = new DriverManagerDataSource();
         dataSource.setDriverClassName("org.postgresql.Driver");
         dataSource.setUrl(System.getenv("NEUROSQL_TEST_JDBC_URL"));
         dataSource.setUsername(System.getenv("NEUROSQL_TEST_DB_USERNAME"));
@@ -252,6 +255,85 @@ class JdbcAccountActionTokenRepositoryPostgresIntegrationTest {
                 "SELECT consumed_at IS NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
                 Boolean.class,
                 digest)).isTrue();
+    }
+
+
+    @Test
+    void passwordResetPreparationRotatesOnlyOutstandingResetTokensForVerifiedAccounts() {
+        UUID userId = insertVerifiedUser();
+        String email = jdbc.queryForObject(
+                "SELECT email FROM neurosql_app.app_users WHERE user_id = ?",
+                String.class,
+                userId);
+        AccountActionTokenService.IssuedActionToken previousReset =
+                service.issueToken(userId, AccountActionTokenService.Purpose.PASSWORD_RESET);
+        AccountActionTokenService.IssuedActionToken verification =
+                service.issueToken(userId, AccountActionTokenService.Purpose.EMAIL_VERIFICATION);
+
+        PasswordResetRequestPreparationService preparation =
+                new PasswordResetRequestPreparationService(new JdbcAccountRepository(jdbc), service);
+        TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        Optional<PasswordResetRequestPreparationService.PasswordResetDelivery> delivery =
+                transaction.execute(status -> preparation.prepare(" " + email.toUpperCase() + " "));
+
+        assertThat(delivery).isPresent();
+        PasswordResetRequestPreparationService.PasswordResetDelivery prepared = delivery.orElseThrow();
+        assertThat(prepared.recipient()).isEqualTo(email);
+        assertThat(prepared.token().purpose()).isEqualTo(AccountActionTokenService.Purpose.PASSWORD_RESET);
+        assertThat(prepared.token().token()).matches("[A-Za-z0-9_-]{43}");
+        assertThat(prepared.toString()).doesNotContain(email, prepared.token().token());
+
+        assertThat(jdbc.queryForObject(
+                "SELECT consumed_at IS NOT NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Boolean.class,
+                codec.hashToken(previousReset.token()))).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT consumed_at IS NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Boolean.class,
+                codec.hashToken(prepared.token().token()))).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT consumed_at IS NULL FROM neurosql_app.account_action_tokens WHERE token_hash = ?",
+                Boolean.class,
+                codec.hashToken(verification.token()))).isTrue();
+    }
+
+    @Test
+    void passwordResetPreparationDoesNotIssueTokensForUnverifiedOrInactiveAccounts() {
+        UUID unverifiedUser = insertUser();
+        UUID inactiveUser = insertVerifiedUser();
+        jdbc.update(
+                "UPDATE neurosql_app.app_users SET status = 'DISABLED' WHERE user_id = ?",
+                inactiveUser);
+
+        PasswordResetRequestPreparationService preparation =
+                new PasswordResetRequestPreparationService(new JdbcAccountRepository(jdbc), service);
+        TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+
+        Optional<PasswordResetRequestPreparationService.PasswordResetDelivery> unverified =
+                transaction.execute(status -> preparation.prepare(emailFor(unverifiedUser)));
+        Optional<PasswordResetRequestPreparationService.PasswordResetDelivery> inactive =
+                transaction.execute(status -> preparation.prepare(emailFor(inactiveUser)));
+
+        assertThat(unverified).isEmpty();
+        assertThat(inactive).isEmpty();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.account_action_tokens WHERE purpose = 'PASSWORD_RESET'",
+                Integer.class)).isZero();
+    }
+
+    private UUID insertVerifiedUser() {
+        UUID userId = insertUser();
+        jdbc.update(
+                "UPDATE neurosql_app.app_users SET email_verified_at = now() WHERE user_id = ?",
+                userId);
+        return userId;
+    }
+
+    private String emailFor(UUID userId) {
+        return jdbc.queryForObject(
+                "SELECT email FROM neurosql_app.app_users WHERE user_id = ?",
+                String.class,
+                userId);
     }
 
     private UUID insertUser() {

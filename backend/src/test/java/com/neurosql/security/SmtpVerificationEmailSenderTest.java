@@ -23,6 +23,7 @@ class SmtpVerificationEmailSenderTest {
     private static final String TOKEN = "A".repeat(43);
     private static final String FROM = "no-reply@neurosql.example";
     private static final String VERIFICATION_URL = "https://neurosql.vercel.app/verify-email";
+    private static final String PASSWORD_RESET_URL = "https://neurosql.vercel.app/reset-password";
 
     @Mock
     private JavaMailSender mailSender;
@@ -92,7 +93,76 @@ class SmtpVerificationEmailSenderTest {
                         .doesNotContain(TOKEN, "provider secret detail"));
     }
 
+    @Test
+    void sendsPasswordResetLinkToNormalizedRecipient() {
+        SmtpVerificationEmailSender sender = sender(VERIFICATION_URL, PASSWORD_RESET_URL);
+        AccountActionTokenService.IssuedActionToken token =
+                new AccountActionTokenService.IssuedActionToken(
+                        TOKEN,
+                        AccountActionTokenService.Purpose.PASSWORD_RESET,
+                        Instant.parse("2026-10-30T12:00:00Z"));
+
+        sender.sendPasswordResetEmail(" Alice@Example.test ", token);
+
+        ArgumentCaptor<SimpleMailMessage> message = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(message.capture());
+        assertThat(message.getValue().getFrom()).isEqualTo(FROM);
+        assertThat(message.getValue().getTo()).containsExactly("alice@example.test");
+        assertThat(message.getValue().getSubject()).isEqualTo("Reset your NeuroSQL password");
+        assertThat(message.getValue().getText())
+                .contains(PASSWORD_RESET_URL + "?token=" + TOKEN)
+                .contains("expires in 30 minutes");
+    }
+
+    @Test
+    void refusesVerificationTokenForPasswordResetDelivery() {
+        SmtpVerificationEmailSender sender = sender(VERIFICATION_URL, PASSWORD_RESET_URL);
+        AccountActionTokenService.IssuedActionToken token =
+                new AccountActionTokenService.IssuedActionToken(
+                        TOKEN,
+                        AccountActionTokenService.Purpose.EMAIL_VERIFICATION,
+                        Instant.parse("2026-10-30T12:00:00Z"));
+
+        assertThatThrownBy(() -> sender.sendPasswordResetEmail("alice@example.test", token))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    void rejectsUnsafePasswordResetUrls() {
+        assertThatThrownBy(() -> sender(VERIFICATION_URL, "http://neurosql.vercel.app/reset-password"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A valid HTTPS password-reset URL must be configured.");
+        assertThatThrownBy(() -> sender(VERIFICATION_URL,
+                "https://neurosql.vercel.app/reset-password?next=https://evil.test"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A valid HTTPS password-reset URL must be configured.");
+        verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    void passwordResetProviderFailureDoesNotExposeTokenOrProviderDetails() {
+        SmtpVerificationEmailSender sender = sender(VERIFICATION_URL, PASSWORD_RESET_URL);
+        AccountActionTokenService.IssuedActionToken token =
+                new AccountActionTokenService.IssuedActionToken(
+                        TOKEN,
+                        AccountActionTokenService.Purpose.PASSWORD_RESET,
+                        Instant.parse("2026-10-30T12:00:00Z"));
+        doThrow(new MailSendException("provider secret detail"))
+                .when(mailSender).send(any(SimpleMailMessage.class));
+
+        assertThatThrownBy(() -> sender.sendPasswordResetEmail("alice@example.test", token))
+                .isInstanceOf(PasswordResetEmailSender.DeliveryFailedException.class)
+                .hasMessage("Password-reset email delivery failed.")
+                .satisfies(error -> assertThat(error.getMessage())
+                        .doesNotContain(TOKEN, "provider secret detail"));
+    }
+
     private SmtpVerificationEmailSender sender(String verificationUrl) {
-        return new SmtpVerificationEmailSender(mailSender, FROM, verificationUrl);
+        return sender(verificationUrl, "");
+    }
+
+    private SmtpVerificationEmailSender sender(String verificationUrl, String passwordResetUrl) {
+        return new SmtpVerificationEmailSender(mailSender, FROM, verificationUrl, passwordResetUrl);
     }
 }
