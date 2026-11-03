@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — accessible skip-to-main-content navigation added and browser-verified; GitHub Actions run #387 passed.
+Last verified: 2026-11-03 — mocked account registration, email verification, and password-recovery browser flows verified; GitHub Actions run #391 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1386,5 +1386,22 @@ Last verified: 2026-11-03 — accessible skip-to-main-content navigation added a
 - [ ] PR #9 remains open and unmerged; schema PR #7 remains a draft and unapproved. Production durable authentication, SQL execution/EXPLAIN, and AI features remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, and deliberate AI provider configuration. No live AI provider request or production API/database test was performed.
 - [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
+## Mocked browser verification for account registration and recovery — PR #9 (2026-11-03)
+
+- [x] Re-read the active feature-branch progress tracker and inspected the repository, open PRs, Neon project/database/branches, Vercel project/deployments, and Render service/deploy history before selecting this milestone.
+- [x] Added `frontend/tests/accountFlows.e2e.mjs` and the `npm run test:account-flows` script. Playwright runs against the local Vite preview; every account endpoint is intercepted with a mock response, and any unexpected API request is captured and fails the test. No request reaches Render, Neon, SMTP, or an AI provider.
+- [x] CI builds the test artifact with `VITE_DURABLE_AUTH_ENABLED=true` only for the mocked browser run. This does not change Vercel or Render environment settings; `frontend/.env.example` still defaults durable authentication to false.
+- [x] Registration coverage checks display-name/email normalization, password-confirmation mismatch rejection before network access, the generic accepted response, and verification-email resend. The mocked request body is inspected without logging its password.
+- [x] Email-verification coverage opens a synthetic one-time link, verifies that `flow` and `token` are removed from the address bar, and confirms the token is sent only in the mocked POST body.
+- [x] Password-recovery coverage checks the generic non-enumerating reset-request response, normalized email, mismatched-password rejection before network access, successful mocked reset confirmation, and removal of the one-time token from the URL.
+- [x] Browser checks verify that account passwords and one-time tokens are not written to localStorage or sessionStorage. These tests verify frontend behavior only; they do not claim that live account creation, email delivery, or password reset works against production services.
+- [x] Initial CI runs #389 and #390 exposed ambiguous Playwright label locators for the password and new-password fields. The tests were corrected to use exact label matching; no product code change was needed for that test failure.
+- [x] GitHub Actions run #391 (ID `41669632819`, https://github.com/plDilipkumar/NexusOps/actions/runs/41669632819) passed on code commit `c0eee8bd3e2557e45842f6d4cb2b6081ed6c694e`: backend Maven verification ran 371 tests with 0 failures/errors and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63 with 0 failures/errors/skips; frontend unit tests passed 96/96; TypeScript compilation and Vite production build passed (1,596 modules transformed); responsive navigation, skip-link and keyboard browser checks passed; all four account-flow browser scenarios passed. The production API/database smoke test was skipped because PR #9 is not merged.
+- [x] Read-only Neon inspection confirmed project `neurosql` (PostgreSQL 17, Singapore), ready production `main` branch `br-empty-credit-b360dmpc`, and dedicated database `neurosql_db` owned by `neurosql_owner`. Production main still has zero application tables/views and only the `neurosql_owner` LOGIN role. Review branch `br-silent-cherry-b3k2vqtj` contains the eight proposed application tables; `neurosql_auth_runtime` remains NOLOGIN and `neurosql_sql_readonly` is absent. No production or review-branch writes or role changes were made.
+- [x] Vercel project `neurosql` remains on the Hobby/free plan and its deployment metadata identifies `plDilipkumar/NexusOps`. No Vercel deployment exists for code commit `c0eee8bd3e2557e45842f6d4cb2b6081ed6c694e`; no deployment was manually triggered.
+- [x] Render `neurosql-api` remains on the free plan, linked to repository branch `main` with Docker context `backend`. The latest listed live deployment remains `dep-dbgfqe6gekts738l9eng` for older commit `746d58d`; no Render deployment or environment change was made.
+- [ ] PR #9 remains open/unmerged; schema PR #7 remains draft/unapproved. Production durable authentication, SQL execution/EXPLAIN, and AI remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, and deliberate provider configuration. No live SMTP, AI-provider, or production account-flow request was performed.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
 ### Next milestone
-- [ ] Add browser-level coverage for account registration and password-recovery form flows using local mocked API responses only; do not send real email, configure provider credentials, or enable production authentication.
+- [ ] Add mocked browser coverage for durable login, identity/workspace loading, workspace switching, logout, and fixed session expiry. Keep every API response local/mocked and production authentication disabled until the schema and restricted roles are approved and verified.
