@@ -149,16 +149,17 @@ class SharedAccountRequestRateLimiterPostgresIntegrationTest {
         List<Future<SharedAccountRequestRateLimiter.Decision>> futures = new ArrayList<>();
         try {
             for (int index = 0; index < requestCount; index++) {
-                String email = "parallel-" + index + "-" + UUID.randomUUID() + "@example.test";
-                String purpose = index % 2 == 0 ? "registration:" : "verification-resend:";
+                int requestIndex = index;
+                String email = "parallel-" + requestIndex + "-" + UUID.randomUUID() + "@example.test";
+                String purpose = requestIndex % 2 == 0 ? "registration:" : "verification-resend:";
                 identities.add(LIFECYCLE_EMAIL_PREFIX + purpose + email);
-                SharedAccountRequestRateLimiter selected = index % 2 == 0 ? firstInstance : secondInstance;
+                SharedAccountRequestRateLimiter selected = requestIndex % 2 == 0 ? firstInstance : secondInstance;
                 futures.add(executor.submit(() -> {
                     ready.countDown();
                     if (!start.await(10, TimeUnit.SECONDS)) {
                         throw new IllegalStateException("Concurrent test did not receive its start signal.");
                     }
-                    return index % 2 == 0
+                    return requestIndex % 2 == 0
                             ? selected.acquireRegistration(email, ip)
                             : selected.acquireVerificationResend(email, ip);
                 }));
