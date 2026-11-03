@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — registration and email-verification UI added; GitHub Actions run #332 passed.
+Last verified: 2026-11-03 — AI SQL Copilot connected to the gated generation API; GitHub Actions run #364 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1220,3 +1220,27 @@ Last verified: 2026-11-03 — registration and email-verification UI added; GitH
 ### Next AI milestone
 - [ ] Connect the existing Copilot prompt controls to `POST /api/sql/ai/generate`, pass only the currently visible schema metadata, and show the returned draft in the editor for review. Do not auto-execute generated SQL. Add tests for workspace changes, request cancellation, sanitized errors, and draft replacement.
 - [ ] After the Copilot UI is connected, evaluate AI query explanation as a separate opt-in operation using the same workspace authorization, provider timeout, shared user quota, and read-only validation boundaries.
+
+
+## Frontend AI SQL Copilot integration — PR #9 (2026-11-03)
+
+- [x] Connected the existing workspace Copilot to `POST /api/sql/ai/generate` using the active durable bearer session and selected workspace header. The request is POST-only, `cache: no-store`, and `credentials: omit`.
+- [x] Added a strict frontend response parser for a single `SELECT`/`WITH` draft and bounded warning list. API status failures map to fixed user-safe messages; arbitrary provider/server response details are never displayed.
+- [x] Built a bounded schema-context projection that sends only visible schema names, table names, column names, and data types. It omits row values and unrelated column metadata and enforces the backend's 20-schema, 40-table, 25-columns-per-table, 400-total-column, and 16,000-character limits.
+- [x] Workspace/session changes, schema refreshes, and Copilot unmount invalidate the current request and abort its fetch. A stale response cannot populate the Copilot after the active context changes.
+- [x] Generated SQL is displayed as an unexecuted draft. The user must explicitly choose “Use in editor”; this replaces the current editor draft and never runs the query automatically.
+- [x] Added prompt suggestions, loading/disabled/error states, oversized-schema notice, and a privacy notice that no table rows are sent to the provider.
+- [x] Added frontend tests for bounded schema projection, response validation, workspace-change invalidation, request cancellation, sanitized API errors, no-store/credential omission, and explicit draft replacement.
+- [x] GitHub Actions run #364 (ID `41592784786`, https://github.com/plDilipkumar/NexusOps/actions/runs/41592784786) passed on final code commit `ea76edc49d97fe5f8060a5ac245818e3b5d0d5cb`: backend Maven verification 353 tests, 0 failures/errors, 63 expected database-gated skips; disposable PostgreSQL 17 integration 63/63 passed; frontend tests 79/79 passed; TypeScript compilation and Vite production build passed (1,592 modules transformed). The production API/database smoke job was skipped because PR #9 remains unmerged.
+- [x] CI runs #362 and #363 caught, respectively, an overly strict schema-context test expectation and a removed icon import; both were corrected. Run #364 is the passing verification for the final code commit.
+- [x] Neon production `main` (`br-empty-credit-b360dmpc`) was re-inspected: dedicated database `neurosql_db` still has zero application tables; only `neurosql_owner` is visible as a LOGIN role. Temporary V5/V6 review branches remain separate. No schema, data, role, or credential changes were made.
+- [x] Neon project `neurosql` remains on the free subscription in AWS ap-southeast-1 with PostgreSQL 17. The production branch remains ready.
+- [x] Vercel Hobby project `neurosql` is linked to `plDilipkumar/NexusOps`. No Vercel deployment exists for this Copilot commit; the latest production-target deployment remains the older `main` release for commit `6425ab4`. No deployment or plan upgrade was triggered.
+- [x] Render `neurosql-api` remains on the free plan in the confirmed workspace, Singapore, one instance, linked to repository branch `main`, with auto-deploy enabled. Its latest live deployment remains commit `746d58d`; this feature branch is not deployed.
+- [ ] The frontend feature flag `VITE_AI_SQL_GENERATION_ENABLED` remains false by default, the backend AI endpoint remains disabled by default, and no provider key or live provider request is configured. The Copilot is code/CI verified only, not available in production.
+- [ ] PR #9 remains open/unmerged; draft PR #7 remains unapproved/unmerged. Proposed V1–V6 schema migrations are still not applied to Neon `main`. Production durable auth, shared throttling, and AI remain blocked on explicit schema approval, verified least-privilege application/read-only LOGIN roles, secure HMAC configuration, and provider configuration.
+- [x] No production database writes, migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next AI milestone
+- [ ] Add AI query explanation as a separate opt-in operation, reusing durable session/workspace authorization, the shared per-user AI quota, bounded provider timeouts, sanitized errors, and no-store semantics. It must not execute the query or use `EXPLAIN ANALYZE`.
+- [ ] Before live provider testing, configure the provider HTTPS endpoint, model, and API key securely in the backend environment and deliberately enable the backend/frontend feature flags only after the production database and authentication prerequisites are approved and verified.
