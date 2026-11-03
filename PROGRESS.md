@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — AI SQL Copilot connected to the gated generation API; GitHub Actions run #364 passed.
+Last verified: 2026-11-03 — AI SQL explanation API added behind durable workspace authorization; GitHub Actions run #366 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1218,8 +1218,8 @@ Last verified: 2026-11-03 — AI SQL Copilot connected to the gated generation A
 - [x] No production database writes, migrations, role changes, environment changes, deployments, credentials, or paid resources were introduced.
 
 ### Next AI milestone
-- [ ] Connect the existing Copilot prompt controls to `POST /api/sql/ai/generate`, pass only the currently visible schema metadata, and show the returned draft in the editor for review. Do not auto-execute generated SQL. Add tests for workspace changes, request cancellation, sanitized errors, and draft replacement.
-- [ ] After the Copilot UI is connected, evaluate AI query explanation as a separate opt-in operation using the same workspace authorization, provider timeout, shared user quota, and read-only validation boundaries.
+- [x] Connect the existing Copilot prompt controls to `POST /api/sql/ai/generate`; the verified frontend implementation is documented below.
+- [x] Add AI query explanation as a separate backend operation with durable workspace authorization, shared per-user quota, provider timeouts, sanitized errors, and read-only validation; the verified implementation is documented below.
 
 
 ## Frontend AI SQL Copilot integration — PR #9 (2026-11-03)
@@ -1242,5 +1242,22 @@ Last verified: 2026-11-03 — AI SQL Copilot connected to the gated generation A
 - [x] No production database writes, migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next AI milestone
-- [ ] Add AI query explanation as a separate opt-in operation, reusing durable session/workspace authorization, the shared per-user AI quota, bounded provider timeouts, sanitized errors, and no-store semantics. It must not execute the query or use `EXPLAIN ANALYZE`.
-- [ ] Before live provider testing, configure the provider HTTPS endpoint, model, and API key securely in the backend environment and deliberately enable the backend/frontend feature flags only after the production database and authentication prerequisites are approved and verified.
+- [ ] Add an explicit Explain query action to the frontend and connect it to `POST /api/sql/ai/explain`. Send only the selected SQL text, display the returned explanation as plain text, and clearly disclose that SQL text is sent to the configured provider while result rows are never sent.
+- [ ] Add frontend coverage for cancellation, stale workspace/session responses, sanitized failures, and the explicit user action. Never execute or rewrite the selected query automatically.
+- [ ] Keep AI explanation disabled in production until the proposed schema is approved, restricted application/read-only LOGIN roles and HMAC configuration are verified, and the provider endpoint/model/key are deliberately configured outside source control.
+
+## AI SQL query explanation API — PR #9 (2026-11-03)
+
+- [x] Added `POST /api/sql/ai/explain` as a separate, user-triggered backend operation using the existing HTTPS-only AI provider adapter. It accepts one bounded SQL statement and returns a bounded plain-text explanation; it never executes the query or calls `EXPLAIN ANALYZE`.
+- [x] Reuses the existing conservative read-only SQL validator and rejects non-SELECT/WITH statements, multiple statements, malformed/oversized input, and malformed/oversized provider output before returning a response.
+- [x] Requires a durable authenticated session and an active VIEWER-or-higher workspace membership through an explicit `WorkspaceAuthorizationFilter` role rule. The controller also checks the durable-session principal and applies no-store responses.
+- [x] Shares the same five-attempt per-user rolling 15-minute PostgreSQL-backed AI quota with SQL generation. Added coverage proving generation and explanation consume the same quota; limiter/database failures fail closed.
+- [x] Provider instructions treat SQL text as untrusted input, ignore embedded instructions, avoid repeating literal values, and prohibit invented results or execution claims. The response discloses that SQL text is sent to the configured provider; table rows are never sent.
+- [x] Added service tests for read-only acceptance, mutation/multi-statement rejection, invalid/oversized input, provider-output bounds, and untrusted SQL prompt handling. Added HTTP tests for workspace authorization, shared quota/Retry-After, and rejection of legacy Basic-auth access.
+- [x] GitHub Actions run #366 (ID `41598834021`, https://github.com/plDilipkumar/NexusOps/actions/runs/41598834021) passed on code commit `db91d175c9387811a813f8c7c7fb792d4025c5ff`: backend Maven verification 362 tests, 0 failures/errors, 63 expected database-gated skips; disposable PostgreSQL 17 integration 63/63 passed; frontend tests 79/79 passed; TypeScript compilation and Vite production build passed (1,592 modules transformed). Production API/database smoke was skipped because PR #9 remains unmerged.
+- [x] Fresh Neon read-only checks: production `main` database `neurosql_db` remains PostgreSQL 17.11 with zero visible application tables. The separate V6 review branch `br-silent-cherry-b3k2vqtj` contains the eight proposed application tables; `neurosql_auth_runtime` remains NOLOGIN and the inspected LOGIN role is `neurosql_owner`. No production or review-branch writes were made in this milestone.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on Hobby/free; no deployment exists for this backend-only commit. The latest listed deployment is READY but has no production target; project metadata reports `live=false`.
+- [x] Render `neurosql-api` remains on the free plan, linked to repository branch `main`, Docker context `backend`, with auto-deploy enabled. Latest live backend deployment remains commit `746d58d`; this feature-branch code is not deployed.
+- [ ] Frontend Explain query interaction is not implemented yet. No live AI provider request or browser-to-provider test was performed; the AI flags remain disabled by default and no provider credentials are configured.
+- [ ] PR #9 remains open/unmerged and draft PR #7 remains unapproved/unmerged. Do not apply V1–V6 to Neon `main` without explicit user approval. Durable auth, account lifecycle, query history, saved queries, SQL execution, and AI features remain unavailable in production until the database schema and restricted runtime credentials are approved and verified.
+- [x] No production schema/data/role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
