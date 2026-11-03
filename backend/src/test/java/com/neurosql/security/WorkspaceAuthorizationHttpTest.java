@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.neurosql.api.AiSqlGenerationController;
+import com.neurosql.api.AiSqlGenerationService;
 import com.neurosql.api.DurableSessionController;
 import com.neurosql.api.SchemaController;
 import com.neurosql.api.SqlExecutionController;
@@ -44,7 +46,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class, SavedQueriesController.class})
+@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class, SavedQueriesController.class, AiSqlGenerationController.class})
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
         "neurosql.auth.enabled=true",
@@ -55,7 +57,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
         "neurosql.sql-history.enabled=true",
         "neurosql.saved-queries.enabled=true",
         "neurosql.schema-browser.enabled=true",
-        "neurosql.sql-execution.enabled=true"
+        "neurosql.sql-execution.enabled=true",
+        "neurosql.ai.sql-generation.enabled=true"
 })
 class WorkspaceAuthorizationHttpTest {
     private static final String TOKEN = "A".repeat(43);
@@ -92,6 +95,12 @@ class WorkspaceAuthorizationHttpTest {
 
     @MockBean
     private SavedQueryService savedQueryService;
+
+    @MockBean
+    private AiSqlGenerationService aiSqlGenerationService;
+
+    @MockBean
+    private SharedAccountRequestRateLimiter sharedAccountRequestRateLimiter;
 
     @Test
     void durableSessionMustProvideCanonicalWorkspaceId() throws Exception {
@@ -176,6 +185,96 @@ class WorkspaceAuthorizationHttpTest {
                 .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
         verify(queryExecutor).execute("SELECT 1");
         verify(queryHistoryService).recordSucceeded(USER_ID, WORKSPACE_ID, "SELECT 1", 1, 2, false);
+    }
+
+    @Test
+    void activeViewerCanGenerateAiSqlOnlyForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlGeneration(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
+        when(aiSqlGenerationService.generate(any()))
+                .thenReturn(new AiSqlGenerationService.GenerateResponse(
+                        "SELECT id FROM public.orders", "SELECT", List.of("unexecuted draft")));
+
+        mockMvc.perform(post("/api/sql/ai/generate")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"prompt":"List order identifiers","schemas":[{"name":"public","tables":[{"name":"orders","columns":[{"name":"id","dataType":"bigint"}]}]}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.sql").value("SELECT id FROM public.orders"))
+                .andExpect(jsonPath("$.statementType").value("SELECT"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(sharedAccountRequestRateLimiter).acquireAiSqlGeneration(USER_ID);
+        verify(aiSqlGenerationService).generate(any());
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotGenerateAiSql() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/ai/generate")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"List order identifiers\",\"schemas\":[]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(sharedAccountRequestRateLimiter);
+        verifyNoInteractions(aiSqlGenerationService);
+    }
+
+    @Test
+    void aiSqlGenerationQuotaReturnsRetryAfterWithoutCallingProvider() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlGeneration(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(false, 120));
+
+        mockMvc.perform(post("/api/sql/ai/generate")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"List order identifiers\",\"schemas\":[]}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "120"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")));
+
+        verifyNoInteractions(aiSqlGenerationService);
+    }
+
+    @Test
+    void legacyOwnerCannotUseDurableAiSqlGenerationEndpoint() throws Exception {
+        mockMvc.perform(post("/api/sql/ai/generate")
+                        .with(httpBasic("test-owner", "test-owner-password-123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"List order identifiers\",\"schemas\":[]}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(aiSqlGenerationService);
+    }
+
+    @Test
+    void productionFrontendCanPreflightAiSqlGenerationPost() throws Exception {
+        mockMvc.perform(options("/api/sql/ai/generate")
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization,content-type,x-neurosql-workspace-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://neurosql.vercel.app"));
     }
 
     @Test

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -87,6 +88,24 @@ class SharedAccountRequestRateLimiterTest {
 
         assertThat(limiter.acquirePasswordReset("RESET@example.test", null).permitted()).isFalse();
         assertThat(limiter.acquireRegistration("reset@example.test", null).permitted()).isTrue();
+    }
+
+    @Test
+    void aiSqlGenerationUsesDedicatedFiveAttemptPerUserBucket() {
+        UUID userId = UUID.fromString("b4f41d45-68dc-4f7b-8df0-48e3f29e54c1");
+        for (int attempt = 0; attempt < 4; attempt++) {
+            assertThat(limiter.acquireAiSqlGeneration(userId).permitted()).isTrue();
+        }
+
+        SharedAccountRequestRateLimiter.Decision blocked = limiter.acquireAiSqlGeneration(userId);
+
+        assertThat(blocked.permitted()).isFalse();
+        assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
+        assertThat(shared.attempts).containsEntry(
+                "neurosql:ai-sql-generation:user:" + userId, 5);
+        assertThat(shared.thresholds).containsEntry(
+                "neurosql:ai-sql-generation:user:" + userId, 5);
+        assertThat(limiter.acquireRegistration("alice@example.test", null).permitted()).isTrue();
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.neurosql.security;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class SharedAccountRequestRateLimiter {
     private static final String PASSWORD_RESET_IP_PREFIX = "neurosql:account-request:password-reset:ip:";
     private static final String VERIFICATION_CONSUME_IP_PREFIX =
             "neurosql:account-lifecycle:verification-consume:ip:";
+    private static final String AI_SQL_USER_PREFIX = "neurosql:ai-sql-generation:user:";
 
     static final int EMAIL_MAX_ATTEMPTS = 5;
     static final int LIFECYCLE_IP_MAX_ATTEMPTS = 30;
@@ -73,6 +75,15 @@ public class SharedAccountRequestRateLimiter {
                 clientAddress,
                 VERIFICATION_CONSUME_IP_MAX_ATTEMPTS);
         return acquire(buckets);
+    }
+
+    /**
+     * Applies a shared five-attempt quota per authenticated user to bound provider
+     * usage across restarts and application instances.
+     */
+    public Decision acquireAiSqlGeneration(UUID userId) {
+        Objects.requireNonNull(userId, "userId");
+        return acquire(List.of(new Bucket(AI_SQL_USER_PREFIX + userId, 5)));
     }
 
     private Decision acquireLifecycle(Purpose purpose, String email, String clientAddress) {

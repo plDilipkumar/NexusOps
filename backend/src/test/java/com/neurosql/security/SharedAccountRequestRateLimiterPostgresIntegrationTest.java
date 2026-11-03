@@ -35,6 +35,7 @@ class SharedAccountRequestRateLimiterPostgresIntegrationTest {
     private static final String LIFECYCLE_IP_PREFIX = "neurosql:account-lifecycle:ip:";
     private static final String VERIFICATION_IP_PREFIX =
             "neurosql:account-lifecycle:verification-consume:ip:";
+    private static final String AI_SQL_USER_PREFIX = "neurosql:ai-sql-generation:user:";
 
     private JdbcTemplate adminJdbc;
     private SharedAccountRequestRateLimiter firstInstance;
@@ -201,6 +202,24 @@ class SharedAccountRequestRateLimiterPostgresIntegrationTest {
         String email = "unrelated-" + UUID.randomUUID() + "@example.test";
         identities.add(LIFECYCLE_EMAIL_PREFIX + "registration:" + email);
         assertThat(firstInstance.acquireRegistration(email, ip).permitted()).isTrue();
+    }
+
+    @Test
+    void aiSqlQuotaIsSharedAcrossInstancesAndSeparateFromAccountLifecycle() {
+        UUID userId = UUID.randomUUID();
+        String aiIdentity = AI_SQL_USER_PREFIX + userId;
+        identities.add(aiIdentity);
+
+        for (int attempt = 0; attempt < 4; attempt++) {
+            assertThat(firstInstance.acquireAiSqlGeneration(userId).permitted()).isTrue();
+        }
+        assertThat(secondInstance.acquireAiSqlGeneration(userId).permitted()).isFalse();
+        assertThat(failureCount(aiIdentity)).isEqualTo(5);
+        assertThat(blocked(aiIdentity)).isTrue();
+
+        String email = "unrelated-" + UUID.randomUUID() + "@example.test";
+        identities.add(LIFECYCLE_EMAIL_PREFIX + "registration:" + email);
+        assertThat(secondInstance.acquireRegistration(email, null).permitted()).isTrue();
     }
 
     @Test

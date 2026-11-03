@@ -40,3 +40,12 @@ This is a single-owner security foundation plus gated workspace authentication g
 - Secrets must stay server-side.
 
 See [PROGRESS.md](./PROGRESS.md) for verified progress and remaining work.
+
+
+## AI SQL drafting (disabled by default)
+- `POST /api/sql/ai/generate` accepts a natural-language prompt and bounded schema metadata, then returns one SQL draft. It never executes the generated statement. The existing `ReadOnlySqlValidator` rejects non-SELECT/WITH drafts, multiple statements, mutation keywords, selected side-effecting functions, and row-locking clauses; this lexical check is not a parser or a proof of safety.
+- The endpoint is created only when `NEUROSQL_AI_SQL_GENERATION_ENABLED=true`, `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=true`, and `NEUROSQL_AUTH_SHARED_RATE_LIMIT_ENABLED=true`. It also requires an active durable session and viewer membership in the workspace supplied through `X-NeuroSQL-Workspace-Id`.
+- AI calls are limited to five attempts per authenticated user per rolling 15-minute window using the existing HMAC-keyed PostgreSQL rate-limit table. The limit is shared across application instances and fails closed when that database is unavailable.
+- Configure `NEUROSQL_AI_SQL_GENERATION_ENDPOINT` as an operator-controlled HTTPS OpenAI-compatible chat-completions endpoint, with `NEUROSQL_AI_SQL_GENERATION_MODEL` and `NEUROSQL_AI_SQL_GENERATION_API_KEY` supplied only through deployment environment variables. Connect/read timeouts default to three/twenty seconds and are bounded at startup.
+- Prompt length is limited to 2,000 code points; schema context is limited to 20 schemas, 40 tables, 25 columns per table, 400 total columns, and 16,000 serialized characters. Only schema/table/column names and data types are sent; row data is not sent.
+- Provider errors are redacted. Generated output is returned only after read-only validation and is always an unexecuted draft. The frontend Copilot is not yet connected to this endpoint; no provider key or AI enablement flag has been configured in production.
