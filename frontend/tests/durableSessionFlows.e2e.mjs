@@ -794,6 +794,134 @@ async function testSupersededLoginResponseCannotReplaceNewSession({ stage }) {
   }
 }
 
+
+async function testAccountFlowSwitchSupersedesPendingLogin({ buttonName, heading, issuedToken, returnToSignIn = false }) {
+  const page = await browser.newPage();
+  const requests = { login: [], identity: [], workspaces: [], schema: [], logout: [] };
+  let markLoginStarted;
+  const loginStarted = new Promise(resolve => { markLoginStarted = resolve; });
+  let releaseLogin;
+  const loginGate = new Promise(resolve => { releaseLogin = resolve; });
+  let markRevocationCompleted;
+  const revocationCompleted = new Promise(resolve => { markRevocationCompleted = resolve; });
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      requests.login.push(route.request().postDataJSON());
+      markLoginStarted();
+      await loginGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token: issuedToken, expiresAt }),
+      });
+    },
+    "/api/auth/me": async route => {
+      requests.identity.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ userId, sessionId, expiresAt }),
+      });
+    },
+    "/api/auth/workspaces": async route => {
+      requests.workspaces.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([{
+          workspaceId: workspaceA,
+          name: "Analytics",
+          slug: "analytics",
+          role: "OWNER",
+        }]),
+      });
+    },
+    "/api/schema": async route => {
+      requests.schema.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(schemaPayload("neurosql_test")),
+      });
+    },
+    "/api/auth/logout": async route => {
+      requests.logout.push(route.request().headers().authorization);
+      await route.fulfill({ status: 204 });
+      markRevocationCompleted();
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page, "navigation@example.com");
+    await Promise.race([
+      loginStarted,
+      delay(5000).then(() => { throw new Error("The pending login request did not start"); }),
+    ]);
+
+    if (returnToSignIn) {
+      await page.getByRole("button", { name: "Forgot password?", exact: true }).click();
+      await page.getByRole("heading", { name: "Reset your password", exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "Back to sign in", exact: true }).click();
+      await page.getByRole("heading", { name: "Sign in to NeuroSQL", exact: true }).waitFor({ state: "visible" });
+    } else {
+      await page.getByRole("button", { name: buttonName, exact: true }).click();
+      await page.getByRole("heading", { name: heading, exact: true }).waitFor({ state: "visible" });
+    }
+
+    // The old login response is deliberately released only after the account-flow navigation.
+    releaseLogin();
+    await Promise.race([
+      revocationCompleted,
+      delay(5000).then(() => { throw new Error("The superseded provisional login session was not revoked"); }),
+    ]);
+
+    if (returnToSignIn) {
+      await page.getByRole("heading", { name: "Sign in to NeuroSQL", exact: true }).waitFor({ state: "visible" });
+      const submit = page.getByRole("button", { name: "Sign in and load workspaces", exact: true });
+      assert.equal(await submit.isDisabled(), false, "Returning to sign-in must clear the stale loading state");
+      assert.equal(await page.getByLabel("Password", { exact: true }).inputValue(), "",
+        "Leaving the account flow must clear the previous login password");
+    } else {
+      await page.getByRole("heading", { name: heading, exact: true }).waitFor({ state: "visible" });
+      assert.equal(await page.getByRole("button", { name: "Back to sign in", exact: true }).count(), 1);
+      assert.equal(await page.getByRole("heading", { name: "Sign in to NeuroSQL", exact: true }).count(), 0,
+        "A late login response must not replace the selected account-flow screen");
+    }
+
+    assert.deepEqual(requests.login, [{
+      email: "navigation@example.com",
+      password: "synthetic-test-password-42",
+    }]);
+    assert.deepEqual(requests.logout, ["Bearer " + issuedToken],
+      "The late-issued provisional session must be revoked after navigation supersedes login");
+    assert.deepEqual(
+      { identity: requests.identity, workspaces: requests.workspaces, schema: requests.schema },
+      { identity: [], workspaces: [], schema: [] },
+      "A superseded login must stop before identity, workspace, or schema requests",
+    );
+    assert.equal(await page.getByRole("alert").count(), 0, "A stale login must not show an error over the selected screen");
+    assert.equal(page.url().includes(issuedToken), false);
+    await assertNoBrowserPersistence(page);
+    assert.equal(unexpected.length, 0, "Account-flow navigation must not make unmocked API requests");
+    console.log(returnToSignIn
+      ? "Returning to sign-in supersedes a pending durable login (mock API only)"
+      : buttonName + " supersedes a pending durable login (mock API only)");
+  } finally {
+    releaseLogin();
+    await page.close();
+  }
+}
+
+async function testAccountFlowBackSupersedesPendingLogin() {
+  await testAccountFlowSwitchSupersedesPendingLogin({
+    issuedToken: "L".repeat(43),
+    returnToSignIn: true,
+  });
+}
+
 try {
   await waitForPreview();
   browser = await chromium.launch({ headless: true });
@@ -810,6 +938,22 @@ try {
   await testSupersededLoginResponseCannotReplaceNewSession({ stage: "login" });
   await testSupersededLoginResponseCannotReplaceNewSession({ stage: "identity" });
   await testSupersededLoginResponseCannotReplaceNewSession({ stage: "workspaces" });
+  await testAccountFlowSwitchSupersedesPendingLogin({
+    buttonName: "Forgot password?",
+    heading: "Reset your password",
+    issuedToken: "I".repeat(43),
+  });
+  await testAccountFlowSwitchSupersedesPendingLogin({
+    buttonName: "Create account",
+    heading: "Create your NeuroSQL account",
+    issuedToken: "J".repeat(43),
+  });
+  await testAccountFlowSwitchSupersedesPendingLogin({
+    buttonName: "Resend verification email",
+    heading: "Resend verification email",
+    issuedToken: "K".repeat(43),
+  });
+  await testAccountFlowBackSupersedesPendingLogin();
 } finally {
   await browser?.close();
   preview.kill("SIGTERM");

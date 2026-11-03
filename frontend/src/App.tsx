@@ -159,6 +159,29 @@ const logoutDurable=async()=>{
   if(token){try{const response=await fetch(API_BASE_URL+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+token},cache:"no-store"});revocationConfirmed=response.status===204||response.status===401;}catch{/* Local sign-out is immediate; the warning below reports unconfirmed server revocation. */}}
   if(!revocationConfirmed&&durableAuthOperation.current===operation)setSchemaError("Signed out locally, but the server could not confirm session revocation. The session may remain valid until it expires.");
 };
+const invalidatePendingDurableLogin=()=>{
+  durableAuthOperation.current+=1;
+  setDurableAuthLoading(false);
+  setDurablePassword("");
+};
+const openPasswordRecovery=()=>{
+  invalidatePendingDurableLogin();
+  setSchemaError("");
+  setAccountOnboarding(null);
+  setPasswordRecovery({mode:"request",token:null});
+};
+const openAccountOnboarding=(mode:"register"|"resend")=>{
+  invalidatePendingDurableLogin();
+  setSchemaError("");
+  setPasswordRecovery(null);
+  setAccountOnboarding({mode,token:null});
+};
+const returnToDurableSignIn=()=>{
+  invalidatePendingDurableLogin();
+  setPasswordRecovery(null);
+  setAccountOnboarding(null);
+  setSchemaError("");
+};
 const selectDurableWorkspace=(workspaceId:string)=>{
   invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setSavedQuerySeed("");
   setSelectedWorkspaceId(workspaceId);setSchemaData(null);setExpandedTables({});setSchemaError("");
@@ -316,18 +339,18 @@ return <div className="shell"><a className="skip-link" href="#main-content">Skip
       </>
     ) : (
       passwordRecovery ? (
-        <PasswordRecoveryPanel apiBaseUrl={API_BASE_URL} initialMode={passwordRecovery.mode} initialToken={passwordRecovery.token} onBack={()=>setPasswordRecovery(null)}/>
+        <PasswordRecoveryPanel apiBaseUrl={API_BASE_URL} initialMode={passwordRecovery.mode} initialToken={passwordRecovery.token} onBack={returnToDurableSignIn}/>
       ) : accountOnboarding ? (
-        <AccountOnboardingPanel apiBaseUrl={API_BASE_URL} initialMode={accountOnboarding.mode} initialToken={accountOnboarding.token} onBack={()=>setAccountOnboarding(null)}/>
+        <AccountOnboardingPanel apiBaseUrl={API_BASE_URL} initialMode={accountOnboarding.mode} initialToken={accountOnboarding.token} onBack={returnToDurableSignIn}/>
       ) : (
         <form className="schema-login" onSubmit={handleDurableLogin}>
           <div className="schema-login-icon"><LockKeyhole size={19}/></div><h3>Sign in to NeuroSQL</h3><p>Use an active, email-verified NeuroSQL account. Your bearer token stays in memory and is cleared when you sign out or the session expires.</p>
           <label>Email<input type="email" autoComplete="username" value={durableEmail} onChange={event=>setDurableEmail(event.target.value)} maxLength={254} required /></label>
           <label>Password<input type="password" autoComplete="current-password" value={durablePassword} onChange={event=>setDurablePassword(event.target.value)} maxLength={256} required /></label>
           <button type="submit" className="run" disabled={durableAuthLoading}>{durableAuthLoading?"Signing in…":"Sign in and load workspaces"} <ArrowRight size={14}/></button>
-          <button type="button" className="secondary" onClick={()=>{setSchemaError("");setAccountOnboarding(null);setPasswordRecovery({mode:"request",token:null});}}>Forgot password?</button>
-          <button type="button" className="secondary" onClick={()=>{setSchemaError("");setPasswordRecovery(null);setAccountOnboarding({mode:"register",token:null});}}>Create account</button>
-          <button type="button" className="secondary" onClick={()=>{setSchemaError("");setPasswordRecovery(null);setAccountOnboarding({mode:"resend",token:null});}}>Resend verification email</button>
+          <button type="button" className="secondary" onClick={openPasswordRecovery}>Forgot password?</button>
+          <button type="button" className="secondary" onClick={()=>openAccountOnboarding("register")}>Create account</button>
+          <button type="button" className="secondary" onClick={()=>openAccountOnboarding("resend")}>Resend verification email</button>
           <small>Use an email-verified account. New accounts must verify their email before signing in.</small>
         </form>
       )
