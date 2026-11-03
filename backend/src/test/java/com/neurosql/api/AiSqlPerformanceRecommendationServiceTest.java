@@ -89,7 +89,7 @@ class AiSqlPerformanceRecommendationServiceTest {
                 .doesNotContain("Filter")
                 .doesNotContain("Index Cond")
                 .doesNotContain("Planning Time")
-                .doesNotContain("17");
+                .doesNotContain("elapsedTimeMillis");
         verify(executor).explain(SQL);
         verify(executor, never()).execute(anyString());
     }
