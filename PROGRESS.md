@@ -1404,7 +1404,7 @@ Last verified: 2026-11-03 — mocked durable login, identity/workspace loading, 
 - [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next milestone
-- [ ] Add mocked browser coverage for durable login, identity/workspace loading, workspace switching, logout, and fixed session expiry. Keep every API response local/mocked and production authentication disabled until the schema and restricted roles are approved and verified.
+- [x] Add mocked browser coverage for durable login, identity/workspace loading, workspace switching, logout, and fixed session expiry. Completed and verified in the section below; all API responses remain local/mocked.
 
 
 ## Mocked durable-session lifecycle browser verification — PR #9 (2026-11-03)
