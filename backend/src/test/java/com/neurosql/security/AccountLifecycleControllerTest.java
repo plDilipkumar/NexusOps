@@ -1,6 +1,7 @@
 package com.neurosql.security;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,7 +14,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.neurosql.api.AccountLifecycleController;
-import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -48,7 +48,7 @@ class AccountLifecycleControllerTest {
     private VerificationEmailWorkflowService emailWorkflow;
 
     @MockBean
-    private VerificationRequestRateLimiter requestRateLimiter;
+    private SharedAccountRequestRateLimiter requestRateLimiter;
 
     @MockBean
     private TrustedClientAddressResolver clientAddressResolver;
@@ -61,8 +61,8 @@ class AccountLifecycleControllerTest {
 
     @Test
     void registrationReturnsGenericAcceptedResponseWithoutAccountEnumeration() throws Exception {
-        when(requestRateLimiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, EMAIL))
-                .thenReturn(new VerificationRequestRateLimiter.Decision(true, 0));
+        when(requestRateLimiter.acquireRegistration(EMAIL, null))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
         when(emailWorkflow.registerAndSend(EMAIL, PASSWORD, DISPLAY_NAME))
                 .thenReturn(new VerificationEmailWorkflowService.RequestAccepted(GENERIC_MESSAGE));
 
@@ -78,15 +78,15 @@ class AccountLifecycleControllerTest {
                 .andExpect(jsonPath("$.token").doesNotExist())
                 .andExpect(jsonPath("$.verificationToken").doesNotExist());
 
-        verify(requestRateLimiter).acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, EMAIL);
+        verify(requestRateLimiter).acquireRegistration(EMAIL, null);
         verify(emailWorkflow).registerAndSend(EMAIL, PASSWORD, DISPLAY_NAME);
         verifyNoInteractions(clientAddressResolver);
     }
 
     @Test
-    void verificationResendReturnsTheSameGenericResponseForUnknownAddresses() throws Exception {
-        when(requestRateLimiter.acquire(VerificationRequestRateLimiter.Purpose.RESEND, EMAIL))
-                .thenReturn(new VerificationRequestRateLimiter.Decision(true, 0));
+    void verificationResendReturnsGenericAcceptedResponse() throws Exception {
+        when(requestRateLimiter.acquireVerificationResend(EMAIL, null))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
         when(emailWorkflow.resendVerification(EMAIL))
                 .thenReturn(new VerificationEmailWorkflowService.RequestAccepted(GENERIC_MESSAGE));
 
@@ -98,14 +98,14 @@ class AccountLifecycleControllerTest {
                 .andExpect(jsonPath("$.message").value(GENERIC_MESSAGE))
                 .andExpect(jsonPath("$.token").doesNotExist());
 
-        verify(requestRateLimiter).acquire(VerificationRequestRateLimiter.Purpose.RESEND, EMAIL);
+        verify(requestRateLimiter).acquireVerificationResend(EMAIL, null);
         verify(emailWorkflow).resendVerification(EMAIL);
     }
 
     @Test
     void rateLimitedRegistrationReturnsRetryAfterWithoutCallingEmailWorkflow() throws Exception {
-        when(requestRateLimiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, EMAIL))
-                .thenReturn(new VerificationRequestRateLimiter.Decision(false, 300));
+        when(requestRateLimiter.acquireRegistration(EMAIL, null))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(false, 300));
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -121,9 +121,30 @@ class AccountLifecycleControllerTest {
     }
 
     @Test
+    void sharedLimiterFailureFailsClosedWithoutCallingEmailWorkflow() throws Exception {
+        when(requestRateLimiter.acquireRegistration(EMAIL, null))
+                .thenThrow(new IllegalStateException("sensitive database connection detail"));
+
+        String response = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"alice@example.test","password":"correct-horse-12","displayName":"Alice Example"}
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(jsonPath("$.message").value("Account requests are temporarily unavailable. Try again later."))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        org.assertj.core.api.Assertions.assertThat(response).doesNotContain("sensitive");
+        verifyNoInteractions(emailWorkflow);
+    }
+
+    @Test
     void registrationPolicyFailureReturnsGenericClientErrorWithoutLeakingDetails() throws Exception {
-        when(requestRateLimiter.acquire(VerificationRequestRateLimiter.Purpose.REGISTRATION, EMAIL))
-                .thenReturn(new VerificationRequestRateLimiter.Decision(true, 0));
+        when(requestRateLimiter.acquireRegistration(EMAIL, null))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
         when(emailWorkflow.registerAndSend(EMAIL, PASSWORD, DISPLAY_NAME))
                 .thenThrow(new IllegalArgumentException("internal password policy detail"));
 
@@ -134,18 +155,29 @@ class AccountLifecycleControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
-                .andExpect(jsonPath("$.message").value("Registration details are invalid."))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.not(containsString("internal"))));
+                .andExpect(jsonPath("$.message").value("Account request details are invalid."))
+                .andExpect(jsonPath("$.message").value(not(containsString("internal"))));
     }
 
     @Test
-    void invalidEmailIsRejectedByRequestValidationBeforeRateLimitOrPersistence() throws Exception {
+    void invalidEmailIsRejectedBeforeRateLimitOrPersistence() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"email":"not-an-email","password":"correct-horse-12","displayName":"Alice Example"}
                                 """))
                 .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(requestRateLimiter, emailWorkflow);
+    }
+
+    @Test
+    void unreadableJsonReturnsGenericValidationMessageWithoutCallingServices() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Account request details are invalid."));
 
         verifyNoInteractions(requestRateLimiter, emailWorkflow);
     }
@@ -163,8 +195,8 @@ class AccountLifecycleControllerTest {
 
     @Test
     void forwardedAddressIsNotTrustedWhenProxyRangesAreNotConfigured() throws Exception {
-        when(requestRateLimiter.acquire(VerificationRequestRateLimiter.Purpose.RESEND, EMAIL))
-                .thenReturn(new VerificationRequestRateLimiter.Decision(true, 0));
+        when(requestRateLimiter.acquireVerificationResend(EMAIL, null))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
         when(emailWorkflow.resendVerification(EMAIL))
                 .thenReturn(new VerificationEmailWorkflowService.RequestAccepted(GENERIC_MESSAGE));
 
@@ -174,7 +206,7 @@ class AccountLifecycleControllerTest {
                         .content("{\"email\":\"alice@example.test\"}"))
                 .andExpect(status().isAccepted());
 
-        verify(requestRateLimiter).acquire(VerificationRequestRateLimiter.Purpose.RESEND, EMAIL);
+        verify(requestRateLimiter).acquireVerificationResend(EMAIL, null);
         verifyNoInteractions(clientAddressResolver);
     }
 }
