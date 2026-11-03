@@ -12,6 +12,7 @@ import javax.crypto.spec.SecretKeySpec;
 final class LoginIdentityHasher {
     private static final String INVALID_IDENTITY = "__invalid_login_identity__";
     private static final int MINIMUM_KEY_BYTES = 32;
+    private static final int MAX_IDENTITY_LENGTH = 512;
 
     private final SecretKeySpec key;
 
@@ -35,10 +36,10 @@ final class LoginIdentityHasher {
     }
 
     private static String normalize(String identity) {
-        if (identity == null || identity.isBlank() || identity.length() > 254) {
+        if (identity == null || identity.isBlank() || identity.length() > MAX_IDENTITY_LENGTH) {
             return INVALID_IDENTITY;
         }
         String normalized = identity.strip().toLowerCase(Locale.ROOT);
-        return normalized.isEmpty() || normalized.length() > 254 ? INVALID_IDENTITY : normalized;
+        return normalized.isEmpty() || normalized.length() > MAX_IDENTITY_LENGTH ? INVALID_IDENTITY : normalized;
     }
 }
