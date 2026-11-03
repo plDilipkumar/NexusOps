@@ -50,6 +50,12 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+      - name: Install Chromium for responsive browser checks
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Verify responsive workspace navigation
+        working-directory: frontend
+        run: npm run test:responsive
 
   session-postgres-integration:
     name: Durable-auth and read-only SQL integration tests (PostgreSQL 17)
