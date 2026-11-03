@@ -132,7 +132,20 @@ class DurableAuthHttpPostgresIntegrationTest {
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS neurosql_app.auth_login_rate_limits (
                     identity_hash VARCHAR(64) PRIMARY KEY
-                        CHECK (identity_hash ~ '^[0-9a-f]{64}
+                        CHECK (identity_hash ~ '^[0-9a-f]{64}$'),
+                    failure_timestamps TIMESTAMPTZ[] NOT NULL DEFAULT ARRAY[]::TIMESTAMPTZ[],
+                    blocked_until TIMESTAMPTZ,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    CONSTRAINT auth_login_rate_limits_failure_timestamps_check
+                        CHECK (cardinality(failure_timestamps) <= 30),
+                    CONSTRAINT auth_login_rate_limits_failure_timestamps_no_null_check
+                        CHECK (array_position(failure_timestamps, NULL) IS NULL),
+                    CONSTRAINT auth_login_rate_limit_block_consistency CHECK (
+                        (blocked_until IS NULL AND cardinality(failure_timestamps) < 30)
+                        OR (blocked_until IS NOT NULL
+                            AND cardinality(failure_timestamps) BETWEEN 5 AND 30)
+                    )
+                )
                 """);
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS ix_auth_login_rate_limits_updated_at
