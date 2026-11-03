@@ -234,11 +234,188 @@ async function testFixedSessionExpiry() {
   }
 }
 
+
+async function assertNoDurableWorkspaceState(page) {
+  assert.equal(await page.getByLabel("Active workspace").count(), 0,
+    "A failed login bootstrap must not retain an active workspace selector");
+  assert.equal(await page.getByText("Signed in as", { exact: false }).count(), 0,
+    "A failed login bootstrap must not display an authenticated identity");
+  assert.equal(await page.locator(".schema-list").count(), 0,
+    "A failed login bootstrap must not display workspace schema data");
+  await assertNoBrowserPersistence(page);
+}
+
+async function assertLoginAlert(page, expected) {
+  const alert = page.getByRole("alert");
+  await alert.waitFor({ state: "visible" });
+  assert.ok((await alert.textContent() ?? "").includes(expected),
+    `Expected login error to contain "${expected}"`);
+}
+
+async function testInvalidCredentialsDoNotCreateClientSession() {
+  const page = await browser.newPage();
+  const requests = { login: 0, email: "", passwordPresent: false, identity: 0, workspaces: 0, schema: 0, logout: 0 };
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      requests.login += 1;
+      const body = route.request().postDataJSON();
+      requests.email = body.email;
+      requests.passwordPresent = typeof body.password === "string" && body.password.length > 0;
+      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ message: "unauthorized" }) });
+    },
+    "/api/auth/me": async route => {
+      requests.identity += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    },
+    "/api/auth/workspaces": async route => {
+      requests.workspaces += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+    },
+    "/api/schema": async route => {
+      requests.schema += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(schemaPayload("neurosql_test")) });
+    },
+    "/api/auth/logout": async route => {
+      requests.logout += 1;
+      await route.fulfill({ status: 204 });
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    await assertLoginAlert(page, "Invalid email or password.");
+    assert.equal(requests.login, 1);
+    assert.equal(requests.email, "alice@example.com");
+    assert.equal(requests.passwordPresent, true, "The password must be submitted only to the login endpoint");
+    assert.deepEqual(
+      { identity: requests.identity, workspaces: requests.workspaces, schema: requests.schema, logout: requests.logout },
+      { identity: 0, workspaces: 0, schema: 0, logout: 0 },
+      "Rejected credentials must not start identity, workspace, schema, or revocation requests",
+    );
+    await assertNoDurableWorkspaceState(page);
+    assert.equal(page.url().includes(token), false);
+    assert.equal(unexpected.length, 0, "Invalid credentials must not cause unmocked API requests");
+    console.log("Invalid credentials leave no client session or workspace state (mock API only)");
+  } finally {
+    await page.close();
+  }
+}
+
+async function testRejectedIdentityRevokesProvisionallyIssuedSession() {
+  const page = await browser.newPage();
+  const issuedToken = "C".repeat(43);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const requests = { login: 0, identity: [], workspaces: 0, schema: 0, logout: [] };
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      requests.login += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token: issuedToken, expiresAt }),
+      });
+    },
+    "/api/auth/me": async route => {
+      requests.identity.push(route.request().headers().authorization);
+      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ message: "unauthorized" }) });
+    },
+    "/api/auth/workspaces": async route => {
+      requests.workspaces += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+    },
+    "/api/schema": async route => {
+      requests.schema += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(schemaPayload("neurosql_test")) });
+    },
+    "/api/auth/logout": async route => {
+      requests.logout.push(route.request().headers().authorization);
+      await route.fulfill({ status: 204 });
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    await assertLoginAlert(page, "The new session could not be validated.");
+    assert.equal(requests.login, 1);
+    assert.deepEqual(requests.identity, ["Bearer " + issuedToken]);
+    assert.deepEqual(requests.logout, ["Bearer " + issuedToken],
+      "An issued session rejected by identity verification must be revoked server-side");
+    assert.equal(requests.workspaces, 0, "Workspace loading must not start after identity rejection");
+    assert.equal(requests.schema, 0, "Schema loading must not start after identity rejection");
+    await assertNoDurableWorkspaceState(page);
+    assert.equal(page.url().includes(issuedToken), false);
+    assert.equal(unexpected.length, 0, "Identity rejection must not cause unmocked API requests");
+    console.log("Rejected identity revokes the provisional session and clears client state (mock API only)");
+  } finally {
+    await page.close();
+  }
+}
+
+async function testWorkspaceListFailureRevokesProvisionalSession() {
+  const page = await browser.newPage();
+  const issuedToken = "D".repeat(43);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const requests = { login: 0, identity: [], workspaces: [], schema: 0, logout: [] };
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      requests.login += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token: issuedToken, expiresAt }),
+      });
+    },
+    "/api/auth/me": async route => {
+      requests.identity.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ userId, sessionId, expiresAt }),
+      });
+    },
+    "/api/auth/workspaces": async route => {
+      requests.workspaces.push(route.request().headers().authorization);
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "unavailable" }) });
+    },
+    "/api/schema": async route => {
+      requests.schema += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(schemaPayload("neurosql_test")) });
+    },
+    "/api/auth/logout": async route => {
+      requests.logout.push(route.request().headers().authorization);
+      await route.fulfill({ status: 204 });
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    await assertLoginAlert(page, "Unable to load workspaces (HTTP 503).");
+    assert.equal(requests.login, 1);
+    assert.deepEqual(requests.identity, ["Bearer " + issuedToken]);
+    assert.deepEqual(requests.workspaces, ["Bearer " + issuedToken]);
+    assert.deepEqual(requests.logout, ["Bearer " + issuedToken],
+      "A workspace bootstrap failure must revoke the provisionally issued session");
+    assert.equal(requests.schema, 0, "Schema loading must not start without a successful workspace list");
+    await assertNoDurableWorkspaceState(page);
+    assert.equal(page.url().includes(issuedToken), false);
+    assert.equal(unexpected.length, 0, "Workspace failure must not cause unmocked API requests");
+    console.log("Workspace bootstrap failure revokes the provisional session and clears client state (mock API only)");
+  } finally {
+    await page.close();
+  }
+}
+
 try {
   await waitForPreview();
   browser = await chromium.launch({ headless: true });
   await testLoginWorkspaceSwitchAndLogout();
   await testFixedSessionExpiry();
+  await testInvalidCredentialsDoNotCreateClientSession();
+  await testRejectedIdentityRevokesProvisionallyIssuedSession();
+  await testWorkspaceListFailureRevokesProvisionalSession();
 } finally {
   await browser?.close();
   preview.kill("SIGTERM");
