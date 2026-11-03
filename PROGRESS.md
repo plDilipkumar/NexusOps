@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-04 — account-flow navigation now invalidates pending durable login operations; GitHub Actions run #414 passed.
+Last verified: 2026-11-04 — account-flow navigation is verified during delayed identity and workspace bootstrap; GitHub Actions run #416 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1534,4 +1534,20 @@ Last verified: 2026-11-04 — account-flow navigation now invalidates pending du
 - [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next milestone
-- [ ] Extend account-flow navigation race coverage to delayed identity and workspace responses, not only the initial login response. Verify that switching account flows while either request is pending revokes the issued provisional token and preserves the selected screen without stale errors or follow-on schema requests.
+- [x] Extend account-flow navigation race coverage to delayed identity and workspace responses. Two mocked Playwright scenarios now prove that switching to Forgot password or Create account while either request is pending revokes the issued provisional token, preserves the selected screen, and prevents stale workspace/schema state; CI run #416 passed.
+
+## Account-flow navigation during durable-session bootstrap — PR #9 (2026-11-04)
+
+- [x] Re-read the current tracker and inspected the feature branch/PR, dedicated Neon project `neurosql` and database `neurosql_db`, Vercel project/deployments, and the confirmed Render workspace/service/deploy history before selecting this step.
+- [x] Added `testAccountFlowSwitchSupersedesPendingBootstrap` to `frontend/tests/durableSessionFlows.e2e.mjs`. One browser scenario holds `GET /api/auth/me` after login has issued a provisional bearer token; another holds `GET /api/auth/workspaces` after identity verification. While each request is pending, the user navigates to a different account flow.
+- [x] Both scenarios release the delayed response after navigation and verify that the existing authentication-operation generation guard revokes the provisional token, preserves the chosen account-flow screen, does not install an authenticated identity, and does not continue to workspace/schema requests after the superseded stage. They also verify no stale alert, token in the URL, or local/session-storage persistence. All API calls are intercepted and mocked.
+- [x] GitHub Actions run #416 (ID `41741997006`, https://github.com/plDilipkumar/NexusOps/actions/runs/41741997006) passed on code commit `9530b162fd1be9dd1ec130267ad9f32321fad327`: backend Maven verification ran 371 tests with 0 failures/errors and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63 with 0 failures/errors/skips; frontend unit tests passed 96/96; TypeScript compilation and Vite production build passed (1,596 modules transformed); responsive navigation passed at five viewport profiles; skip-link and keyboard navigation passed at desktop/mobile; all four account-onboarding browser scenarios passed; all nineteen durable-session browser scenarios passed, including the two new account-flow navigation races.
+- [x] Production API/database smoke test was skipped because PR #9 remains unmerged. The new browser tests used mocked API responses; no live authentication, email, AI-provider, Render, or Neon request was made.
+- [x] Read-only Neon inspection reconfirmed free-tier project `neurosql` (PostgreSQL 17, Singapore), ready production branch `main` (`br-empty-credit-b360dmpc`), and dedicated database `neurosql_db`. Production main still has zero application tables and only the `neurosql_owner` password-login role. Review branch `br-silent-cherry-b3k2vqtj` contains the eight proposed `neurosql_app` tables and `neurosql_auth_runtime` as NOLOGIN; no SQL read-only LOGIN role is present. No Neon branches, schemas, data, or roles were changed.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby/free team and reports `live=false`. No deployment exists for code commit `9530b16`; the latest inspected production-target deployment is READY for `main` commit `6425ab4`, and the latest project-level deployment is a non-production READY deployment for `work/account-action-token-schema` commit `789f3ec`. No manual deployment or plan change was triggered.
+- [x] Render service `neurosql-api` remains in the confirmed Dilip Kumar workspace on the free plan in Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. The latest live deployment remains `dep-dbgfqe6gekts738l9eng` for older commit `746d58d`; no feature-branch deployment or environment change was made.
+- [ ] PR #9 remains open and unmerged; schema PR #7 remains a draft and unapproved. Production durable authentication, shared throttling, SQL execution/EXPLAIN, and AI remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, deliberate SMTP/provider configuration, and deployment/smoke verification.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Verify that a failed server-side revocation (HTTP error or network failure) after account-flow navigation is handled explicitly without leaking the provisional token, restoring stale auth state, or replacing the selected account-flow screen.
