@@ -795,6 +795,116 @@ async function testSupersededLoginResponseCannotReplaceNewSession({ stage }) {
 }
 
 
+async function testAccountFlowSwitchSupersedesPendingBootstrap({ stage, buttonName, heading, issuedToken }) {
+  assert.ok(stage === "identity" || stage === "workspaces", "Only identity and workspace bootstrap stages are supported");
+  const page = await browser.newPage();
+  const authorization = "Bearer " + issuedToken;
+  const requests = { login: [], identity: [], workspaces: [], schema: [], logout: [] };
+  let markStageStarted;
+  const stageStarted = new Promise(resolve => { markStageStarted = resolve; });
+  let releaseStage;
+  const stageGate = new Promise(resolve => { releaseStage = resolve; });
+  let markRevocationCompleted;
+  const revocationCompleted = new Promise(resolve => { markRevocationCompleted = resolve; });
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      requests.login.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token: issuedToken, expiresAt }),
+      });
+    },
+    "/api/auth/me": async route => {
+      requests.identity.push(route.request().headers().authorization);
+      if (stage === "identity") {
+        markStageStarted();
+        await stageGate;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ userId, sessionId, expiresAt }),
+      });
+    },
+    "/api/auth/workspaces": async route => {
+      requests.workspaces.push(route.request().headers().authorization);
+      if (stage === "workspaces") {
+        markStageStarted();
+        await stageGate;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([{
+          workspaceId: workspaceA,
+          name: "Analytics",
+          slug: "analytics",
+          role: "OWNER",
+        }]),
+      });
+    },
+    "/api/schema": async route => {
+      requests.schema.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(schemaPayload("neurosql_test")),
+      });
+    },
+    "/api/auth/logout": async route => {
+      requests.logout.push(route.request().headers().authorization);
+      await route.fulfill({ status: 204 });
+      markRevocationCompleted();
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page, "bootstrap-navigation@example.com");
+    await Promise.race([
+      stageStarted,
+      delay(5000).then(() => { throw new Error("The " + stage + " request did not start"); }),
+    ]);
+
+    // Navigate away while the already-issued session is waiting on identity/workspace bootstrap.
+    await page.getByRole("button", { name: buttonName, exact: true }).click();
+    await page.getByRole("heading", { name: heading, exact: true }).waitFor({ state: "visible" });
+
+    releaseStage();
+    await Promise.race([
+      revocationCompleted,
+      delay(5000).then(() => { throw new Error("The provisional session was not revoked after " + stage + " navigation"); }),
+    ]);
+
+    await page.getByRole("heading", { name: heading, exact: true }).waitFor({ state: "visible" });
+    assert.deepEqual(requests.login, [{
+      email: "bootstrap-navigation@example.com",
+      password: "synthetic-test-password-42",
+    }]);
+    assert.deepEqual(requests.identity, [authorization], "Identity verification must use the issued provisional token");
+    assert.deepEqual(requests.workspaces, stage === "workspaces" ? [authorization] : [],
+      "Workspace loading must stop if navigation supersedes identity verification");
+    assert.deepEqual(requests.schema, [], "A superseded bootstrap must never load workspace schema");
+    assert.deepEqual(requests.logout, [authorization], "The issued provisional session must be revoked after navigation");
+    assert.equal(await page.getByText("Signed in as bootstrap-navigation@example.com", { exact: false }).count(), 0,
+      "A superseded bootstrap must not install an authenticated identity");
+    assert.equal(await page.getByRole("alert").count(), 0, "A stale bootstrap must not replace the selected account-flow screen with an error");
+    assert.equal(await page.getByRole("heading", { name: "Sign in to NeuroSQL", exact: true }).count(), 0,
+      "The late bootstrap response must not return the user to sign-in");
+    assert.equal(page.url().includes(issuedToken), false);
+    await assertNoBrowserPersistence(page);
+    assert.equal(unexpected.length, 0, "Account-flow navigation during " + stage + " must not make unmocked API requests");
+    console.log("Account-flow navigation supersedes pending " + stage + " bootstrap and revokes its provisional session (mock API only)");
+  } finally {
+    releaseStage();
+    await page.close();
+  }
+}
+
+
 async function testAccountFlowSwitchSupersedesPendingLogin({ buttonName, heading, issuedToken, returnToSignIn = false }) {
   const page = await browser.newPage();
   const requests = { login: [], identity: [], workspaces: [], schema: [], logout: [] };
@@ -954,6 +1064,18 @@ try {
     issuedToken: "K".repeat(43),
   });
   await testAccountFlowBackSupersedesPendingLogin();
+  await testAccountFlowSwitchSupersedesPendingBootstrap({
+    stage: "identity",
+    buttonName: "Forgot password?",
+    heading: "Reset your password",
+    issuedToken: "M".repeat(43),
+  });
+  await testAccountFlowSwitchSupersedesPendingBootstrap({
+    stage: "workspaces",
+    buttonName: "Create account",
+    heading: "Create your NeuroSQL account",
+    issuedToken: "N".repeat(43),
+  });
 } finally {
   await browser?.close();
   preview.kill("SIGTERM");
