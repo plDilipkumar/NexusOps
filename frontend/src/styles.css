@@ -177,3 +177,5 @@
 .ai-performance-result ul{display:grid;gap:5px;margin:0;padding-left:17px;color:#8fa2c0;font-size:9px;line-height:1.6}
 .ai-performance-truncated{margin:0;padding:8px 9px;border:1px solid #6a5831;border-radius:7px;background:#292314;color:#e9d4a2;font-size:9px;line-height:1.6}
 @media(max-width:600px){.ai-performance-heading{align-items:flex-start;flex-direction:column}.ai-performance-heading button{width:100%;justify-content:center}}
+
+.sidebar nav .nav:focus-visible{outline:2px solid #9bb8ff;outline-offset:2px;background:#182946;color:#e7ecf6}
