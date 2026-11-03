@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-04 — a delayed logout failure from an earlier session is verified not to overwrite a newer successful login; GitHub Actions run #409 passed.
+Last verified: 2026-11-04 — superseded login, identity, and workspace responses are now guarded and covered by mocked browser races; GitHub Actions run #411 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1498,4 +1498,22 @@ Last verified: 2026-11-04 — a delayed logout failure from an earlier session i
 - [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next milestone
-- [ ] Review durable-login bootstrap for superseded asynchronous responses. Add a browser scenario where an older login/identity/workspace response completes after a newer authentication operation begins, and ensure stale results cannot install a session, select a workspace, or replace newer UI state.
+- [x] Review durable-login bootstrap for superseded asynchronous responses. Browser coverage for delayed login, identity, and workspace responses completing after a newer login starts is implemented and verified in the section below.
+
+## Superseded durable-login bootstrap response protection — PR #9 (2026-11-04)
+
+- [x] Re-read the current progress tracker and inspected the feature branch, PR #9, Neon project/database/branches, Vercel project and deployments, and the confirmed Render workspace/service/deploy history before selecting this step.
+- [x] Captured a monotonically increasing authentication-operation generation in `handleDurableLogin`. A new login now invalidates prior authentication state, clears any previous client-side workspace/schema state, and checks that its generation is still current after the login, identity, and workspace responses.
+- [x] If a response belongs to a superseded login after a bearer token has been issued, the client attempts to revoke that provisional token and stops before making later identity/workspace/schema requests. Superseded errors and `finally` handlers cannot clear or replace the newer operation's UI state or loading indicator.
+- [x] Added three mocked Playwright browser scenarios to `frontend/tests/durableSessionFlows.e2e.mjs`: an older login response, identity response, or workspace-list response is held while a newer login completes, then released. Each scenario verifies that only the newer token loads schema, the older issued token is revoked, no stale identity/workspace/schema state is installed, the newer workspace and sign-out control remain active, no stale alert appears, and browser storage remains empty.
+- [x] Updated the CI step name to explicitly include superseded-response race coverage. All browser API calls remain mocked; no live account, Neon, Render, SMTP, or AI provider is contacted.
+- [x] GitHub Actions run #411 (ID `41726172742`, https://github.com/plDilipkumar/NexusOps/actions/runs/41726172742) passed on code commit `fd5c7d9ca61a48aeebcd86c963cd5fc67e0cd304`. Backend Maven verification: 371 tests, 0 failures/errors, 63 expected database-gated skips. Disposable PostgreSQL 17 integration: 63/63 passed, 0 failures/errors/skips. Frontend unit tests: 96/96 passed. TypeScript compilation and Vite production build passed (1,596 modules transformed). Playwright passed five responsive viewport profiles, skip-link and keyboard navigation at desktop/mobile, all four account-onboarding flows, and all thirteen durable-session browser scenarios, including the three new stale-response races.
+- [x] The production API/database smoke test was skipped because PR #9 remains unmerged. No production authentication, SQL, SMTP, or AI-provider request was made.
+- [x] Read-only Neon inspection confirmed free-tier project `neurosql` (PostgreSQL 17, Singapore), ready production branch `main` (`br-empty-credit-b360dmpc`), and dedicated database `neurosql_db`. Production main still has zero application tables and only the `neurosql_owner` password-login role. Review branch `br-silent-cherry-b3k2vqtj` contains eight proposed `neurosql_app` tables and the `neurosql_auth_runtime` NOLOGIN role; no SQL read-only LOGIN role is provisioned. No Neon branch, schema, data, or role writes were made.
+- [x] Vercel project `neurosql` remains on Hobby/free and deployment metadata links it to `plDilipkumar/NexusOps`. The latest inspected production-target deployment remains READY for `main` commit `6425ab4`; the latest project-level preview record remains READY for commit `789f3ec`. No deployment exists for code commit `fd5c7d9`; project metadata reports `live=false`. No Vercel deployment or plan change was triggered.
+- [x] Render service `neurosql-api` remains on the free plan in the confirmed Dilip Kumar workspace, Singapore region, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. Latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58d`; no feature-branch deployment or environment change was made.
+- [ ] PR #9 remains open and unmerged (head `fd5c7d9`); schema PR #7 remains a draft and unapproved. Production durable authentication, shared throttling, SQL execution/EXPLAIN, and AI remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, deliberate SMTP/provider configuration, and deployment/smoke verification.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Invalidate a pending durable-login operation when the user switches to Forgot password, Create account, or Resend verification while login is still in flight. Add a mocked delayed-login browser test proving the late response cannot replace the selected account-flow screen; those navigation buttons currently remain available while login is busy.
