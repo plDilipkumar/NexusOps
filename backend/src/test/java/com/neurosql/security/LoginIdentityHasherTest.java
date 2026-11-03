@@ -32,6 +32,17 @@ class LoginIdentityHasherTest {
     }
 
     @Test
+    void namespacedMaximumLengthEmailIdentityDoesNotCollapseToInvalidSentinel() {
+        LoginIdentityHasher hasher = new LoginIdentityHasher(KEY);
+        String namespacedIdentity =
+                "neurosql:account-lifecycle:email:registration:" + "a".repeat(254);
+
+        assertThat(namespacedIdentity.length()).isGreaterThan(254).isLessThan(512);
+        assertThat(hasher.hash(namespacedIdentity)).isNotEqualTo(hasher.hash(null));
+        assertThat(hasher.hash(namespacedIdentity)).isEqualTo(hasher.hash(namespacedIdentity));
+    }
+
+    @Test
     void rejectsMissingOrShortKeys() {
         assertThatThrownBy(() -> new LoginIdentityHasher(null))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -44,6 +55,6 @@ class LoginIdentityHasherTest {
         LoginIdentityHasher hasher = new LoginIdentityHasher(KEY);
 
         assertThat(hasher.hash(null)).isEqualTo(hasher.hash("   "));
-        assertThat(hasher.hash("x".repeat(255))).isEqualTo(hasher.hash(null));
+        assertThat(hasher.hash("x".repeat(513))).isEqualTo(hasher.hash(null));
     }
 }
