@@ -85,6 +85,12 @@ try {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
     await page.keyboard.press("Tab");
+    await page.waitForFunction(() => {
+      const link = document.querySelector(".skip-link");
+      if (!(link instanceof HTMLElement)) return false;
+      const bounds = link.getBoundingClientRect();
+      return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+    });
 
     const skipLink = page.getByRole("link", { name: "Skip to main content", exact: true });
     const focusedText = await page.evaluate(() => document.activeElement?.textContent?.trim());
