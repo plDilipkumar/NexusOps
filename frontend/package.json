@@ -7,7 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --experimental-strip-types --test tests/durableAuth.test.ts tests/sqlExecution.test.ts tests/sqlExplain.test.ts tests/queryHistory.test.ts tests/savedQueries.test.ts tests/passwordRecovery.test.ts tests/accountOnboarding.test.ts tests/aiSql.test.ts tests/aiSqlExplanation.test.ts tests/aiSqlPerformance.test.ts"
+    "test": "node --experimental-strip-types --test tests/durableAuth.test.ts tests/sqlExecution.test.ts tests/sqlExplain.test.ts tests/queryHistory.test.ts tests/savedQueries.test.ts tests/passwordRecovery.test.ts tests/accountOnboarding.test.ts tests/aiSql.test.ts tests/aiSqlExplanation.test.ts tests/aiSqlPerformance.test.ts",
+    "test:responsive": "node tests/responsiveNavigation.e2e.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -19,6 +20,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.6.3",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "playwright": "^1.56.1"
   }
 }
