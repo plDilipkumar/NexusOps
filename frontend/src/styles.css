@@ -123,3 +123,24 @@
 .cancel-query-button{border-color:#75404e!important;background:#2a1722!important;color:#ffc0c9!important;white-space:nowrap}
 .cancel-query-button:hover{background:#3b1c28!important}
 .cancel-query-button:disabled{opacity:.55;cursor:wait}
+
+/* Workspace-scoped AI SQL drafting. */
+.ai-copilot-prompts button:disabled{opacity:.45;cursor:not-allowed}
+.ai-copilot-form{display:grid;gap:8px;margin-top:13px}
+.ai-copilot-form label{font-size:9px;color:#aab9d0}
+.ai-copilot-form textarea{box-sizing:border-box;width:100%;min-height:96px;resize:vertical;border:1px solid #34445f;border-radius:8px;background:#0a1321;color:#e7edf8;padding:10px;font:inherit;font-size:10px;line-height:1.6;outline:none}
+.ai-copilot-form textarea::placeholder{color:#667995}
+.ai-copilot-form textarea:focus{border-color:#829aff;box-shadow:0 0 0 2px #829aff22}
+.ai-copilot-form .run{width:100%;justify-content:center;gap:7px}
+.ai-copilot-form .run:disabled{opacity:.45;cursor:not-allowed}
+.ai-copilot-state{margin:10px 0 0;color:#8294b1;font-size:9px;line-height:1.6}
+.ai-copilot-error{margin:10px 0 0;padding:9px;border:1px solid #74414e;border-radius:7px;background:#271822;color:#ffc0c9;font-size:9px;line-height:1.6}
+.ai-copilot-result{min-width:0;margin-top:12px;padding:10px;border:1px solid #334568;border-radius:8px;background:#0a1321}
+.ai-copilot-result-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.ai-copilot-result-heading b{font-size:10px;color:#dce6fb}
+.ai-copilot-result-heading span{font-size:8px;color:#a7c6b2;text-transform:uppercase;letter-spacing:.04em}
+.ai-copilot-result pre{max-height:210px;overflow:auto;margin:0;padding:9px;border-radius:6px;background:#070d17;color:#c7d7f2;font:10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.ai-copilot-warning{margin:8px 0 0;color:#9aabc5;font-size:9px;line-height:1.5}
+.ai-copilot-result-actions{display:flex;justify-content:flex-end;margin-top:10px}
+.ai-copilot-result-actions button{display:flex;align-items:center;gap:6px}
+@media(max-width:600px){.ai-copilot-form textarea{min-height:82px}.ai-copilot-result pre{max-height:160px}}
