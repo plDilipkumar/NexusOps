@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — login/password-reset concurrency race closed; GitHub Actions run #316 passed.
+Last verified: 2026-11-03 — gated password-reset confirmation endpoint added; GitHub Actions run #320 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1073,3 +1073,29 @@ Last verified: 2026-11-03 — login/password-reset concurrency race closed; GitH
 - [ ] Add a generic, rate-limited password-reset request endpoint that does not reveal whether an email exists and safely rotates outstanding PASSWORD_RESET tokens; keep email delivery feature-gated until SMTP credentials are configured securely outside source control.
 - [ ] Add the password-reset confirmation HTTP endpoint using the transactional PasswordResetService, with generic invalid-token responses, request validation, and Cache-Control: no-store.
 - [ ] Before public account lifecycle rollout, replace process-local registration/verification quotas with a verified shared abuse-control design and configure trusted proxy CIDRs; do not trust arbitrary forwarded headers.
+
+
+## Gated password-reset confirmation HTTP endpoint — PR #9 (2026-11-03)
+
+- [x] Re-read this tracker and inspected the current feature branch, PR #9/#7, password-reset orchestration service, token-consumption path, account/session repositories, SecurityConfig CORS policy, Neon project/database/branches/roles, Vercel Git linkage/deployments, and the confirmed Render workspace/service/deploy history before selecting this step.
+- [x] Added `PasswordResetController` with `POST /api/auth/password-reset/confirm`. It delegates to the existing transactional `PasswordResetService`; no duplicate token format, token table, password encoder, or session-revocation logic was introduced.
+- [x] The controller is feature-gated on both `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=true` and `NEUROSQL_AUTH_SHARED_RATE_LIMIT_ENABLED=true`. It does not require SMTP because it only consumes a previously issued token. The route remains absent under the production defaults.
+- [x] Request validation accepts the canonical 43-character base64url token shape and bounds the submitted password body. The existing `PasswordPolicy` still enforces the 12-code-point minimum, 72-byte BCrypt limit, and control-character rejection before token consumption.
+- [x] Valid tokens return a generic success message; invalid, expired, replayed, and wrong-purpose tokens share one generic 400 response. Password-policy failures return a generic 400 response; transactional/account-state failures return a generic 503 response without internal details.
+- [x] Both success and error responses set `Cache-Control: no-store` and `Pragma: no-cache`. The controller does not echo or log the raw token or submitted password. Controller-local validation/parsing handlers avoid Spring's default rejected-value warning logger for malformed credentials.
+- [x] Added seven MockMvc tests covering successful reset delegation, identical invalid/replay responses, password-policy error redaction, generic temporary failure, malformed/missing fields rejected before service access, malformed JSON, and CORS preflight. The preflight test intentionally omits SMTP configuration, proving that confirmation does not depend on email delivery.
+- [x] GitHub Actions run #320 (ID `41555869033`, https://github.com/plDilipkumar/NexusOps/actions/runs/41555869033) passed on code commit `7d39acf80ee64fb2164f48865db35d1dfd9a0005`: backend Maven verification ran 305 tests with 0 failures/errors and 55 expected database-gated skips; the disposable PostgreSQL 17 integration job passed 55 tests with 0 failures/errors/skips, including five password-reset integration tests; frontend tests passed (47), and the Vite production build passed. All seven new `PasswordResetControllerTest` tests passed. Production API/database smoke was skipped because PR #9 remains unmerged.
+- [x] Fresh read-only Neon inspection on 2026-11-03 confirmed project `neurosql` (`lingering-dew-88806235`), PostgreSQL 17.11, production branch `main` (`br-empty-credit-b360dmpc`), and database `neurosql_db`. Production has zero application tables; the only inspected NeuroSQL role is the elevated `neurosql_owner` LOGIN. Temporary V5 review branch `br-morning-scene-b35jbi7a` contains eight proposed `neurosql_app` tables; `neurosql_auth_runtime` remains `NOLOGIN`. No schema, row, or role was changed.
+- [x] Vercel Git deployment context directly confirms Hobby project `neurosql` (`prj_bWhKWqbbb5EaNRdez05bEsMPe35a`) is linked to `plDilipkumar/NexusOps`. Project metadata reports `live=false`; latest listed deployment is READY with no production target. A deployment lookup for code commit `7d39acf80ee64fb2164f48865db35d1dfd9a0005` returned zero deployments. No Vercel deployment or plan change was triggered.
+- [x] Render was inspected in the previously confirmed Dilip Kumar workspace. Service `neurosql-api` (`srv-dbgb6vt9fdbs73da93n0`) remains free-tier, Singapore, one instance, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, auto-deploy on commit. Latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58da4d47b1fb49a6796dda8b424c8a6c969d`; the new endpoint is not deployed.
+- [ ] Password-reset request/initiation endpoint is still pending. The existing SMTP adapter sends verification messages only; a dedicated password-reset email path and separate reset URL setting are required before users can receive reset tokens.
+- [ ] The current registration/verification request limiter is process-local. A verified shared/distributed abuse-control design and operator-configured trusted proxy CIDRs remain required before public password-reset initiation; do not treat the shared-login flag as a distributed request limiter or trust arbitrary forwarded headers.
+- [ ] PR #9 remains open/unmerged. Draft PR #7 remains unapproved/unmerged; proposed V1–V5 migrations remain unapplied to Neon `main`. The production application/control-plane LOGIN and dedicated SQL read-only LOGIN remain unverified, so durable auth, account lifecycle, query history, saved queries, and SQL execution remain disabled in production.
+- [x] No Neon migrations, production database writes, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+
+- [ ] Add a generic password-reset request endpoint that returns the same accepted response for known and unknown email addresses, applies email/IP throttling, and rotates outstanding `PASSWORD_RESET` tokens without exposing account state.
+- [ ] Extend the email-delivery boundary with a separate password-reset URL and safe message content; keep SMTP delivery disabled until provider settings are configured securely outside source control.
+- [ ] Before any public account-lifecycle rollout, replace process-local request quotas with a verified shared/distributed abuse-control design and configure trusted proxy CIDRs.
+- [ ] Add registration, verification, and password-recovery frontend screens only after the HTTP contracts and delivery path are stable.
