@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-04 — provisional-session revocation failures now show a sanitized warning for HTTP and network failures; mocked browser coverage and CI run #405 passed.
+Last verified: 2026-11-04 — a delayed logout failure from an earlier session is verified not to overwrite a newer successful login; GitHub Actions run #409 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1481,4 +1481,21 @@ Last verified: 2026-11-04 — provisional-session revocation failures now show a
 - [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next milestone
-- [ ] Add a mocked concurrency test proving a delayed logout failure from an earlier session cannot overwrite a newer successful login state. The operation-generation guard is implemented; this race has not yet been exercised in the browser.
+- [x] Add a mocked concurrency test proving a delayed logout failure from an earlier session cannot overwrite a newer successful login state. Completed and verified in the section below.
+
+## Delayed logout / newer login concurrency verification — PR #9 (2026-11-04)
+
+- [x] Re-read this tracker and inspected the current repository branch and PR, dedicated Neon project/database/branches, Vercel project/deployment linkage, and Render service/deployment history before selecting this milestone.
+- [x] Added `testDelayedLogoutCannotOverwriteNewLogin` to `frontend/tests/durableSessionFlows.e2e.mjs`. The test completes a first mocked login, starts sign-out, deliberately holds the earlier session's logout response, completes a second login and workspace/schema load, then releases an HTTP 503 from the old logout request.
+- [x] Verified the old logout request carried only the first session token, while schema requests for the first and second login used their respective tokens. After the stale HTTP 503 completes, the second session remains signed in, the active workspace remains selected, the sign-out control remains available, and no stale revocation warning appears.
+- [x] All API requests in this browser scenario are intercepted and mocked. No live account, Render API, Neon database, SMTP service, or AI provider is contacted. Browser localStorage and sessionStorage remain empty.
+- [x] GitHub Actions run #409 (ID `41716108631`, https://github.com/plDilipkumar/NexusOps/actions/runs/41716108631) passed on code commit `9c52e7d7d48e2706ff38f8d1f2be3ec644a38864`. Backend Maven verification: 371 tests, 0 failures/errors, 63 expected database-gated skips. Disposable PostgreSQL 17 integration: 63/63 passed, 0 failures/errors/skips. Frontend unit tests: 96/96 passed. TypeScript compilation and Vite production build passed (1,596 modules transformed). Responsive navigation passed at five viewport profiles; skip-link and keyboard navigation passed; all four account-onboarding browser scenarios passed; all ten durable-session browser scenarios passed, including the delayed-logout/new-login race.
+- [x] Production API/database smoke test was skipped because PR #9 remains unmerged. No live authentication or production endpoint was used.
+- [x] Read-only Neon inspection reconfirmed free-tier project `neurosql` (PostgreSQL 17, Singapore), production branch `main` (`br-empty-credit-b360dmpc`), and dedicated database `neurosql_db`. Production main still has zero application tables and only the `neurosql_owner` password-login role. Review branch `br-silent-cherry-b3k2vqtj` contains eight proposed `neurosql_app` tables and the `neurosql_auth_runtime` NOLOGIN role; no SQL read-only LOGIN role is provisioned there or on production main. No Neon branch, schema, data, or role writes were made.
+- [x] Vercel project `neurosql` remains linked through deployment metadata to `plDilipkumar/NexusOps` on the Hobby/free team. The latest inspected production-target deployment is READY for main commit `6425ab4`; the latest project-level deployment record is READY for commit `789f3ec` with no production target. No deployment was found for feature code commit `9c52e7d`; no manual deployment or plan change was triggered.
+- [x] Render service `neurosql-api` remains on the free plan in Singapore, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. Its latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58d`; the feature branch was not deployed.
+- [ ] PR #9 remains open and unmerged (tested code commit `9c52e7d`; schema PR #7 remains a draft and unapproved). Production durable authentication, shared throttling, SQL execution/EXPLAIN, and AI remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, deliberate SMTP/provider configuration, and deployment/smoke verification.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Review durable-login bootstrap for superseded asynchronous responses. Add a browser scenario where an older login/identity/workspace response completes after a newer authentication operation begins, and ensure stale results cannot install a session, select a workspace, or replace newer UI state.
