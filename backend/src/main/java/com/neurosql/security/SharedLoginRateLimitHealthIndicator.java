@@ -28,13 +28,14 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
                        SELECT 1 FROM pg_constraint constraint_info
                        WHERE constraint_info.conrelid = to_regclass('neurosql_app.auth_login_rate_limits')
                          AND constraint_info.conname = 'auth_login_rate_limits_failure_timestamps_check'
-                         AND pg_get_constraintdef(constraint_info.oid) LIKE '%30%'
+                         AND pg_get_constraintdef(constraint_info.oid) LIKE '%<= 30%'
                    ) AS supports_thirty_attempts,
                    EXISTS (
                        SELECT 1 FROM pg_constraint constraint_info
                        WHERE constraint_info.conrelid = to_regclass('neurosql_app.auth_login_rate_limits')
                          AND constraint_info.conname = 'auth_login_rate_limit_block_consistency'
-                         AND pg_get_constraintdef(constraint_info.oid) LIKE '%30%'
+                         AND pg_get_constraintdef(constraint_info.oid) LIKE '%>= 5%'
+                         AND pg_get_constraintdef(constraint_info.oid) LIKE '%<= 30%'
                    ) AS supports_variable_threshold_blocks,
                    has_schema_privilege(current_user, 'neurosql_app', 'USAGE') AS schema_usage,
                    NOT has_schema_privilege(current_user, 'neurosql_app', 'CREATE') AS schema_create_denied,
