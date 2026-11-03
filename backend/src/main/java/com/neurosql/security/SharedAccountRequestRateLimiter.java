@@ -78,10 +78,14 @@ public class SharedAccountRequestRateLimiter {
     }
 
     /**
-     * Applies a shared five-attempt quota per authenticated user to bound provider
-     * usage across restarts and application instances.
+     * Applies one shared five-attempt quota per authenticated user to all AI SQL
+     * operations, including generation and explanation, across restarts and instances.
      */
     public Decision acquireAiSqlGeneration(UUID userId) {
+        return acquireAiSqlRequest(userId);
+    }
+
+    public Decision acquireAiSqlRequest(UUID userId) {
         Objects.requireNonNull(userId, "userId");
         return acquire(List.of(new Bucket(AI_SQL_USER_PREFIX + userId, 5)));
     }

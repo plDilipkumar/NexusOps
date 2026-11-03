@@ -24,6 +24,8 @@ import java.util.UUID;
 
 import com.neurosql.api.AiSqlGenerationController;
 import com.neurosql.api.AiSqlGenerationService;
+import com.neurosql.api.AiSqlExplanationController;
+import com.neurosql.api.AiSqlExplanationService;
 import com.neurosql.api.DurableSessionController;
 import com.neurosql.api.SchemaController;
 import com.neurosql.api.SqlExecutionController;
@@ -46,7 +48,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class, SavedQueriesController.class, AiSqlGenerationController.class})
+@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class, SavedQueriesController.class, AiSqlGenerationController.class, AiSqlExplanationController.class})
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = {
         "neurosql.auth.enabled=true",
@@ -98,6 +100,9 @@ class WorkspaceAuthorizationHttpTest {
 
     @MockBean
     private AiSqlGenerationService aiSqlGenerationService;
+
+    @MockBean
+    private AiSqlExplanationService aiSqlExplanationService;
 
     @MockBean
     private SharedAccountRequestRateLimiter sharedAccountRequestRateLimiter;
@@ -254,6 +259,83 @@ class WorkspaceAuthorizationHttpTest {
                         org.hamcrest.Matchers.containsString("no-store")));
 
         verifyNoInteractions(aiSqlGenerationService);
+    }
+
+    @Test
+    void activeViewerCanRequestAiExplanationForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlRequest(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
+        when(aiSqlExplanationService.explain(any()))
+                .thenReturn(new AiSqlExplanationService.ExplainResponse(
+                        "The query returns the constant value 1.", "SELECT", List.of("The query was not executed.")));
+
+        mockMvc.perform(post("/api/sql/ai/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.explanation").value("The query returns the constant value 1."))
+                .andExpect(jsonPath("$.statementType").value("SELECT"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(sharedAccountRequestRateLimiter).acquireAiSqlRequest(USER_ID);
+        verify(aiSqlExplanationService).explain(any());
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotRequestAiExplanation() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/ai/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(sharedAccountRequestRateLimiter, aiSqlExplanationService);
+    }
+
+    @Test
+    void aiExplanationSharesTheAiQuotaAndReturnsRetryAfter() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlRequest(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(false, 120));
+
+        mockMvc.perform(post("/api/sql/ai/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "120"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")));
+
+        verifyNoInteractions(aiSqlExplanationService);
+    }
+
+    @Test
+    void legacyOwnerCannotUseDurableAiExplanationEndpoint() throws Exception {
+        mockMvc.perform(post("/api/sql/ai/explain")
+                        .with(httpBasic("test-owner", "test-owner-password-123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(aiSqlExplanationService);
     }
 
     @Test

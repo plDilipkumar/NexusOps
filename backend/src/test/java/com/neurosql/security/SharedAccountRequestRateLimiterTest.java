@@ -109,6 +109,24 @@ class SharedAccountRequestRateLimiterTest {
     }
 
     @Test
+    void aiSqlGenerationAndExplanationShareOneFiveAttemptUserQuota() {
+        UUID userId = UUID.fromString("b4f41d45-68dc-4f7b-8df0-48e3f29e54c1");
+        for (int attempt = 0; attempt < 4; attempt++) {
+            SharedAccountRequestRateLimiter.Decision decision = attempt % 2 == 0
+                    ? limiter.acquireAiSqlGeneration(userId)
+                    : limiter.acquireAiSqlRequest(userId);
+            assertThat(decision.permitted()).isTrue();
+        }
+
+        SharedAccountRequestRateLimiter.Decision blocked = limiter.acquireAiSqlRequest(userId);
+
+        assertThat(blocked.permitted()).isFalse();
+        assertThat(blocked.retryAfterSeconds()).isEqualTo(900);
+        assertThat(shared.attempts).containsEntry("neurosql:ai-sql-generation:user:" + userId, 5);
+        assertThat(shared.thresholds).containsEntry("neurosql:ai-sql-generation:user:" + userId, 5);
+    }
+
+    @Test
     void missingTrustedClientAddressDoesNotCreateAnIpBucket() {
         assertThat(limiter.acquireRegistration("alice@example.test", null).permitted()).isTrue();
         assertThat(limiter.acquireVerificationConsumption(null).permitted()).isTrue();
