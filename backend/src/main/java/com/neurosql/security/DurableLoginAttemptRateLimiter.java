@@ -1,18 +1,21 @@
 package com.neurosql.security;
 
-/** Shared contract for durable-login and account-request throttling. */
+/** Shared contract for login and account-request throttling. */
 interface DurableLoginAttemptRateLimiter {
     long retryAfterSeconds(String identity);
 
-    /**
-     * Records a failure and blocks the identity when the rolling-window count
-     * reaches {@code maxAttempts}. The database schema must support that cap.
-     */
-    void recordFailure(String identity, int maxAttempts);
+    /** Existing implementations retain their five-attempt default. */
+    void recordFailure(String identity);
 
-    /** Durable login retains its five-attempt policy. */
-    default void recordFailure(String identity) {
-        recordFailure(identity, 5);
+    /**
+     * Records a failure using a bucket-specific threshold. Implementations that
+     * cannot support alternate thresholds remain safe by accepting only five.
+     */
+    default void recordFailure(String identity, int maxAttempts) {
+        if (maxAttempts != 5) {
+            throw new UnsupportedOperationException("This rate limiter does not support alternate thresholds.");
+        }
+        recordFailure(identity);
     }
 
     void recordSuccess(String identity);
