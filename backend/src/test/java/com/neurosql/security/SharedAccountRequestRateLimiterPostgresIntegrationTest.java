@@ -65,7 +65,7 @@ class SharedAccountRequestRateLimiterPostgresIntegrationTest {
                         CHECK (array_position(failure_timestamps, NULL) IS NULL),
                     blocked_until TIMESTAMPTZ,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    CHECK (
+                    CONSTRAINT auth_login_rate_limit_block_consistency CHECK (
                         (blocked_until IS NULL AND cardinality(failure_timestamps) < 30)
                         OR (blocked_until IS NOT NULL
                             AND cardinality(failure_timestamps) BETWEEN 5 AND 30)
