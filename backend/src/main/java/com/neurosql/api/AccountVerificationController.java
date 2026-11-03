@@ -3,10 +3,14 @@ package com.neurosql.api;
 import java.util.Objects;
 
 import com.neurosql.security.AccountActionTokenService;
+import com.neurosql.security.SharedAccountRequestRateLimiter;
+import com.neurosql.security.TrustedClientAddressResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -21,12 +25,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Consumes one-time email-verification links without requiring the SMTP sender
- * to be enabled. The route remains absent until the durable-auth schema and
- * shared login throttling are deliberately enabled.
- *
- * <p>Invalid, expired, and replayed tokens share one response. Raw tokens are
- * never logged or returned to the caller.</p>
+ * Consumes one-time email-verification links. Token-consumption attempts receive
+ * a shared client-IP quota only when the address is resolved through explicitly
+ * configured trusted proxy CIDRs. Raw tokens are never logged or returned.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -41,11 +42,23 @@ public class AccountVerificationController {
             "This verification link is invalid or has expired. Request a new verification email.";
     private static final String INVALID_REQUEST_MESSAGE =
             "A valid verification token is required.";
+    private static final String TEMPORARY_FAILURE_MESSAGE =
+            "Email verification is temporarily unavailable. Try again later.";
 
     private final AccountActionTokenService actionTokens;
+    private final SharedAccountRequestRateLimiter requestRateLimiter;
+    private final TrustedClientAddressResolver clientAddressResolver;
+    private final boolean trustedProxyRangesConfigured;
 
-    public AccountVerificationController(AccountActionTokenService actionTokens) {
+    public AccountVerificationController(
+            AccountActionTokenService actionTokens,
+            SharedAccountRequestRateLimiter requestRateLimiter,
+            TrustedClientAddressResolver clientAddressResolver,
+            @Value("${neurosql.security.trusted-proxy-cidrs:}") String trustedProxyCidrs) {
         this.actionTokens = Objects.requireNonNull(actionTokens, "actionTokens");
+        this.requestRateLimiter = Objects.requireNonNull(requestRateLimiter, "requestRateLimiter");
+        this.clientAddressResolver = Objects.requireNonNull(clientAddressResolver, "clientAddressResolver");
+        this.trustedProxyRangesConfigured = trustedProxyCidrs != null && !trustedProxyCidrs.isBlank();
     }
 
     @PostMapping(
@@ -53,34 +66,67 @@ public class AccountVerificationController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<MessageResponse> verifyEmail(
-            @Valid @RequestBody TokenRequest request) {
-        if (actionTokens.verifyEmail(request.token())) {
-            return response(HttpStatus.OK, VERIFIED_MESSAGE);
+            @Valid @RequestBody TokenRequest request,
+            HttpServletRequest servletRequest) {
+        String clientAddress = null;
+        if (trustedProxyRangesConfigured) {
+            clientAddress = clientAddressResolver.resolve(servletRequest);
+            if ("unknown".equals(clientAddress)) {
+                return response(HttpStatus.SERVICE_UNAVAILABLE, TEMPORARY_FAILURE_MESSAGE, null);
+            }
         }
-        return response(HttpStatus.BAD_REQUEST, INVALID_MESSAGE);
+
+        final SharedAccountRequestRateLimiter.Decision decision;
+        try {
+            decision = requestRateLimiter.acquireVerificationConsumption(clientAddress);
+        } catch (RuntimeException limiterUnavailable) {
+            return response(HttpStatus.SERVICE_UNAVAILABLE, TEMPORARY_FAILURE_MESSAGE, null);
+        }
+
+        if (!decision.permitted()) {
+            return response(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many verification attempts. Try again later.",
+                    decision.retryAfterSeconds());
+        }
+
+        try {
+            if (actionTokens.verifyEmail(request.token())) {
+                return response(HttpStatus.OK, VERIFIED_MESSAGE, null);
+            }
+            return response(HttpStatus.BAD_REQUEST, INVALID_MESSAGE, null);
+        } catch (RuntimeException persistenceUnavailable) {
+            return response(HttpStatus.SERVICE_UNAVAILABLE, TEMPORARY_FAILURE_MESSAGE, null);
+        }
     }
 
     /**
      * Spring's default validation resolver logs rejected field values at WARN.
-     * Override it here so malformed bearer-like tokens never enter application logs.
+     * Override it so malformed bearer-like tokens never enter application logs.
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<MessageResponse> invalidTokenRequest(
             MethodArgumentNotValidException ignored) {
-        return response(HttpStatus.BAD_REQUEST, INVALID_REQUEST_MESSAGE);
+        return response(HttpStatus.BAD_REQUEST, INVALID_REQUEST_MESSAGE, null);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<MessageResponse> unreadableTokenRequest(
             HttpMessageNotReadableException ignored) {
-        return response(HttpStatus.BAD_REQUEST, INVALID_REQUEST_MESSAGE);
+        return response(HttpStatus.BAD_REQUEST, INVALID_REQUEST_MESSAGE, null);
     }
 
-    private static ResponseEntity<MessageResponse> response(HttpStatus status, String message) {
-        return ResponseEntity.status(status)
+    private static ResponseEntity<MessageResponse> response(
+            HttpStatus status,
+            String message,
+            Long retryAfterSeconds) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status)
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .header(HttpHeaders.PRAGMA, "no-cache")
-                .body(new MessageResponse(message));
+                .header(HttpHeaders.PRAGMA, "no-cache");
+        if (retryAfterSeconds != null) {
+            response.header(HttpHeaders.RETRY_AFTER, Long.toString(Math.max(1, retryAfterSeconds)));
+        }
+        return response.body(new MessageResponse(message));
     }
 
     public record TokenRequest(
