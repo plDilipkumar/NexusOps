@@ -43,6 +43,26 @@ class SharedLoginRateLimitHealthIndicatorTest {
     }
 
     @Test
+    void reportsDownWhenRateLimitTableDoesNotSupportThirtyAttemptBuckets() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object> result = readyRow(EXPECTED_DATABASE);
+        result.put("supports_thirty_attempts", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(result);
+
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void reportsDownWhenRateLimitBlockConstraintDoesNotSupportMultipleThresholds() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object> result = readyRow(EXPECTED_DATABASE);
+        result.put("supports_variable_threshold_blocks", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(result);
+
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
     void reportsDownWhenARequiredColumnGrantIsMissing() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         Map<String, Object> result = readyRow(EXPECTED_DATABASE);
@@ -177,6 +197,8 @@ class SharedLoginRateLimitHealthIndicatorTest {
         return new HashMap<>(Map.ofEntries(
                 Map.entry("database_name", databaseName),
                 Map.entry("table_exists", true),
+                Map.entry("supports_thirty_attempts", true),
+                Map.entry("supports_variable_threshold_blocks", true),
                 Map.entry("session_identity_matches_current_role", true),
                 Map.entry("schema_usage", true),
                 Map.entry("schema_create_denied", true),
