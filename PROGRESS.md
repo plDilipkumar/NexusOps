@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-03 — Playwright viewport verification added for workspace navigation; GitHub Actions run #382 passed.
+Last verified: 2026-11-03 — keyboard-only workspace navigation and focus-visible browser coverage added; GitHub Actions run #384 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1352,3 +1352,20 @@ Last verified: 2026-11-03 — Playwright viewport verification added for workspa
 - [ ] PR #9 remains open/unmerged; schema PR #7 remains draft/unapproved. Production durable authentication, SQL execution/EXPLAIN, and AI features remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, and deliberate AI provider configuration.
 - [x] No production database writes/migrations, role changes, deployments, environment changes, credentials, or paid resources were introduced.
 - [ ] Next non-production milestone: add keyboard-only navigation and focus-visible browser coverage without enabling any gated production feature.
+
+
+## Keyboard-only workspace navigation and focus-visible verification — PR #9 (2026-11-03)
+
+- [x] Re-read the active progress tracker and inspected the repository, open PRs, Neon project and dedicated `neurosql_db`, Vercel project/deployments, and confirmed Render workspace/service/deploy history before choosing this milestone.
+- [x] Added an explicit `:focus-visible` treatment to workspace navigation buttons: a 2px solid high-contrast outline with 2px offset, plus a distinct focused background/text treatment. Mouse-only focus styling is not forced.
+- [x] Extended the existing Playwright browser test to traverse all five workspace destinations using Tab only, verify the expected tab order, assert that each destination matches `:focus-visible` and renders the 2px outline, then activate destinations using Enter (and Space for Saved queries).
+- [x] Verified keyboard navigation at desktop 1440x900 and mobile 390x844. Existing responsive checks still cover desktop 1440x900, tablet 851x900 and 850x900, mobile 390x844, and narrow mobile 320x740.
+- [x] GitHub Actions run #384 (ID `41647629931`, https://github.com/plDilipkumar/NexusOps/actions/runs/41647629931) passed on code commit `fb445b73148172f43755322655131beb3490a113`: backend Maven verification ran 371 tests with 0 failures/errors and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63 with 0 failures/errors/skips; frontend unit tests passed 96/96; TypeScript compilation and Vite production build passed (1,596 modules transformed); Playwright passed all five responsive viewports and both keyboard-only viewport profiles. Production API/database smoke was skipped because PR #9 remains unmerged.
+- [x] Fresh read-only Neon checks confirmed free PostgreSQL 17 project `neurosql` in `aws-ap-southeast-1`. Production `main` database `neurosql_db` has zero application tables and only the elevated `neurosql_owner` LOGIN role. The separate V6 review branch `neurosql-rate-limit-v6-review-20261103` contains the eight proposed `neurosql_app` tables; `neurosql_auth_runtime` remains `NOLOGIN`, and `neurosql_sql_readonly` is absent. No production or review-branch writes or role changes were made.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby/free plan. Project metadata reports `live=false` and SSO protection enabled for deployments except custom domains. The latest production-target deployment remains READY for older `main` commit `6425ab4`; a deployment lookup for code commit `fb445b73148172f43755322655131beb3490a113` returned zero deployments. No deployment or plan change was triggered.
+- [x] Render `neurosql-api` remains on the free plan in the confirmed workspace, linked to repository branch `main`, Docker context `backend`, with commit auto-deploy enabled. Latest live deployment remains `dep-dbgfqe6gekts738l9eng` for older commit `746d58d`; this feature branch is not deployed.
+- [ ] PR #9 remains open/unmerged and schema PR #7 remains draft/unapproved. Production durable authentication, SQL execution/EXPLAIN, and AI features remain blocked on explicit V1–V6 schema approval, verified least-privilege application and SQL-read-only LOGIN roles, secure HMAC configuration, and deliberate AI provider configuration. No live AI provider or production API/database test was performed.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Add a keyboard-accessible skip-to-main-content link and browser coverage to ensure keyboard users can bypass the workspace navigation and land at the SQL workspace without changing the existing responsive layout.
