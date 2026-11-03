@@ -24,6 +24,18 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
             SELECT current_database() AS database_name,
                    session_user = current_user AS session_identity_matches_current_role,
                    to_regclass('neurosql_app.auth_login_rate_limits') IS NOT NULL AS table_exists,
+                   EXISTS (
+                       SELECT 1 FROM pg_constraint constraint_info
+                       WHERE constraint_info.conrelid = to_regclass('neurosql_app.auth_login_rate_limits')
+                         AND constraint_info.conname = 'auth_login_rate_limits_failure_timestamps_check'
+                         AND pg_get_constraintdef(constraint_info.oid) LIKE '%30%'
+                   ) AS supports_thirty_attempts,
+                   EXISTS (
+                       SELECT 1 FROM pg_constraint constraint_info
+                       WHERE constraint_info.conrelid = to_regclass('neurosql_app.auth_login_rate_limits')
+                         AND constraint_info.conname = 'auth_login_rate_limit_block_consistency'
+                         AND pg_get_constraintdef(constraint_info.oid) LIKE '%30%'
+                   ) AS supports_variable_threshold_blocks,
                    has_schema_privilege(current_user, 'neurosql_app', 'USAGE') AS schema_usage,
                    NOT has_schema_privilege(current_user, 'neurosql_app', 'CREATE') AS schema_create_denied,
                    current_user <> pg_get_userbyid(
@@ -70,6 +82,8 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
 
     private static final List<String> REQUIRED_TRUE_COLUMNS = List.of(
             "table_exists",
+            "supports_thirty_attempts",
+            "supports_variable_threshold_blocks",
             "session_identity_matches_current_role",
             "schema_usage",
             "schema_create_denied",
