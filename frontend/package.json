@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --experimental-strip-types --test tests/durableAuth.test.ts tests/sqlExecution.test.ts tests/sqlExplain.test.ts tests/queryHistory.test.ts tests/savedQueries.test.ts tests/passwordRecovery.test.ts tests/accountOnboarding.test.ts tests/aiSql.test.ts tests/aiSqlExplanation.test.ts tests/aiSqlPerformance.test.ts",
     "test:responsive": "node tests/responsiveNavigation.e2e.mjs",
-    "test:account-flows": "node tests/accountFlows.e2e.mjs"
+    "test:account-flows": "node tests/accountFlows.e2e.mjs",
+    "test:durable-session-flows": "node tests/durableSessionFlows.e2e.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
