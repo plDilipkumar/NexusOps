@@ -47,15 +47,20 @@ jobs:
       - name: Test frontend durable-auth validation
         working-directory: frontend
         run: npm test
-      - name: Build frontend
+      - name: Build frontend with durable-auth screens enabled for mocked browser tests
         working-directory: frontend
+        env:
+          VITE_DURABLE_AUTH_ENABLED: "true"
         run: npm run build
-      - name: Install Chromium for responsive browser checks
+      - name: Install Chromium for responsive and account-flow browser checks
         working-directory: frontend
         run: npx playwright install --with-deps chromium
       - name: Verify responsive workspace navigation
         working-directory: frontend
         run: npm run test:responsive
+      - name: Verify mocked registration, email verification, and password recovery flows
+        working-directory: frontend
+        run: npm run test:account-flows
 
   session-postgres-integration:
     name: Durable-auth and read-only SQL integration tests (PostgreSQL 17)
