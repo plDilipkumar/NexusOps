@@ -58,11 +58,52 @@ test("schema context enforces schema, table, and column bounds", () => {
     })),
   }));
   const result = buildAiSchemaContext(source);
-  assert.equal(result.schemas.length, 20);
-  assert.equal(result.schemas.reduce((count, schema) => count + schema.tables.length, 0), 40);
+  assert.ok(result.schemas.length <= 20);
+  assert.ok(result.schemas.reduce((count, schema) => count + schema.tables.length, 0) <= 40);
   assert.ok(result.schemas.every((schema) => schema.tables.every((table) => table.columns.length <= 25)));
   assert.ok(result.truncated);
   assert.ok(JSON.stringify(result.schemas).length <= 16_000);
+
+  const schemaCap = buildAiSchemaContext(Array.from({ length: 21 }, (_, index) => ({
+    name: "s" + index,
+    tables: [],
+  })));
+  assert.equal(schemaCap.schemas.length, 20);
+  assert.equal(schemaCap.truncated, true);
+
+  const tableCap = buildAiSchemaContext([{
+    name: "s",
+    tables: Array.from({ length: 45 }, (_, index) => ({ name: "t" + index, columns: [] })),
+  }]);
+  assert.equal(tableCap.schemas[0].tables.length, 40);
+  assert.equal(tableCap.truncated, true);
+
+  const columnCap = buildAiSchemaContext([{
+    name: "s",
+    tables: [{
+      name: "t",
+      columns: Array.from({ length: 30 }, (_, index) => ({ name: "c" + index, dataType: "t" })),
+    }],
+  }]);
+  assert.equal(columnCap.schemas[0].tables[0].columns.length, 25);
+  assert.equal(columnCap.truncated, true);
+
+  const totalColumnCap = buildAiSchemaContext([{
+    name: "s",
+    tables: Array.from({ length: 20 }, (_, tableIndex) => ({
+      name: "t" + tableIndex,
+      columns: Array.from({ length: 25 }, (_, columnIndex) => ({
+        name: "c" + columnIndex,
+        dataType: "t",
+      })),
+    })),
+  }]);
+  const totalColumns = totalColumnCap.schemas.reduce(
+    (count, schema) => count + schema.tables.reduce((tableTotal, table) => tableTotal + table.columns.length, 0),
+    0,
+  );
+  assert.ok(totalColumns <= 400);
+  assert.ok(totalColumnCap.truncated);
 });
 
 test("schema context rejects control characters and respects the serialized size bound", () => {
@@ -185,7 +226,7 @@ test("AI request validates authentication and prompt before network access", asy
     return response(validPayload);
   };
   await assert.rejects(
-    generateAiSql({ apiBaseUrl: "https://api.example.test", prompt: "short", schemas: [], headers }, fetcher),
+    generateAiSql({ apiBaseUrl: "https://api.example.test", prompt: "tiny", schemas: [], headers }, fetcher),
     /5 to 2,000 characters/,
   );
   await assert.rejects(
