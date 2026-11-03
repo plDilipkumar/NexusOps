@@ -537,6 +537,114 @@ async function testUserInitiatedLogoutFailure({ issuedToken, networkFailure, del
   }
 }
 
+
+async function testDelayedLogoutCannotOverwriteNewLogin() {
+  const page = await browser.newPage();
+  const firstToken = "I".repeat(43);
+  const secondToken = "J".repeat(43);
+  const issuedTokens = [firstToken, secondToken];
+  const schemaAuthorization = [];
+  const logoutAuthorization = [];
+  let loginCount = 0;
+  let releaseLogout;
+  const logoutGate = new Promise(resolve => { releaseLogout = resolve; });
+  let markLogoutStarted;
+  const logoutStarted = new Promise(resolve => { markLogoutStarted = resolve; });
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      const issuedToken = issuedTokens[loginCount++];
+      assert.ok(issuedToken, "Only the two expected login attempts should occur");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          token: issuedToken,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        }),
+      });
+    },
+    "/api/auth/me": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        userId,
+        sessionId,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      }),
+    }),
+    "/api/auth/workspaces": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { workspaceId: workspaceA, name: "Analytics", slug: "analytics", role: "OWNER" },
+      ]),
+    }),
+    "/api/schema": async route => {
+      schemaAuthorization.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(schemaPayload("neurosql_test")),
+      });
+    },
+    "/api/auth/logout": async route => {
+      logoutAuthorization.push(route.request().headers().authorization);
+      markLogoutStarted();
+      await logoutGate;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "stale logout failure must not replace a newer session" }),
+      });
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+
+    // Establish the first session, then start a server revocation that remains pending.
+    await signIn(page);
+    await waitForWorkspaceReady(page, workspaceA);
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await logoutStarted;
+    await page.getByRole("heading", { name: "Sign in to NeuroSQL" }).waitFor({ state: "visible" });
+
+    // A second login completes before the first session's logout request returns.
+    await signIn(page);
+    await waitForWorkspaceReady(page, workspaceA);
+    await page.getByText("Signed in as", { exact: false }).waitFor({ state: "visible" });
+    assert.equal(loginCount, 2, "The user must have completed a fresh login");
+    assert.deepEqual(schemaAuthorization, ["Bearer " + firstToken, "Bearer " + secondToken],
+      "Schema requests must use the token belonging to each respective login");
+    assert.deepEqual(logoutAuthorization, ["Bearer " + firstToken],
+      "The delayed revocation must belong only to the earlier session");
+
+    const staleLogoutResponse = page.waitForResponse(response =>
+      response.url() === apiOrigin + "/api/auth/logout" && response.status() === 503);
+    releaseLogout();
+    await staleLogoutResponse;
+    await delay(50);
+
+    // The late failure belongs to an obsolete auth operation and must not clear
+    // or decorate the newer authenticated workspace.
+    await waitForWorkspaceReady(page, workspaceA);
+    await page.getByText("Signed in as", { exact: false }).waitFor({ state: "visible" });
+    assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 1,
+      "The newer session must remain signed in after the older logout fails");
+    assert.equal(
+      await page.getByText("Signed out locally, but the server could not confirm session revocation.", { exact: false }).count(),
+      0,
+      "A stale logout warning must not overwrite the newer login state",
+    );
+    await assertNoBrowserPersistence(page);
+    assert.equal(unexpected.length, 0, "The concurrency scenario must not make unmocked API requests");
+    console.log("A delayed logout failure cannot overwrite a newer successful login (mock API only)");
+  } finally {
+    releaseLogout();
+    await page.close();
+  }
+}
+
 try {
   await waitForPreview();
   browser = await chromium.launch({ headless: true });
@@ -549,6 +657,7 @@ try {
   await testProvisionalRevocationFailure({ issuedToken: "F".repeat(43), networkFailure: true });
   await testUserInitiatedLogoutFailure({ issuedToken: "G".repeat(43), networkFailure: false, delayResponse: true });
   await testUserInitiatedLogoutFailure({ issuedToken: "H".repeat(43), networkFailure: true });
+  await testDelayedLogoutCannotOverwriteNewLogin();
 } finally {
   await browser?.close();
   preview.kill("SIGTERM");
