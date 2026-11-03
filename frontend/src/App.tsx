@@ -1,6 +1,8 @@
 import {useEffect,useRef,useState,type FormEvent} from "react";
 import {Activity,ArrowRight,Bookmark,Braces,CheckCircle2,ChevronDown,Clock3,Database,FileCode2,Gauge,History,Layers3,LockKeyhole,Play,Plus,Search,Settings2,ShieldCheck,Sparkles,Square,Table2,TerminalSquare,WandSparkles,Zap} from "lucide-react";
 import {buildDurableSchemaHeaders,createRequestGuard,parseIssuedSession,parseSessionIdentity,parseWorkspaceList,type DurableWorkspace} from "./durableAuth.ts";
+import {capturePasswordResetToken} from "./passwordRecovery.ts";
+import {PasswordRecoveryPanel} from "./PasswordRecoveryPanel.tsx";
 import {cancelReadOnlyQuery,createExecutionId,executeReadOnlyQuery,type QueryResult} from "./sqlExecution.ts";
 import {explainReadOnlyQuery,type ExplainResult} from "./sqlExplain.ts";
 import {SqlExplainPlan} from "./SqlExplainPlan.tsx";
@@ -41,6 +43,7 @@ const [schemaError,setSchemaError]=useState("");
 const [expandedTables,setExpandedTables]=useState<Record<string,boolean>>({});
 const [durableEmail,setDurableEmail]=useState("");
 const [durablePassword,setDurablePassword]=useState("");
+const [passwordRecovery,setPasswordRecovery]=useState<{mode:"request"|"confirm";token:string|null}|null>(null);
 const [durableSession,setDurableSession]=useState<DurableSession|null>(null);
 const [durableWorkspaces,setDurableWorkspaces]=useState<DurableWorkspace[]>([]);
 const [selectedWorkspaceId,setSelectedWorkspaceId]=useState("");const [savedQuerySeed,setSavedQuerySeed]=useState("");
@@ -233,6 +236,13 @@ const logoutSchema=()=>{invalidateQuery();setSchemaCredentials(null);setSchemaDa
 const restoreHistoryQuery=(query:string)=>{invalidateQuery();setSql(query);setSavedQuerySeed("");setActive("Workspace");setNotice("Query restored in the editor. Review it before running.");};
 const openSaveQuery=()=>{if(!canCreateSavedQuery)return;setSavedQuerySeed(sql);setNotice("");setActive("Saved queries");};
 
+useEffect(()=>{
+  const captured=capturePasswordResetToken(window.location.href,cleanUrl=>window.history.replaceState(window.history.state,"",cleanUrl));
+  if(captured.present){
+    setActive("Schema explorer");
+    setPasswordRecovery({mode:"confirm",token:captured.token});
+  }
+},[]);
 useEffect(()=>{if(!durableSession)return;const expire=()=>{invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setSavedQuerySeed("");setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setSchemaData(null);setSchemaError("Your session expired. Sign in again.");};const remaining=Date.parse(durableSession.expiresAt)-Date.now();if(!Number.isFinite(remaining)||remaining<=0){expire();return;}const timer=window.setTimeout(expire,remaining);return()=>window.clearTimeout(timer);},[durableSession?.expiresAt]);
 useEffect(()=>{let cancelled=false;const check=async()=>{try{const response=await fetch(`${API_BASE_URL}/api/health/database`,{headers:{Accept:"application/json"}});if(!response.ok)throw new Error(`HTTP ${response.status}`);const payload=(await response.json()) as DatabaseHealth;if(payload.status!=="UP")throw new Error("Database reported unavailable");if(!cancelled){setDatabaseHealth(payload);setHealthError("");setHealthCheckedAt(new Date().toLocaleTimeString());}}catch(error){if(!cancelled){setDatabaseHealth(null);setHealthError(error instanceof Error?error.message:"Unable to reach API");setHealthCheckedAt(new Date().toLocaleTimeString());}}finally{if(!cancelled)setHealthLoading(false);}};void check();const timer=window.setInterval(()=>void check(),60000);return()=>{cancelled=true;window.clearInterval(timer);};},[]);
 const nav=[["Workspace",TerminalSquare],["Schema explorer",Database],["Query history",History],["Saved queries",Bookmark],["Performance lab",Gauge]] as const;
@@ -263,13 +273,18 @@ return <div className="shell"><aside className="sidebar"><div className="brand">
         {durableWorkspaces.length===0&&<div className="schema-error" role="status">This account has no active workspace membership. Ask a workspace owner to assign access.</div>}
       </>
     ) : (
-      <form className="schema-login" onSubmit={handleDurableLogin}>
-        <div className="schema-login-icon"><LockKeyhole size={19}/></div><h3>Sign in to NeuroSQL</h3><p>Use an active, email-verified NeuroSQL account. Your bearer token stays in memory and is cleared when you sign out or the session expires.</p>
-        <label>Email<input type="email" autoComplete="username" value={durableEmail} onChange={event=>setDurableEmail(event.target.value)} maxLength={254} required /></label>
-        <label>Password<input type="password" autoComplete="current-password" value={durablePassword} onChange={event=>setDurablePassword(event.target.value)} maxLength={256} required /></label>
-        <button type="submit" className="run" disabled={durableAuthLoading}>{durableAuthLoading?"Signing in…":"Sign in and load workspaces"} <ArrowRight size={14}/></button>
-        <small>Accounts must be provisioned and email-verified. Registration and password recovery are not available yet.</small>
-      </form>
+      {passwordRecovery ? (
+        <PasswordRecoveryPanel apiBaseUrl={API_BASE_URL} initialMode={passwordRecovery.mode} initialToken={passwordRecovery.token} onBack={()=>setPasswordRecovery(null)}/>
+      ) : (
+        <form className="schema-login" onSubmit={handleDurableLogin}>
+          <div className="schema-login-icon"><LockKeyhole size={19}/></div><h3>Sign in to NeuroSQL</h3><p>Use an active, email-verified NeuroSQL account. Your bearer token stays in memory and is cleared when you sign out or the session expires.</p>
+          <label>Email<input type="email" autoComplete="username" value={durableEmail} onChange={event=>setDurableEmail(event.target.value)} maxLength={254} required /></label>
+          <label>Password<input type="password" autoComplete="current-password" value={durablePassword} onChange={event=>setDurablePassword(event.target.value)} maxLength={256} required /></label>
+          <button type="submit" className="run" disabled={durableAuthLoading}>{durableAuthLoading?"Signing in…":"Sign in and load workspaces"} <ArrowRight size={14}/></button>
+          <button type="button" className="secondary" onClick={()=>{setSchemaError("");setPasswordRecovery({mode:"request",token:null});}}>Forgot password?</button>
+          <small>Accounts must be provisioned and email-verified. Registration is not available yet.</small>
+        </form>
+      )}
     )
   ) : schemaData && schemaCredentials ? (
     <article className="schema-accessbar"><div><CheckCircle2 size={17}/><div><b>Connected to {schemaData.database}</b><small>Signed in as {schemaCredentials.username} · credentials are held in memory only</small></div></div><div className="schema-actions"><button type="button" className="secondary" disabled={schemaLoading} onClick={()=>void loadSchema(schemaCredentials)}>{schemaLoading?"Refreshing…":"Refresh schema"}</button><button type="button" className="secondary" onClick={logoutSchema}>Sign out</button></div></article>
