@@ -1710,6 +1710,10 @@ try {
   await testStaleWorkspaceSchemaCannotOverwriteNewSelection();
   await testStaleWorkspaceSchemaFailureCannotOverwriteNewSelection({ failure: "http" });
   await testStaleWorkspaceSchemaFailureCannotOverwriteNewSelection({ failure: "network" });
+  await testWorkspaceSwitchInvalidatesInFlightSql({ operation: "query", staleOutcome: "success" });
+  await testWorkspaceSwitchInvalidatesInFlightSql({ operation: "query", staleOutcome: "error" });
+  await testWorkspaceSwitchInvalidatesInFlightSql({ operation: "explain", staleOutcome: "success" });
+  await testWorkspaceSwitchInvalidatesInFlightSql({ operation: "explain", staleOutcome: "error" });
   await testFixedSessionExpiry();
   await testInvalidCredentialsDoNotCreateClientSession();
   await testRejectedIdentityRevokesProvisionallyIssuedSession();
