@@ -111,12 +111,11 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
                 Statement statement = connection.createStatement()) {
             statement.execute("CREATE SCHEMA IF NOT EXISTS neurosql_app");
             statement.execute("CREATE ROLE " + SQL_READONLY_ROLE
-                    + " NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
+                    + " NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
             statement.execute("CREATE ROLE " + SQL_LOGIN_ROLE
-                    + " LOGIN PASSWORD '" + SQL_LOGIN_PASSWORD
+                    + " LOGIN INHERIT PASSWORD '" + SQL_LOGIN_PASSWORD
                     + "' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
-            statement.execute("GRANT " + SQL_READONLY_ROLE + " TO " + SQL_LOGIN_ROLE);
-            statement.execute("GRANT USAGE ON SCHEMA neurosql_app TO " + SQL_READONLY_ROLE);
+            statement.execute("GRANT " + SQL_READONLY_ROLE + " TO " + SQL_LOGIN_ROLE + " WITH INHERIT TRUE, SET FALSE");
             sqlRolePrepared = true;
         } catch (Exception failure) {
             throw new IllegalStateException("Could not prepare the disposable read-only SQL role.", failure);
