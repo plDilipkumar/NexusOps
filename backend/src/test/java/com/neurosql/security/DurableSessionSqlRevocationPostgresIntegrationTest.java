@@ -164,7 +164,6 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
                     token_hash VARCHAR(64) NOT NULL UNIQUE,
                     created_at TIMESTAMPTZ NOT NULL,
                     expires_at TIMESTAMPTZ NOT NULL,
-                    revoked_at TIMESTAMPTZ,
                     revoked_at TIMESTAMPTZ
                 )
                 """);
