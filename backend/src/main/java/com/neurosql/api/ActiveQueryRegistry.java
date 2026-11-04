@@ -20,14 +20,19 @@ public final class ActiveQueryRegistry {
     private final ConcurrentHashMap<UUID, ActiveQuery> activeQueries = new ConcurrentHashMap<>();
     private final Semaphore capacity = new Semaphore(MAX_ACTIVE_QUERIES);
 
+    /** Compatibility overload for registry-only callers without a durable session. */
     public Handle begin(UUID executionId, UUID userId, UUID workspaceId) {
+        return begin(executionId, userId, null, workspaceId);
+    }
+
+    public Handle begin(UUID executionId, UUID userId, UUID sessionId, UUID workspaceId) {
         Objects.requireNonNull(executionId, "executionId");
         Objects.requireNonNull(userId, "userId");
         Objects.requireNonNull(workspaceId, "workspaceId");
         if (!capacity.tryAcquire()) {
             throw new CapacityExceededException();
         }
-        ActiveQuery query = new ActiveQuery(executionId, userId, workspaceId);
+        ActiveQuery query = new ActiveQuery(executionId, userId, sessionId, workspaceId);
         if (activeQueries.putIfAbsent(executionId, query) != null) {
             capacity.release();
             throw new DuplicateExecutionException();
@@ -35,7 +40,12 @@ public final class ActiveQueryRegistry {
         return new Handle(this, query);
     }
 
+    /** Compatibility overload for registry-only callers without a durable session. */
     public CancelResult cancel(UUID executionId, UUID userId, UUID workspaceId) {
+        return cancel(executionId, userId, null, workspaceId);
+    }
+
+    public CancelResult cancel(UUID executionId, UUID userId, UUID sessionId, UUID workspaceId) {
         if (executionId == null || userId == null || workspaceId == null) {
             return CancelResult.NOT_FOUND;
         }
@@ -47,7 +57,9 @@ public final class ActiveQueryRegistry {
         PreparedStatement statement;
         synchronized (query) {
             if (query.completed || activeQueries.get(executionId) != query
-                    || !query.userId.equals(userId) || !query.workspaceId.equals(workspaceId)) {
+                    || !query.userId.equals(userId)
+                    || !Objects.equals(query.sessionId, sessionId)
+                    || !query.workspaceId.equals(workspaceId)) {
                 return CancelResult.NOT_FOUND;
             }
             if (query.cancelRequested) {
@@ -71,6 +83,43 @@ public final class ActiveQueryRegistry {
             }
             return CancelResult.FAILED;
         }
+    }
+
+    /**
+     * Cancels every active query owned by a revoked session. This is an
+     * internal revocation hook, not an HTTP cancellation path. The cancellation
+     * flag remains set even if JDBC cancellation fails so the request handler
+     * can suppress a result that completes after revocation.
+     */
+    public int cancelSession(UUID sessionId) {
+        if (sessionId == null) {
+            return 0;
+        }
+
+        int requested = 0;
+        for (ActiveQuery query : activeQueries.values()) {
+            PreparedStatement statement;
+            synchronized (query) {
+                if (query.completed
+                        || activeQueries.get(query.executionId) != query
+                        || !sessionId.equals(query.sessionId)
+                        || query.cancelRequested) {
+                    continue;
+                }
+                query.cancelRequested = true;
+                statement = query.statement;
+            }
+
+            if (statement != null) {
+                try {
+                    statement.cancel();
+                } catch (SQLException ignored) {
+                    // Keep the cancellation flag set; do not expose driver details.
+                }
+            }
+            requested++;
+        }
+        return requested;
     }
 
     public int activeCount() {
@@ -155,14 +204,16 @@ public final class ActiveQueryRegistry {
     private static final class ActiveQuery {
         private final UUID executionId;
         private final UUID userId;
+        private final UUID sessionId;
         private final UUID workspaceId;
         private PreparedStatement statement;
         private boolean cancelRequested;
         private boolean completed;
 
-        private ActiveQuery(UUID executionId, UUID userId, UUID workspaceId) {
+        private ActiveQuery(UUID executionId, UUID userId, UUID sessionId, UUID workspaceId) {
             this.executionId = executionId;
             this.userId = userId;
+            this.sessionId = sessionId;
             this.workspaceId = workspaceId;
         }
     }
