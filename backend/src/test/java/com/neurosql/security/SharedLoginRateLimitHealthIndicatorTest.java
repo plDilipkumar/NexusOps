@@ -36,6 +36,9 @@ class SharedLoginRateLimitHealthIndicatorTest {
                         && sql.contains("has_table_privilege")
                         && sql.contains("pg_roles")
                         && sql.contains("pg_has_role") && sql.contains("neurosql_auth_runtime")
+                        && sql.contains("pg_auth_members") && sql.contains("admin_option")
+                        && sql.contains("inherit_option") && sql.contains("set_option")
+                        && sql.contains("'USAGE'") && sql.contains("'SET'")
                         && !sql.contains("INSERT INTO")
                         && !sql.contains("UPDATE ")
                         && !sql.contains("DELETE FROM")));
@@ -105,6 +108,25 @@ class SharedLoginRateLimitHealthIndicatorTest {
         Map<String, Object> unexpectedMembership = readyRow(EXPECTED_DATABASE);
         unexpectedMembership.put("no_unexpected_role_membership", false);
         when(jdbc.queryForMap(anyString())).thenReturn(unexpectedMembership);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void reportsDownWhenRuntimeMembershipIsNotInheritedOrCanBeSetOrDelegated() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        Map<String, Object> notInherited = readyRow(EXPECTED_DATABASE);
+        notInherited.put("runtime_group_privileges_inherited", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(notInherited);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+
+        Map<String, Object> settable = readyRow(EXPECTED_DATABASE);
+        settable.put("runtime_group_set_role_denied", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(settable);
+        assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
+
+        Map<String, Object> delegatable = readyRow(EXPECTED_DATABASE);
+        delegatable.put("runtime_membership_options_safe", false);
+        when(jdbc.queryForMap(anyString())).thenReturn(delegatable);
         assertThat(indicator(jdbc, true, true).health().getStatus()).isEqualTo(Status.DOWN);
     }
 
@@ -206,6 +228,9 @@ class SharedLoginRateLimitHealthIndicatorTest {
                 Map.entry("not_database_owner_member", true),
                 Map.entry("current_role_can_login", true),
                 Map.entry("runtime_group_membership", true),
+                Map.entry("runtime_group_privileges_inherited", true),
+                Map.entry("runtime_group_set_role_denied", true),
+                Map.entry("runtime_membership_options_safe", true),
                 Map.entry("safe_role_attributes", true),
                 Map.entry("no_unexpected_role_membership", true),
                 Map.entry("can_select_identity_hash", true),

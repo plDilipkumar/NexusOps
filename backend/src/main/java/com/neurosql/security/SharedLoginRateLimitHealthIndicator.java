@@ -52,6 +52,17 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
                        WHERE role_info.rolname = current_user AND role_info.rolcanlogin
                    ) AS current_role_can_login,
                    pg_has_role(current_user, 'neurosql_auth_runtime', 'MEMBER') AS runtime_group_membership,
+                   pg_has_role(current_user, 'neurosql_auth_runtime', 'USAGE') AS runtime_group_privileges_inherited,
+                   NOT pg_has_role(current_user, 'neurosql_auth_runtime', 'SET') AS runtime_group_set_role_denied,
+                   NOT EXISTS (
+                       SELECT 1
+                       FROM pg_auth_members membership
+                       JOIN pg_roles member_role ON member_role.oid = membership.member
+                       JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+                       WHERE member_role.rolname = current_user
+                         AND granted_role.rolname = 'neurosql_auth_runtime'
+                         AND (membership.admin_option OR NOT membership.inherit_option OR membership.set_option)
+                   ) AS runtime_membership_options_safe,
                    NOT EXISTS (
                        SELECT 1 FROM pg_roles role_info
                        WHERE role_info.rolname = current_user
@@ -92,6 +103,9 @@ public class SharedLoginRateLimitHealthIndicator implements HealthIndicator {
             "not_database_owner_member",
             "current_role_can_login",
             "runtime_group_membership",
+            "runtime_group_privileges_inherited",
+            "runtime_group_set_role_denied",
+            "runtime_membership_options_safe",
             "safe_role_attributes",
             "no_unexpected_role_membership",
             "can_select_identity_hash",

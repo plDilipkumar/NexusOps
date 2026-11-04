@@ -34,6 +34,7 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
     private static String expectedDatabase;
     private static String schemaName;
     private static String readOnlyRole;
+    private static String loginRole;
     private static ReadOnlySqlValidator validator;
 
     @BeforeAll
@@ -50,14 +51,14 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         schemaName = "neurosql_sql_probe_" + suffix;
         readOnlyRole = "neurosql_sql_readonly_" + suffix;
-        String loginRole = "neurosql_sql_login_" + suffix;
+        loginRole = "neurosql_sql_login_" + suffix;
         String password = "ci-" + UUID.randomUUID().toString().replace("-", "");
 
         adminJdbc.execute("CREATE ROLE " + readOnlyRole
-                + " NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
-        adminJdbc.execute("CREATE ROLE " + loginRole + " LOGIN PASSWORD '" + password
+                + " NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
+        adminJdbc.execute("CREATE ROLE " + loginRole + " LOGIN INHERIT PASSWORD '" + password
                 + "' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
-        adminJdbc.execute("GRANT " + readOnlyRole + " TO " + loginRole);
+        adminJdbc.execute("GRANT " + readOnlyRole + " TO " + loginRole + " WITH INHERIT TRUE, SET FALSE");
 
         adminJdbc.execute("CREATE SCHEMA " + schemaName);
         adminJdbc.execute("CREATE TABLE " + schemaName
@@ -189,6 +190,37 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
                     .isInstanceOf(ReadOnlyQueryExecutor.QueryExecutionUnavailableException.class);
         } finally {
             adminJdbc.execute("REVOKE MAINTAIN ON TABLE " + schemaName + ".probe FROM " + readOnlyRole);
+        }
+    }
+
+    @Test
+    void rejectsReadOnlyMembershipWithAdminOption() {
+        adminJdbc.execute("GRANT " + readOnlyRole + " TO " + loginRole
+                + " WITH ADMIN OPTION, INHERIT TRUE, SET FALSE");
+        try {
+            assertThatThrownBy(() -> runtimeExecutor().execute("SELECT 1"))
+                    .isInstanceOf(ReadOnlyQueryExecutor.QueryExecutionUnavailableException.class);
+        } finally {
+            adminJdbc.execute("REVOKE ADMIN OPTION FOR " + readOnlyRole + " FROM " + loginRole);
+        }
+    }
+
+    @Test
+    void rejectsReadOnlyMembershipThatCanSetRoleOrDoesNotInheritPrivileges() {
+        adminJdbc.execute("GRANT " + readOnlyRole + " TO " + loginRole + " WITH INHERIT TRUE, SET TRUE");
+        try {
+            assertThatThrownBy(() -> runtimeExecutor().execute("SELECT 1"))
+                    .isInstanceOf(ReadOnlyQueryExecutor.QueryExecutionUnavailableException.class);
+        } finally {
+            adminJdbc.execute("GRANT " + readOnlyRole + " TO " + loginRole + " WITH INHERIT TRUE, SET FALSE");
+        }
+
+        adminJdbc.execute("GRANT " + readOnlyRole + " TO " + loginRole + " WITH INHERIT FALSE, SET FALSE");
+        try {
+            assertThatThrownBy(() -> runtimeExecutor().execute("SELECT 1"))
+                    .isInstanceOf(ReadOnlyQueryExecutor.QueryExecutionUnavailableException.class);
+        } finally {
+            adminJdbc.execute("GRANT " + readOnlyRole + " TO " + loginRole + " WITH INHERIT TRUE, SET FALSE");
         }
     }
 

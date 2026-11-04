@@ -30,6 +30,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 public final class ReadOnlyQueryExecutor implements AutoCloseable {
     private static final String ROLE_READINESS_SQL = """
+            WITH expected_role AS (
+                SELECT oid FROM pg_roles WHERE rolname = ?
+            )
             SELECT current_database() = ? AS expected_database,
                    session_user = current_user AS session_identity_matches,
                    EXISTS (
@@ -47,13 +50,34 @@ public final class ReadOnlyQueryExecutor implements AutoCloseable {
                               OR role_info.rolbypassrls)
                    ) AS safe_role_attributes,
                    EXISTS (
-                       SELECT 1 FROM pg_roles expected_role
-                       WHERE expected_role.rolname = ?
-                         AND pg_has_role(current_user, expected_role.oid, 'MEMBER')
+                       SELECT 1 FROM expected_role
+                       WHERE pg_has_role(current_user, expected_role.oid, 'MEMBER')
                    ) AS expected_read_only_role_membership,
+                   EXISTS (
+                       SELECT 1 FROM expected_role
+                       WHERE pg_has_role(current_user, expected_role.oid, 'USAGE')
+                   ) AS expected_read_only_role_privileges_inherited,
+                   NOT EXISTS (
+                       SELECT 1 FROM expected_role
+                       WHERE pg_has_role(current_user, expected_role.oid, 'SET')
+                   ) AS expected_read_only_role_set_role_denied,
+                   EXISTS (
+                       SELECT 1
+                       FROM pg_auth_members membership
+                       JOIN pg_roles member_role ON member_role.oid = membership.member
+                       JOIN expected_role ON expected_role.oid = membership.roleid
+                       WHERE member_role.rolname = current_user
+                         AND membership.inherit_option
+                         AND NOT membership.admin_option
+                         AND NOT membership.set_option
+                   ) AS expected_read_only_role_membership_options_safe,
                    NOT EXISTS (
                        SELECT 1 FROM pg_roles other_role
-                       WHERE other_role.rolname NOT IN (current_user, ?)
+                       WHERE other_role.rolname <> current_user
+                         AND NOT EXISTS (
+                             SELECT 1 FROM expected_role
+                             WHERE expected_role.oid = other_role.oid
+                         )
                          AND pg_has_role(current_user, other_role.oid, 'MEMBER')
                    ) AS no_unexpected_role_membership,
                    NOT has_database_privilege(current_user, current_database(), 'CREATE')
@@ -114,6 +138,9 @@ public final class ReadOnlyQueryExecutor implements AutoCloseable {
             "not_database_owner",
             "safe_role_attributes",
             "expected_read_only_role_membership",
+            "expected_read_only_role_privileges_inherited",
+            "expected_read_only_role_set_role_denied",
+            "expected_read_only_role_membership_options_safe",
             "no_unexpected_role_membership",
             "database_create_denied",
             "schema_create_denied",
@@ -274,9 +301,8 @@ public final class ReadOnlyQueryExecutor implements AutoCloseable {
     private void assertReadOnlyRuntimeRole() {
         Map<String, Object> checks = jdbc.queryForMap(
                 ROLE_READINESS_SQL,
-                expectedDatabase,
                 expectedReadOnlyRole,
-                expectedReadOnlyRole);
+                expectedDatabase);
         boolean ready = REQUIRED_TRUE_COLUMNS.stream()
                 .allMatch(column -> Boolean.TRUE.equals(checks.get(column)));
         if (!ready) {
