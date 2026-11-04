@@ -1,3 +1,40 @@
+## Run 5 verification — 2026-11-04 15:19 IST
+
+### Repository, security change, and CI
+- Re-read this tracker and inspected current main, open PRs, CI, Neon, Vercel, and Render. No open PRs remain after PR #11 merged.
+- Found a production-container security gap in Render startup logs: the JVM was previously running as root. PR #11, [Run NeuroSQL API container as non-root](https://github.com/plDilipkumar/NexusOps/pull/11), changed `backend/Dockerfile` to copy the JAR as UID/GID `10001:10001` and run with `USER 10001:10001`. CI now builds the actual Docker image and asserts `docker run --rm --entrypoint id neurosql-api:ci -u` returns `10001`.
+- PR #11 was merged after all four required PR jobs passed; no review submissions or repository rulesets were present. Squash merge commit: `9cd10ee84cfe3d7a661bd21dbcecdf057accb294`. PR head: `c6ae69e54b32ab1a1ea3f2b3fb8dfc930002097a`.
+- PR CI run #480 (`41810271829`) passed all four jobs. Main CI run #481 (`41810551821`) passed all five jobs, including the production API/database smoke test.
+- Exact run #481 results: backend `388` tests, `0` failures, `0` errors, `71` expected database/external-service skips; PostgreSQL 17 integration `71/71`; frontend Node tests `96/96`; Vite production build transformed `1,596` modules; V1–V7 schema/role contract passed on disposable PostgreSQL 17. Docker image build and UID `10001` assertion passed.
+- Browser tests passed responsive navigation at 1440, 851, 850, 390, and 320 px; keyboard and skip-link checks; mocked registration, verification, password recovery, durable login, workspace switching, logout, session expiry, and revocation flows. All 12 in-flight SQL/EXPLAIN race cases passed: sign-out/session expiry × late success/HTTP error/network error.
+- Main CI production smoke job `126509067675` passed at `2026-11-04T09:55:30Z`, reporting `status=UP`, database `neurosql_db`, PostgreSQL `17.11`. Important timing: this smoke completed before the new Render deployment below began, so it verifies the prior live backend, not the new non-root deployment.
+
+### Render and Vercel
+- Render service `neurosql-api` (`srv-dbgb6vt9fdbs73da93n0`) remains on the Free plan in Singapore. Deployment `dep-dblg2cgu01pc73a4a6n0` is LIVE for commit `9cd10ee`, finished at `2026-11-04T09:57:50Z`.
+- New Render application logs show Spring Boot started as `?` rather than `root`, Tomcat started on port 10000, the application reached `Started NeuroSqlApplication`, and Render reported the service live. This is consistent with the CI-verified numeric UID 10001. No error-level app logs were returned for the deployment window.
+- Render's request-log label inventory exposes only app/build log types, so there was no direct request-log evidence for a post-deploy health call. The successful main CI smoke above ran before this new deploy; do not claim a post-deploy API/database smoke yet. The service's Render `healthCheckPath` remains blank.
+- Merged 12 non-secret Render configuration values with `replace=false`: all auth, schema browser, validator, email, SQL execution/history, saved-query, and AI feature gates explicitly false; `NEUROSQL_AUTH_EXPECTED_DATABASE=neurosql_db`. Existing database credentials and secret values were preserved, not read or printed. Render does not provide safe environment-variable readback through the connected interface.
+- Vercel production deployment `dpl_44uhaa2M7mSPB3BsrNbBVw9Tqdao` is READY for commit `9cd10ee`; aliases include `neurosql.vercel.app`. A live fetch returned HTTP 200 and the expected NeuroSQL HTML shell/title. Vercel project metadata still reports `live=false` despite READY production deployments and assigned alias. Production env inventory remains empty: zero visible and zero hidden variables; frontend API URL has a source fallback and feature gates default false.
+
+### Neon project and production database
+- Project `neurosql` (`lingering-dew-88806235`) remains Free in Singapore; PostgreSQL `17.11`. Production main is `br-empty-credit-b360dmpc`, database `neurosql_db`.
+- Read-only SQL confirmed all eight V1–V6 application tables exist and are empty: `app_users`, `workspaces`, `workspace_memberships`, `user_sessions`, `auth_login_rate_limits`, `account_action_tokens`, `query_history`, and `saved_queries`.
+- Production roles: `neurosql_owner` is the only LOGIN and has CREATEDB, CREATEROLE, REPLICATION, and BYPASSRLS; `neurosql_auth_runtime` is NOLOGIN/NOINHERIT with no elevated flags. Read-only checks confirmed schema USAGE true, schema CREATE false, and no table-level SELECT on the authentication tables. Do not use the owner for application runtime.
+- Temporary V7 branch `neurosql-v7-role-validation-20261104` (`br-shy-star-b31qx5c6`) remains ready. Its `neurosql_sql_readonly` group is NOLOGIN. The V7 migration and least-privilege probe were verified there; V7 remains unapplied to production main.
+- No production schema or role changes were made in this run.
+
+### Release blockers — still not bypassed
+1. A dedicated production auth LOGIN principal inheriting `neurosql_auth_runtime` with INHERIT TRUE, SET FALSE, and no ADMIN OPTION still requires explicit approval. The previous approval covered V1–V6, not this credential-bearing production LOGIN role.
+2. Production V7 and a separate SQL-read-only LOGIN principal still require explicit approval. Keep SQL execution and EXPLAIN disabled until explicit data-schema/table grants are verified.
+3. SMTP credentials and a verified sender/domain are unavailable; email verification and password-reset delivery remain disabled.
+4. Gemini/provider key presence cannot be independently verified through Render readback, and no live provider request has been made. All AI gates remain disabled.
+5. Production login, email delivery, workspace isolation, SQL execution/history, and live AI behavior are not end-to-end verified. A post-deploy API/database smoke against Render deployment `dep-dblg2cgu01pc73a4a6n0` is still required; the latest successful smoke preceded that deployment.
+6. Render's service health-check path is blank and the connected Render interface does not expose a service-update action for setting it. Configure `/api/health/database` in the Render dashboard or run a post-deploy smoke from CI after the next deployment.
+
+No paid resources, destructive actions, cross-project databases, unapproved production role/schema changes, or source-controlled credentials were introduced in this run.
+
+---
+
 ## Run 4 verification — 2026-11-04 14:15 IST
 
 ### Repository and CI
