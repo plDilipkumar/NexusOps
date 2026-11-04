@@ -1,6 +1,6 @@
 # NeuroSQL — release progress
 
-Last verified: 2026-11-04 12:54 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
+Last verified: 2026-11-04 12:57 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
 
 ## Current release state
 
@@ -146,3 +146,11 @@ No Neon production schema or roles were changed. The durable-auth guard is condi
 
 - Read-only `pg_auth_members` inspection on Neon main confirms `neurosql_owner` is a member of Neon-managed `neon_superuser` with `INHERIT TRUE, SET TRUE`, and a member of `neurosql_auth_runtime` with `INHERIT FALSE, SET FALSE, ADMIN TRUE`. Combined with CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS, this login is categorically unsuitable for application runtime use. The durable-auth startup guard correctly rejects it. No production role membership or attribute was changed.
 - Temporary-branch probe LOGIN roles remain `rolcanlogin=false`; they have no remaining memberships in `neurosql_auth_runtime` or `neurosql_sql_readonly`.
+
+### Run 8 continuation — Render feature-gate reassertion and post-deploy smoke — 2026-11-04 12:57 UTC
+
+- Re-applied 12 non-secret Render settings using merge mode (`replace=false`), preserving existing database/provider/SMTP credentials: `NEUROSQL_SCHEMA_BROWSER_ENABLED=false`, `NEUROSQL_SQL_VALIDATOR_ENABLED=false`, `NEUROSQL_AUTH_ENABLED=false`, `NEUROSQL_AUTH_DURABLE_SESSIONS_ENABLED=false`, `NEUROSQL_AUTH_SHARED_RATE_LIMIT_ENABLED=false`, `NEUROSQL_AUTH_EMAIL_ENABLED=false`, `NEUROSQL_SQL_EXECUTION_ENABLED=false`, `NEUROSQL_SQL_HISTORY_ENABLED=false`, `NEUROSQL_SAVED_QUERIES_ENABLED=false`, `NEUROSQL_AI_SQL_GENERATION_ENABLED=false`, `NEUROSQL_AI_SQL_PERFORMANCE_ENABLED=false`, and `NEUROSQL_AUTH_EXPECTED_DATABASE=neurosql_db`. Render confirmed the update and triggered deployment `dep-dblimat9fdbs73dhslvg` for tracker commit `1912545c4d2e48853d0f7be3fcc0389e5680d601`.
+- Render build succeeded at `2026-11-04T12:55:29Z`; new Java 21.0.13 process started as non-root marker `?`, Tomcat started on port 10000, Spring Boot started at `12:56:49Z`, and deployment became LIVE at `12:56:52Z`.
+- Post-env-update live smoke rerun job `126587072484` passed at `2026-11-04T12:57:21Z`, returning `status=UP`, database `neurosql_db`, PostgreSQL `17.11 (9045acd)`. The main workflow run #486 latest attempt has all five jobs successful.
+- Vercel production environment inventory was rechecked: zero variables and zero hidden production variables. `frontend/.env.example` uses the Render API URL fallback and all six Vite feature flags default false. Latest tracker deployment `dpl_FWZifvxjCCXfzUnZvuLkQQNpQj5o` is READY for commit `1912545c4d2e48853d0f7be3fcc0389e5680d601`, with `neurosql.vercel.app` assigned.
+- Render environment-variable values cannot be read back through the available connector; the update call succeeded but the resulting key/value inventory is not independently readable. No secret values were fetched, printed, replaced, or added. AI/email/auth/SQL remain disabled.
