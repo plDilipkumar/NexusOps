@@ -24,6 +24,7 @@ import org.springframework.web.client.RestClientException;
                 + "'${neurosql.auth.durable-sessions-enabled:false}' == 'true' and "
                 + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true'")
 public class OpenAiCompatibleSqlProvider implements AiSqlProvider {
+    static final int MAX_PROVIDER_CONTENT_CHARACTERS = 16_000;
     private final RestClient restClient;
     private final URI endpoint;
     private final String apiKey;
@@ -71,16 +72,18 @@ public class OpenAiCompatibleSqlProvider implements AiSqlProvider {
         }
         JsonNode choice = choices.get(0);
         String finishReason = choice.path("finish_reason").asText("");
-        if (!finishReason.isEmpty()
-                && !"stop".equals(finishReason)
-                && !"end_turn".equals(finishReason)) {
+        if (!"stop".equals(finishReason) && !"end_turn".equals(finishReason)) {
             throw new ProviderUnavailableException();
         }
         JsonNode content = choice.path("message").path("content");
-        if (!content.isTextual() || content.asText().isBlank()) {
+        if (!content.isTextual()) {
             throw new ProviderUnavailableException();
         }
-        return content.asText();
+        String text = content.asText();
+        if (text.isBlank() || text.length() > MAX_PROVIDER_CONTENT_CHARACTERS) {
+            throw new ProviderUnavailableException();
+        }
+        return text;
     }
 
     private static URI validateEndpoint(String value) {
@@ -104,11 +107,12 @@ public class OpenAiCompatibleSqlProvider implements AiSqlProvider {
     }
 
     private static String validateApiKey(String value) {
-        if (value == null || value.isBlank() || value.length() > 4096
-                || value.codePoints().anyMatch(Character::isISOControl)) {
+        String apiKey = value == null ? "" : value.trim();
+        if (apiKey.isBlank() || apiKey.length() > 4096
+                || apiKey.codePoints().anyMatch(Character::isISOControl)) {
             throw new IllegalStateException("AI SQL provider API key must be configured securely.");
         }
-        return value;
+        return apiKey;
     }
 
     private static String validateModel(String value) {
