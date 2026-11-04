@@ -244,6 +244,55 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
     }
 
     @Test
+    void logoutRevokesSessionCancelsActiveExplainAndPreventsLaterPlanning() throws Exception {
+        Fixture fixture = insertFixture();
+        String token = login(fixture.email());
+        UUID executionId = UUID.randomUUID();
+        String marker = "revoked_explain_" + UUID.randomUUID().toString().replace("-", "");
+        String sql = "SELECT 1 /* " + marker + " */"
+                + " UNION ALL SELECT 1".repeat(400);
+        ExecutorService explainThread = Executors.newSingleThreadExecutor();
+        Future<ResponseEntity<JsonNode>> runningExplain =
+                startExplain(explainThread, token, fixture.workspaceId(), executionId, sql);
+
+        try {
+            awaitActiveQuery(marker);
+            assertThat(activeQueries.activeCount()).isEqualTo(1);
+
+            ResponseEntity<Void> logout = http.exchange(
+                    baseUrl() + "/api/auth/logout",
+                    HttpMethod.POST,
+                    new HttpEntity<>(bearer(token)),
+                    Void.class);
+            assertThat(logout.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+            ResponseEntity<JsonNode> rejectedIdentity = http.exchange(
+                    baseUrl() + "/api/auth/me",
+                    HttpMethod.GET,
+                    new HttpEntity<>(bearer(token)),
+                    JsonNode.class);
+            assertThat(rejectedIdentity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
+            ResponseEntity<JsonNode> rejectedExplain = explain(
+                    token, fixture.workspaceId(), UUID.randomUUID(), "SELECT 1");
+            assertThat(rejectedExplain.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(rejectedExplain.getBody()).isNull();
+
+            ResponseEntity<JsonNode> completed = runningExplain.get(10, TimeUnit.SECONDS);
+            assertThat(completed.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(completed.getBody().path("message").asText())
+                    .isEqualTo("The query plan was cancelled.");
+            assertThat(completed.getBody().toString()).doesNotContain(marker, "planJson");
+            assertThat(activeQueries.activeCount()).isZero();
+            assertThat(activeQueryCount(marker)).isZero();
+        } finally {
+            runningExplain.cancel(true);
+            explainThread.shutdownNow();
+            explainThread.awaitTermination(2, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
     void cancellationRequiresTheSameSessionWorkspaceAndExecutionIdentifier() throws Exception {
         Fixture fixture = insertFixture();
         String token = login(fixture.email());
@@ -318,6 +367,35 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
         headers.set(ActiveQueryRegistry.EXECUTION_ID_HEADER, executionId.toString());
         return http.exchange(
                 baseUrl() + "/api/sql/execute",
+                HttpMethod.POST,
+                new HttpEntity<>(Map.of("sql", sql), headers),
+                JsonNode.class);
+    }
+
+    private Future<ResponseEntity<JsonNode>> startExplain(
+            ExecutorService executor,
+            String token,
+            UUID workspaceId,
+            UUID executionId,
+            String sql) {
+        HttpHeaders headers = sqlHeaders(token, workspaceId);
+        headers.set(ActiveQueryRegistry.EXECUTION_ID_HEADER, executionId.toString());
+        return executor.submit(() -> http.exchange(
+                baseUrl() + "/api/sql/explain",
+                HttpMethod.POST,
+                new HttpEntity<>(Map.of("sql", sql), headers),
+                JsonNode.class));
+    }
+
+    private ResponseEntity<JsonNode> explain(
+            String token,
+            UUID workspaceId,
+            UUID executionId,
+            String sql) {
+        HttpHeaders headers = sqlHeaders(token, workspaceId);
+        headers.set(ActiveQueryRegistry.EXECUTION_ID_HEADER, executionId.toString());
+        return http.exchange(
+                baseUrl() + "/api/sql/explain",
                 HttpMethod.POST,
                 new HttpEntity<>(Map.of("sql", sql), headers),
                 JsonNode.class);
