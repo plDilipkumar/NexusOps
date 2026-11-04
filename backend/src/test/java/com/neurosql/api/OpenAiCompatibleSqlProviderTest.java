@@ -25,7 +25,7 @@ class OpenAiCompatibleSqlProviderTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         OpenAiCompatibleSqlProvider provider =
-                new OpenAiCompatibleSqlProvider(builder.build(), ENDPOINT, API_KEY, "test-model");
+                new OpenAiCompatibleSqlProvider(builder.build(), ENDPOINT, "  " + API_KEY + "  ", "test-model");
 
         server.expect(requestTo(ENDPOINT))
                 .andExpect(method(HttpMethod.POST))
@@ -100,4 +100,29 @@ class OpenAiCompatibleSqlProviderTest {
                 .isInstanceOf(AiSqlProvider.ProviderUnavailableException.class);
         server.verify();
     }
+    @Test
+    void rejectsMissingFinishReasonAndOversizedProviderContent() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        OpenAiCompatibleSqlProvider provider =
+                new OpenAiCompatibleSqlProvider(builder.build(), ENDPOINT, API_KEY, "test-model");
+        String oversized = "x".repeat(OpenAiCompatibleSqlProvider.MAX_PROVIDER_CONTENT_CHARACTERS + 1);
+
+        server.expect(requestTo(ENDPOINT))
+                .andRespond(withSuccess("""
+                        {"choices":[{"message":{"content":"SELECT 1"}}]}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(ENDPOINT))
+                .andRespond(withSuccess(
+                        "{\\"choices\\":[{\\"finish_reason\\":\\"stop\\",\\"message\\":{\\"content\\":\\""
+                                + oversized + "\\"}}]}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> provider.generate("system", "user"))
+                .isInstanceOf(AiSqlProvider.ProviderUnavailableException.class);
+        assertThatThrownBy(() -> provider.generate("system", "user"))
+                .isInstanceOf(AiSqlProvider.ProviderUnavailableException.class);
+        server.verify();
+    }
+
 }
