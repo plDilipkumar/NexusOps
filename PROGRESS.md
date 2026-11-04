@@ -1,3 +1,37 @@
+## Run 4 verification — 2026-11-04 14:15 IST
+
+### Repository and CI
+- Read the current tracker and inspected the default branch, PRs, commit history, CI, deployment projects, and Neon project. Main HEAD before this tracker entry was `ab8011371b645ecf1db7433a0822527882f8ea47` (PROGRESS-only); latest application-code commit remains `3d4d8cf52ab81311a5263ea4f407fa9b790755d4`. No open PRs were found.
+- Latest code CI is run #479, workflow run `41791947443`, attempt 2, for `3d4d8cf`. All five jobs passed: backend tests, PostgreSQL 17 integration, frontend build/browser checks, V1–V7 schema/role contract, and production API/database smoke.
+- Job-log counts: backend `388` tests, `0` failures, `0` errors, `71` expected database/external-service skips; PostgreSQL 17 integration `71/71`; frontend Node tests `96/96`. The browser job passed five responsive viewports (1440, 851, 850, 390, 320 px), keyboard/skip-link checks, account mock flows, and all 12 in-flight SQL/EXPLAIN race cases (sign-out/session expiry × late success/HTTP error/network error). It also passed expiry cleanup and superseded provisional-session revocation checks.
+- The ephemeral PostgreSQL 17 schema job applied V1–V7 and passed the schema, auth runtime grants, rate-limit capacity, one-time action token, SQL read-only role, and query-history contracts. Production smoke job `126448872670` passed at `2026-11-04T07:28:31Z`, reporting API/database UP for `neurosql_db`, PostgreSQL 17.11.
+- This run made no application-code change. CI is configured to ignore `PROGRESS.md`, so this tracker-only commit does not rerun the code pipeline; run #479 remains the latest code verification.
+
+### Neon project and production database
+- Project `neurosql` (`lingering-dew-88806235`) is on the Free plan in Singapore, PostgreSQL 17. Production main is `br-empty-credit-b360dmpc`, database `neurosql_db`.
+- Read-only row-count query confirmed all eight V1–V6 tables are empty: `app_users`, `workspaces`, `workspace_memberships`, `user_sessions`, `auth_login_rate_limits`, `account_action_tokens`, `query_history`, and `saved_queries`.
+- Production roles are still only `neurosql_owner` (LOGIN, CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS) and `neurosql_auth_runtime` (NOLOGIN, NOINHERIT, no elevated flags). The owner remains the only production LOGIN identity; do not enable user-facing auth or SQL features with it.
+- Temporary V7 branch `neurosql-v7-role-validation-20261104` (`br-shy-star-b31qx5c6`) remains ready and isolated. Readback confirms `neurosql_sql_readonly` is NOLOGIN/NOINHERIT, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS, CONNECT allowed, CREATE denied. The temporary probe login is NOLOGIN and has zero group memberships. V7 has not been applied to production main.
+- No production schema or role changes were made during this run.
+
+### Vercel and Render
+- Vercel project `neurosql` (`prj_bWhKWqbbb5EaNRdez05bEsMPe35a`) has production deployment `dpl_4xabUz6aeTCUzshhkvdWFqwykdV6` READY for tracker commit `ab8011371b645ecf1db7433a0822527882f8ea47`; alias `neurosql.vercel.app` is assigned. Project metadata still says `live=false` despite the READY production target and assigned alias; keep this as a dashboard metadata discrepancy, not a failed deployment.
+- Vercel production environment inventory returned zero visible variables and zero hidden production variables. Source inspection confirms `App.tsx` falls back to `https://neurosql-api.onrender.com`, and all `VITE_*` feature gates are enabled only when explicitly set to the string `true`; `.env.example` defaults them to false. No frontend secret or production variable is required for the current disabled-by-default state.
+- Render service `neurosql-api` (`srv-dbgb6vt9fdbs73da93n0`) remains Free, Singapore, auto-deploy enabled, and not suspended at inspection. Latest live deployment is `dep-dbldrsijnfac73fnea3g` for code commit `3d4d8cf`. Application logs show Spring Boot 3.4.1 / Java 21.0.13 started successfully and Hikari established a PostgreSQL connection; the post-deploy CI smoke passed. The error-level log query returned no entries for the inspected deployment window.
+- Render environment-variable readback is not available through the connected interface. Previously configured false feature flags and the HMAC secret cannot be independently re-read here; do not claim their current values are verified. Backend `application.properties` defaults all auth, email, SQL, history, and AI gates to false.
+
+### Remaining release blockers — unchanged, not bypassed
+1. A dedicated production LOGIN principal inheriting `neurosql_auth_runtime` (with INHERIT TRUE, SET FALSE, ADMIN FALSE) still needs explicit approval. The prior approval covered PR #7 and V1–V6 schema, not this credential-bearing production role change.
+2. Production V7 and a separate SQL-read-only LOGIN principal still need explicit approval. Grant SELECT only on explicitly approved user-data schemas/tables; never grant access to `neurosql_app`.
+3. SMTP credentials and a verified sender/domain are unavailable; email verification and password-reset delivery remain disabled.
+4. Gemini/provider key presence cannot be verified through Render readback and no live provider request has been made; all AI gates remain disabled.
+5. End-to-end production login, email delivery, workspace isolation, SQL execution/history, and live AI behavior remain unverified until the above roles and credentials are safely configured.
+6. The Render application datasource can only authenticate as `neurosql_owner` with the current production role inventory. Do not expose gated features until it is replaced with the dedicated least-privilege LOGIN role.
+
+No paid resources, destructive actions, cross-project databases, production role/schema changes, or source-controlled credentials were introduced in this run.
+
+---
+
 # NeuroSQL Progress
 
 ## Run 3 verification — 2026-11-04 13:23 IST
