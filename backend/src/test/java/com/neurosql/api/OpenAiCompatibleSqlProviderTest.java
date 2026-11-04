@@ -112,11 +112,11 @@ class OpenAiCompatibleSqlProviderTest {
                 .andRespond(withSuccess("""
                         {"choices":[{"message":{"content":"SELECT 1"}}]}
                         """, MediaType.APPLICATION_JSON));
+        String oversizedResponse = """
+                {"choices":[{"finish_reason":"stop","message":{"content":"%s"}}]}
+                """.formatted(oversized);
         server.expect(requestTo(ENDPOINT))
-                .andRespond(withSuccess(
-                        "{\\"choices\\":[{\\"finish_reason\\":\\"stop\\",\\"message\\":{\\"content\\":\\""
-                                + oversized + "\\"}}]}",
-                        MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(oversizedResponse, MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> provider.generate("system", "user"))
                 .isInstanceOf(AiSqlProvider.ProviderUnavailableException.class);
