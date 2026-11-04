@@ -1461,6 +1461,12 @@ async function installDeferredSqlFetch(page) {
         headers: { "Content-Type": "application/json" },
       }));
     };
+    window.__failNeuroSqlRequest = (index, message) => {
+      const entry = pending[index];
+      if (!entry || entry.completed) throw new Error("The deferred SQL request is missing or already completed.");
+      entry.completed = true;
+      entry.reject(new TypeError(message));
+    };
 
     const nativeFetch = window.fetch.bind(window);
     window.fetch = (input, init = {}) => {
@@ -1471,7 +1477,7 @@ async function installDeferredSqlFetch(page) {
       }
 
       const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
-      return new Promise(resolve => {
+      return new Promise((resolve, reject) => {
         const entry = {
           path: url.pathname,
           method: init.method ?? (input instanceof Request ? input.method : "GET"),
@@ -1480,6 +1486,7 @@ async function installDeferredSqlFetch(page) {
           aborted: false,
           completed: false,
           resolve,
+          reject,
         };
         if (init.signal) {
           entry.aborted = init.signal.aborted;
@@ -1697,6 +1704,182 @@ async function testWorkspaceSwitchInvalidatesInFlightSql({ operation, staleOutco
     console.log(
       "Switching workspaces safely invalidates in-flight " + operation + " " + staleOutcome
       + " responses; the newer workspace request remains active and wins (mock API only)",
+    );
+  } finally {
+    await page.close();
+  }
+}
+
+
+async function testSessionEndInvalidatesInFlightSql({ operation, sessionEnd, staleOutcome }) {
+  const page = await browser.newPage();
+  await installDeferredSqlFetch(page);
+  const issuedToken = "S".repeat(43);
+  const expiresAt = new Date(Date.now() + (sessionEnd === "expiry" ? 4000 : 60 * 60 * 1000)).toISOString();
+  const operationPath = operation === "query" ? "/api/sql/execute" : "/api/sql/explain";
+  const resultRegion = operation === "query" ? "SQL query results" : "PostgreSQL execution plan";
+  const staleMarker = operation === "query" ? "signed_out_only_value" : "signed_out_only_table";
+  const requests = { logout: [], cancellation: [] };
+  let markLogoutStarted;
+  const logoutStarted = new Promise(resolve => { markLogoutStarted = resolve; });
+  let markCancellationStarted;
+  const cancellationStarted = new Promise(resolve => { markCancellationStarted = resolve; });
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ token: issuedToken, expiresAt }),
+    }),
+    "/api/auth/me": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ userId, sessionId, expiresAt }),
+    }),
+    "/api/auth/workspaces": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { workspaceId: workspaceA, name: "Analytics", slug: "analytics", role: "OWNER" },
+      ]),
+    }),
+    "/api/schema": async route => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(schemaPayload("neurosql_test")),
+    }),
+    "/api/auth/logout": async route => {
+      requests.logout.push(route.request().headers().authorization);
+      markLogoutStarted();
+      await route.fulfill({ status: 204 });
+    },
+    "/api/sql/cancel": async route => {
+      const headers = route.request().headers();
+      const body = route.request().postDataJSON();
+      requests.cancellation.push({
+        authorization: headers.authorization,
+        workspaceId: headers["x-neurosql-workspace-id"],
+        executionId: body.executionId,
+      });
+      markCancellationStarted();
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "CANCEL_REQUESTED" }),
+      });
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    await waitForWorkspaceReady(page, workspaceA);
+
+    const navigation = page.getByRole("navigation", { name: "Workspace navigation" });
+    await navigation.getByRole("button", { name: "Workspace", exact: true }).click();
+    const startButton = operation === "query"
+      ? page.getByRole("button", { name: /Run query/ })
+      : page.getByRole("button", { name: /Explain plan/ });
+    assert.equal(await startButton.isEnabled(), true,
+      operation + " must be enabled before the durable session ends");
+    await startButton.click();
+    await page.waitForFunction(() => window.__neuroSqlRequests?.length === 1);
+
+    const oldRequest = await page.evaluate(() => {
+      const { path, method, headers, body } = window.__neuroSqlRequests[0];
+      return { path, method, headers, body };
+    });
+    assert.equal(oldRequest.path, operationPath);
+    assert.equal(oldRequest.method, "POST");
+    assert.equal(oldRequest.headers.authorization, "Bearer " + issuedToken);
+    assert.equal(oldRequest.headers["x-neurosql-workspace-id"], workspaceA,
+      "The in-flight request must remain scoped to the authenticated workspace");
+    assert.equal(JSON.parse(oldRequest.body).sql.length > 0, true);
+    if (operation === "query") {
+      assert.match(oldRequest.headers["x-neurosql-execution-id"],
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    }
+
+    await navigation.getByRole("button", { name: "Schema explorer", exact: true }).click();
+    await page.getByRole("button", { name: "Sign out", exact: true }).waitFor({ state: "visible" });
+
+    if (sessionEnd === "signout") {
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+      await Promise.race([
+        logoutStarted,
+        delay(5000).then(() => { throw new Error("The sign-out revocation request did not start"); }),
+      ]);
+    } else {
+      await page.waitForFunction(() => {
+        const alert = document.querySelector('[role="alert"]');
+        return alert && alert.textContent.includes("Your session expired. Sign in again.");
+      }, null, { timeout: 12000 });
+    }
+
+    await page.getByRole("heading", { name: "Sign in to NeuroSQL", exact: true }).waitFor({ state: "visible" });
+    assert.equal(await page.getByLabel("Active workspace").count(), 0,
+      "Ending the durable session must remove the authenticated workspace selector");
+    assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0,
+      "Ending the durable session must remove the sign-out control");
+    assert.equal(await page.evaluate(() => window.__neuroSqlRequests[0].aborted), true,
+      "Ending the durable session must abort the in-flight " + operation + " transport");
+
+    if (sessionEnd === "signout") {
+      assert.deepEqual(requests.logout, ["Bearer " + issuedToken],
+        "User sign-out must revoke the same durable session whose SQL request is pending");
+    } else {
+      assert.deepEqual(requests.logout, [],
+        "Local session expiry must not issue a user-initiated logout request");
+      const alerts = await page.getByRole("alert").allTextContents();
+      assert.equal(alerts.some(value => value.includes("Your session expired. Sign in again.")), true,
+        "The expiry message must remain visible while stale SQL is pending");
+    }
+
+    if (operation === "query") {
+      await Promise.race([
+        cancellationStarted,
+        delay(5000).then(() => { throw new Error("Ending the session did not request cancellation of the active SQL execution"); }),
+      ]);
+      assert.deepEqual(requests.cancellation, [{
+        authorization: "Bearer " + issuedToken,
+        workspaceId: workspaceA,
+        executionId: oldRequest.headers["x-neurosql-execution-id"],
+      }], "Session termination must cancel only the pending query in its original workspace");
+    } else {
+      assert.deepEqual(requests.cancellation, [],
+        "EXPLAIN invalidation must not send a SQL execution cancellation request");
+    }
+
+    if (staleOutcome === "network-error") {
+      await page.evaluate(() => window.__failNeuroSqlRequest(0, "Synthetic late network failure"));
+    } else {
+      const status = staleOutcome === "http-error" ? 503 : 200;
+      const body = staleOutcome === "http-error"
+        ? { message: "Synthetic late SQL failure" }
+        : deferredSqlSuccess(operation, staleMarker);
+      await page.evaluate(({ status, body }) => window.__completeNeuroSqlRequest(0, status, body), { status, body });
+    }
+    await page.waitForTimeout(100);
+
+    await navigation.getByRole("button", { name: "Workspace", exact: true }).click();
+    assert.equal(await page.getByRole("region", { name: resultRegion }).count(), 0,
+      "A late " + staleOutcome + " response must not repopulate " + operation + " results after " + sessionEnd);
+    assert.equal(await page.getByRole("alert").count(), 0,
+      "A late " + staleOutcome + " response must not restore an execution error after " + sessionEnd);
+    assert.equal(await page.getByText(staleMarker, { exact: true }).count(), 0,
+      "A late successful response must not render data from the ended session");
+    assert.equal(await page.getByText(/Synthetic late (SQL|network) failure/).count(), 0,
+      "A late failure must not become visible after the durable session is cleared");
+    assert.equal(await page.getByRole("button", { name: /Run query/ }).isEnabled(), false,
+      "SQL execution must remain unavailable after the durable session is cleared");
+    assert.equal(await page.getByRole("button", { name: /Explain plan/ }).isEnabled(), false,
+      "EXPLAIN must remain unavailable after the durable session is cleared");
+    assert.equal(page.url().includes(issuedToken), false);
+    await assertNoBrowserPersistence(page);
+    assert.equal(unexpected.length, 0,
+      "The " + sessionEnd + " in-flight " + operation + " race must not make unexpected API requests");
+    console.log(
+      sessionEnd + " safely invalidates in-flight " + operation + " with late " + staleOutcome
+      + " response; no results or errors return after sign-in is cleared (mock API only)",
     );
   } finally {
     await page.close();
