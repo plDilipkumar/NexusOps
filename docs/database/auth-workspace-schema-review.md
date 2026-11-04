@@ -1,6 +1,6 @@
 # Proposed durable authentication and workspace schema
 
-**Status: V1–V6 approved and applied to Neon `main` on 2026-11-04 IST; V7 remains proposal-only for production.** The SQL in `proposed/V1__durable_auth_workspaces.sql` and `proposed/V2__durable_auth_runtime_grants.sql` is intentionally outside the application's migration-runner path. Neither migration has been applied to Neon `main`; do not wire them into application startup until the schema is approved.
+**Status: V1–V6 approved and applied to Neon `main` on 2026-11-04 IST; V7 remains proposal-only for production.** The SQL in `proposed/V1__durable_auth_workspaces.sql` through `V6__...sql` is intentionally outside the application's migration-runner path. V1–V6 have been applied to Neon `main` after explicit approval; do not wire them into application startup or apply them a second time.
 
 ## Infrastructure inspection (2026-10-29 IST)
 
@@ -30,7 +30,7 @@ The schema contract test verifies that ownerless workspace creation and removal 
 
 The runtime role intentionally cannot create objects, modify account/workspace rows, change a session token hash or user association, delete sessions, or read unrelated account columns such as `display_name` and `last_login_at`. The current repository queries were checked against the granted columns.
 
-Production connection setup remains a separate, manual step: create a dedicated LOGIN role through Neon role management, grant it membership in `neurosql_auth_runtime`, and put its credential only in the Render environment. Do not use the database owner as the runtime identity. No production login role, Render environment variable, or secret was created or changed during this work.
+Production connection setup remains a separate, manual step: create a dedicated LOGIN role through Neon role management and grant it membership using `GRANT neurosql_auth_runtime TO <login_role> WITH INHERIT TRUE, SET FALSE` (without `ADMIN OPTION`). The login must inherit the group's scoped privileges, must not be able to assume or delegate the group role, and must be the only non-owner membership. Put its generated credential only in Render. Do not use the database owner as the runtime identity. No production LOGIN principal has been created or configured yet.
 
 ## Temporary-branch migration and privilege tests
 
@@ -39,17 +39,17 @@ Production connection setup remains a separate, manual step: create a dedicated 
 - The updated branch contains four proposed tables, ten indexes, and both owner-invariant triggers.
 - Direct temporary-branch tests passed for case-insensitive email uniqueness, duplicate workspace slug, duplicate active owner, invalid role, malformed session hash, foreign-key rejection, valid session insertion, atomic owner transfer, ownerless workspace rejection, and final-owner removal rejection.
 - Applied the proposed V2 runtime role/grants on that temporary branch only. Read-only verification confirmed `rolcanlogin=false`, `rolsuper=false`, `rolcreatedb=false`, `rolcreaterole=false`, `rolreplication=false`, `rolbypassrls=false`, and `rolinherit=false`.
-- A temporary transaction switched to `neurosql_auth_runtime` and successfully exercised the same account lookup, workspace membership lookup, session insert/read, and revocation operations required by the current JDBC repositories. Privilege checks confirmed no schema CREATE, no access to unrelated account/workspace columns, no ability to update `token_hash`, no session DELETE, and no membership INSERT. The transaction was rolled back; follow-up read-only checks found zero test rows. The temporary role/grants remain only on the isolated test branch.
+- A temporary transaction switched to `neurosql_auth_runtime` and successfully exercised the same account lookup, workspace membership lookup, session insert/read, and revocation operations required by the current JDBC repositories. Privilege checks confirmed no schema CREATE, no access to unrelated account/workspace columns, no ability to update `token_hash`, no session DELETE, and no membership INSERT. The transaction was rolled back; follow-up read-only checks found zero test rows. The temporary review branch remains an isolated test fixture; the separately approved V1–V6 group role and grants also exist on production `main`.
 - The GitHub Actions workflow now applies V1 and V2 only to disposable PostgreSQL 17, then runs schema and least-privilege contract scripts. CI verification for the new workflow is pending and will be recorded only after the run completes.
-- Neon `main` remains unchanged with zero visible application tables/views.
+- The historical 2026-10-29 inspection above predates production approval; the current production schema and row counts are recorded in the Approval boundary section below.
 
-These checks validate the proposed SQL and current repository access patterns; they are not production activation. The actual Neon temporary branch has not been used for HTTP login testing, and the runtime group role has not been granted to a production LOGIN role.
+These checks validate the SQL and current repository access patterns. Production schema activation is complete for V1–V6, but HTTP login is not enabled: the runtime group role has not been granted to a production LOGIN role.
 
 ## Proposed isolated read-only SQL execution role (V7)
 
 The proposed V7 migration creates a separate `NOLOGIN`, `NOINHERIT`, non-superuser group role named `neurosql_sql_readonly`. It grants only database CONNECT and explicitly revokes access to the protected `neurosql_app` authentication schema, including its tables, sequences, and functions.
 
-The role intentionally receives **no blanket SELECT grant**. An operator must grant USAGE on a dedicated data schema and SELECT on only the approved tables. Do not grant it access to `neurosql_app`, and do not use broad `GRANT SELECT ON ALL TABLES IN SCHEMA public` unless that schema is deliberately dedicated to user-queryable data. A separate LOGIN role must be provisioned outside source control, granted membership in this group, and configured only through the Render SQL data-plane environment variables.
+The role intentionally receives **no blanket SELECT grant**. An operator must grant USAGE on a dedicated data schema and SELECT on only the approved tables. Do not grant it access to `neurosql_app`, and do not use broad `GRANT SELECT ON ALL TABLES IN SCHEMA public` unless that schema is deliberately dedicated to user-queryable data. A separate LOGIN role must be provisioned outside source control, granted membership with `GRANT neurosql_sql_readonly TO <login_role> WITH INHERIT TRUE, SET FALSE` (without `ADMIN OPTION`), and configured only through the Render SQL data-plane environment variables.
 
 The application SQL executor already requires membership in `neurosql_sql_readonly`, verifies the login is not the database owner and has no unexpected role memberships, rejects schema/database creation and table/sequence write privileges, and enforces a PostgreSQL read-only transaction plus statement timeout. V7 supplies the missing NOLOGIN group role; it does not create production login credentials or enable SQL execution.
 
@@ -64,7 +64,7 @@ The proposed V6 migration expands the existing auth_login_rate_limits.failure_ti
 
 The Java limiter supplies a per-bucket threshold; the SQL row lock serializes updates across instances. Raw email, IP address, and token values are not persisted. Registration and verification-resend email identities use separate HMAC namespaces, while their trusted client-IP bucket is shared. IP quotas are omitted unless an operator-configured trusted-proxy resolver provides a client address.
 
-V6 does not add a table or alter account/session data. It only replaces two CHECK constraints on the proposed rate-limit table. The migration and its contract test are included in PR #7 and run against disposable PostgreSQL 17 in CI; the CI applies V6 with psql --single-transaction so the constraint replacement is atomic. The migration has not been applied to Neon main.
+V6 does not add a table or alter account/session data. It only replaces two CHECK constraints on the rate-limit table. The migration and its contract test are included in PR #7 and run against disposable PostgreSQL 17 in CI; the CI applies V6 with psql --single-transaction so the constraint replacement is atomic. V6 was subsequently applied to Neon `main` as part of the approved V1–V6 bundle on 2026-11-04 IST.
 ## Approval boundary
 
 The user explicitly approved PR #7 and V1–V6 for production on 2026-11-04 IST. The approved V1–V6 bundle was applied to Neon project `neurosql`, production branch `main`, database `neurosql_db`, in one transaction containing 66 SQL statements.
