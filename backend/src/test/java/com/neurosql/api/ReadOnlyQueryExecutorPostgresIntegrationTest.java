@@ -106,6 +106,23 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
     }
 
     @Test
+    void refusesToStartExplainAfterSessionRevocationBeforeStatementAttachment() {
+        ActiveQueryRegistry registry = new ActiveQueryRegistry();
+        UUID sessionId = UUID.randomUUID();
+        ActiveQueryRegistry.Handle handle = registry.begin(
+                UUID.randomUUID(), UUID.randomUUID(), sessionId, UUID.randomUUID());
+
+        assertThat(registry.cancelSession(sessionId)).isEqualTo(1);
+        assertThat(handle.cancellationRequested()).isTrue();
+
+        assertThatThrownBy(() -> runtimeExecutor().explain("SELECT 1", handle))
+                .isInstanceOf(ReadOnlyQueryExecutor.QueryCancelledException.class);
+
+        assertThat(registry.activeCount()).isZero();
+        assertThat(runtimeJdbc.queryForObject("SELECT 1", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
     void rejectsMutationBeforeGeneratingAPlan() {
         assertThatThrownBy(() -> runtimeExecutor().explain(
                 "DELETE FROM " + schemaName + ".probe"))
