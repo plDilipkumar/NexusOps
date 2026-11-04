@@ -24,6 +24,7 @@ class SharedLoginRateLimitHealthIndicatorPostgresIntegrationTest {
     private static JdbcTemplate adminJdbc;
     private static JdbcTemplate runtimeJdbc;
     private static String expectedDatabase;
+    private static String loginRole;
 
     @BeforeAll
     static void createRestrictedLoginFixture() {
@@ -59,15 +60,15 @@ class SharedLoginRateLimitHealthIndicatorPostgresIntegrationTest {
 
         // The disposable CI database is fresh for this job; no Neon roles are created or changed.
         adminJdbc.execute("""
-                CREATE ROLE neurosql_auth_runtime NOLOGIN
+                CREATE ROLE neurosql_auth_runtime NOLOGIN NOINHERIT
                     NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
                 """);
         String roleSuffix = UUID.randomUUID().toString().replace("-", "");
-        String loginRole = "neurosql_health_login_" + roleSuffix;
+        loginRole = "neurosql_health_login_" + roleSuffix;
         String password = "ci-" + UUID.randomUUID().toString().replace("-", "");
-        adminJdbc.execute("CREATE ROLE " + loginRole + " LOGIN PASSWORD '" + password
+        adminJdbc.execute("CREATE ROLE " + loginRole + " LOGIN INHERIT PASSWORD '" + password
                 + "' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
-        adminJdbc.execute("GRANT neurosql_auth_runtime TO " + loginRole);
+        adminJdbc.execute("GRANT neurosql_auth_runtime TO " + loginRole + " WITH INHERIT TRUE, SET FALSE");
 
         adminJdbc.execute("GRANT USAGE ON SCHEMA neurosql_app TO neurosql_auth_runtime");
         adminJdbc.execute("REVOKE ALL ON TABLE neurosql_app.auth_login_rate_limits FROM PUBLIC");
@@ -108,6 +109,34 @@ class SharedLoginRateLimitHealthIndicatorPostgresIntegrationTest {
 
         assertThat(health.getStatus()).isEqualTo(Status.DOWN);
         assertThat(health.getDetails()).isEmpty();
+    }
+
+    @Test
+    void reportsDownWhenRuntimeMembershipHasAdminOption() {
+        adminJdbc.execute("GRANT neurosql_auth_runtime TO " + loginRole
+                + " WITH ADMIN OPTION, INHERIT TRUE, SET FALSE");
+        try {
+            assertThat(indicator(runtimeJdbc).health().getStatus()).isEqualTo(Status.DOWN);
+        } finally {
+            adminJdbc.execute("REVOKE ADMIN OPTION FOR neurosql_auth_runtime FROM " + loginRole);
+        }
+    }
+
+    @Test
+    void reportsDownWhenRuntimeMembershipCanSetRoleOrDoesNotInheritPrivileges() {
+        adminJdbc.execute("GRANT neurosql_auth_runtime TO " + loginRole + " WITH INHERIT TRUE, SET TRUE");
+        try {
+            assertThat(indicator(runtimeJdbc).health().getStatus()).isEqualTo(Status.DOWN);
+        } finally {
+            adminJdbc.execute("GRANT neurosql_auth_runtime TO " + loginRole + " WITH INHERIT TRUE, SET FALSE");
+        }
+
+        adminJdbc.execute("GRANT neurosql_auth_runtime TO " + loginRole + " WITH INHERIT FALSE, SET FALSE");
+        try {
+            assertThat(indicator(runtimeJdbc).health().getStatus()).isEqualTo(Status.DOWN);
+        } finally {
+            adminJdbc.execute("GRANT neurosql_auth_runtime TO " + loginRole + " WITH INHERIT TRUE, SET FALSE");
+        }
     }
 
     private static SharedLoginRateLimitHealthIndicator indicator(JdbcTemplate jdbc) {
