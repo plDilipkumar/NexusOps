@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Coordinates unverified account creation and email-verification token issuance.
+ * Coordinates unverified account creation, personal-workspace provisioning, and email-verification token issuance.
  *
  * <p>The account row and token digest must commit together. If token issuance
  * fails, the surrounding transaction rolls the new account back. This service
@@ -24,23 +24,26 @@ import org.springframework.transaction.annotation.Transactional;
         havingValue = "true")
 public class RegistrationService {
     private final JdbcAccountRepository accounts;
+    private final JdbcWorkspaceProvisioningRepository workspaces;
     private final PasswordEncoder passwordEncoder;
     private final AccountActionTokenService actionTokens;
 
     public RegistrationService(
             JdbcAccountRepository accounts,
+            JdbcWorkspaceProvisioningRepository workspaces,
             PasswordEncoder passwordEncoder,
             AccountActionTokenService actionTokens) {
         this.accounts = Objects.requireNonNull(accounts, "accounts");
+        this.workspaces = Objects.requireNonNull(workspaces, "workspaces");
         this.passwordEncoder = Objects.requireNonNull(passwordEncoder, "passwordEncoder");
         this.actionTokens = Objects.requireNonNull(actionTokens, "actionTokens");
     }
 
     /**
-     * Creates an unverified account and its verification token atomically.
+     * Creates an unverified account, its personal workspace/OWNER membership, and its verification token atomically.
      *
      * <p>An empty delivery token means the normalized email already existed.
-     * A future public endpoint must return the same generic response for both
+     * The public delivery boundary must return the same generic response for both
      * outcomes and must not serialize this result.</p>
      */
     @Transactional
@@ -58,8 +61,10 @@ public class RegistrationService {
             return RegistrationAttempt.noDelivery();
         }
 
+        UUID createdUserId = userId.orElseThrow();
+        workspaces.createPersonalWorkspace(createdUserId, normalizedDisplayName);
         AccountActionTokenService.IssuedActionToken token = actionTokens.issueToken(
-                userId.orElseThrow(), AccountActionTokenService.Purpose.EMAIL_VERIFICATION);
+                createdUserId, AccountActionTokenService.Purpose.EMAIL_VERIFICATION);
         return RegistrationAttempt.deliveryPending(token);
     }
 

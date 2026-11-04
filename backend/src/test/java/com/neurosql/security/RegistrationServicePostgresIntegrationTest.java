@@ -66,6 +66,26 @@ class RegistrationServicePostgresIntegrationTest {
         jdbc.execute("ALTER TABLE neurosql_app.app_users ALTER COLUMN user_id SET DEFAULT gen_random_uuid()");
         jdbc.execute("ALTER TABLE neurosql_app.app_users ALTER COLUMN status SET DEFAULT 'ACTIVE'");
         jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_app_users_email_lower ON neurosql_app.app_users (lower(email))");
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS neurosql_app.workspaces (
+                    workspace_id UUID PRIMARY KEY,
+                    name VARCHAR(120) NOT NULL,
+                    slug VARCHAR(120) NOT NULL,
+                    created_by_user_id UUID REFERENCES neurosql_app.app_users(user_id)
+                )
+                """);
+        jdbc.execute("ALTER TABLE neurosql_app.workspaces ALTER COLUMN workspace_id SET DEFAULT gen_random_uuid()");
+        jdbc.execute("ALTER TABLE neurosql_app.workspaces ADD COLUMN IF NOT EXISTS created_by_user_id UUID");
+        jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_registration_workspace_slug ON neurosql_app.workspaces (lower(slug))");
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS neurosql_app.workspace_memberships (
+                    workspace_id UUID NOT NULL REFERENCES neurosql_app.workspaces(workspace_id),
+                    user_id UUID NOT NULL REFERENCES neurosql_app.app_users(user_id),
+                    role VARCHAR(16) NOT NULL,
+                    status VARCHAR(16) NOT NULL,
+                    PRIMARY KEY (workspace_id, user_id)
+                )
+                """);
     }
 
     @Test
@@ -90,12 +110,27 @@ class RegistrationServicePostgresIntegrationTest {
                 "SELECT count(*) FROM neurosql_app.app_users WHERE email = ? AND email_verified_at IS NULL",
                 Integer.class,
                 email)).isEqualTo(1);
+        UUID userId = jdbc.queryForObject(
+                "SELECT user_id FROM neurosql_app.app_users WHERE email = ?",
+                UUID.class,
+                email);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.workspaces WHERE created_by_user_id = ? AND name = ?",
+                Integer.class,
+                userId,
+                "Registration Test Workspace")).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM neurosql_app.workspace_memberships WHERE user_id = ? AND role = 'OWNER' AND status = 'ACTIVE'",
+                Integer.class,
+                userId)).isEqualTo(1);
     }
 
     @Test
     void tokenIssuanceFailureRollsBackNewAccount() {
         assertThat(AopUtils.isAopProxy(registrationService)).isTrue();
         String email = "rollback-" + UUID.randomUUID() + "@example.test";
+        int workspacesBefore = jdbc.queryForObject("SELECT count(*) FROM neurosql_app.workspaces", Integer.class);
+        int membershipsBefore = jdbc.queryForObject("SELECT count(*) FROM neurosql_app.workspace_memberships", Integer.class);
         when(actionTokens.issueToken(any(UUID.class), eq(AccountActionTokenService.Purpose.EMAIL_VERIFICATION)))
                 .thenThrow(new IllegalStateException("simulated token persistence failure"));
 
@@ -107,6 +142,10 @@ class RegistrationServicePostgresIntegrationTest {
                 "SELECT count(*) FROM neurosql_app.app_users WHERE email = ?",
                 Integer.class,
                 email)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM neurosql_app.workspaces", Integer.class))
+                .isEqualTo(workspacesBefore);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM neurosql_app.workspace_memberships", Integer.class))
+                .isEqualTo(membershipsBefore);
     }
 
     @Configuration
@@ -148,11 +187,17 @@ class RegistrationServicePostgresIntegrationTest {
         }
 
         @Bean
+        JdbcWorkspaceProvisioningRepository workspaceProvisioningRepository(JdbcTemplate jdbcTemplate) {
+            return new JdbcWorkspaceProvisioningRepository(jdbcTemplate);
+        }
+
+        @Bean
         RegistrationService registrationService(
                 JdbcAccountRepository accounts,
+                JdbcWorkspaceProvisioningRepository workspaces,
                 PasswordEncoder passwordEncoder,
                 AccountActionTokenService actionTokens) {
-            return new RegistrationService(accounts, passwordEncoder, actionTokens);
+            return new RegistrationService(accounts, workspaces, passwordEncoder, actionTokens);
         }
     }
 }

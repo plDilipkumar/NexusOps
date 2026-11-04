@@ -186,6 +186,14 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: neurosql_test
         run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V7__read_only_sql_execution_role.sql
+      - name: Apply proposed personal workspace bootstrap grants
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/V8__workspace_bootstrap_grants.sql
       - name: Verify schema constraints and fixture cleanup
         env:
           PGHOST: localhost
@@ -242,6 +250,14 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: neurosql_test
         run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-query-history-saved-queries.sql
+      - name: Verify personal workspace bootstrap and owner invariant
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: neurosql_test
+        run: psql -v ON_ERROR_STOP=1 -f docs/database/proposed/test-workspace-bootstrap-grants.sql
 
   production-smoke:
     name: Production API and database smoke test

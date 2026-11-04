@@ -32,6 +32,9 @@ class RegistrationServiceTest {
     private JdbcAccountRepository accounts;
 
     @Mock
+    private JdbcWorkspaceProvisioningRepository workspaces;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -41,7 +44,7 @@ class RegistrationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RegistrationService(accounts, passwordEncoder, actionTokens);
+        service = new RegistrationService(accounts, workspaces, passwordEncoder, actionTokens);
     }
 
     @Test
@@ -64,6 +67,7 @@ class RegistrationServiceTest {
         assertThat(result.toString()).doesNotContain(RAW_TOKEN);
         verify(passwordEncoder).encode(PASSWORD);
         verify(accounts).createUnverifiedAccount(EMAIL, PASSWORD_HASH, DISPLAY_NAME);
+        verify(workspaces).createPersonalWorkspace(USER_ID, DISPLAY_NAME);
         verify(actionTokens).issueToken(USER_ID, AccountActionTokenService.Purpose.EMAIL_VERIFICATION);
     }
 
@@ -78,6 +82,7 @@ class RegistrationServiceTest {
 
         assertThat(result.verificationDelivery()).isEmpty();
         verify(passwordEncoder).encode(PASSWORD);
+        verify(workspaces, never()).createPersonalWorkspace(any(UUID.class), any(String.class));
         verify(actionTokens, never()).issueToken(any(UUID.class), any(AccountActionTokenService.Purpose.class));
     }
 
@@ -89,6 +94,7 @@ class RegistrationServiceTest {
 
         verify(passwordEncoder, never()).encode(any(String.class));
         verify(accounts, never()).createUnverifiedAccount(any(), any(), any());
+        verify(workspaces, never()).createPersonalWorkspace(any(UUID.class), any(String.class));
         verify(actionTokens, never()).issueToken(any(UUID.class), any(AccountActionTokenService.Purpose.class));
     }
 
