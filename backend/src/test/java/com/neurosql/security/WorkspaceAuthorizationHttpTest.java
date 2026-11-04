@@ -1,0 +1,1000 @@
+package com.neurosql.security;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import com.neurosql.api.AiSqlGenerationController;
+import com.neurosql.api.AiSqlGenerationService;
+import com.neurosql.api.AiSqlExplanationController;
+import com.neurosql.api.AiSqlExplanationService;
+import com.neurosql.api.AiSqlPerformanceRecommendationController;
+import com.neurosql.api.AiSqlPerformanceRecommendationService;
+import com.neurosql.api.DurableSessionController;
+import com.neurosql.api.SchemaController;
+import com.neurosql.api.SqlExecutionController;
+import com.neurosql.api.QueryHistoryController;
+import com.neurosql.api.SavedQueriesController;
+import com.neurosql.api.ReadOnlyQueryExecutor;
+import com.neurosql.api.ActiveQueryRegistry;
+import com.neurosql.api.WorkspaceController;
+import com.neurosql.security.QueryHistoryService;
+import com.neurosql.security.QueryHistoryReadService;
+import com.neurosql.security.SavedQueryService;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+@WebMvcTest(controllers = {DurableSessionController.class, SchemaController.class, WorkspaceController.class, SqlExecutionController.class, QueryHistoryController.class, SavedQueriesController.class, AiSqlGenerationController.class, AiSqlExplanationController.class, AiSqlPerformanceRecommendationController.class})
+@Import(SecurityConfig.class)
+@TestPropertySource(properties = {
+        "neurosql.auth.enabled=true",
+        "neurosql.auth.username=test-owner",
+        "neurosql.auth.password=test-owner-password-123",
+        "neurosql.auth.durable-sessions-enabled=true",
+        "neurosql.auth.shared-rate-limit-enabled=true",
+        "neurosql.sql-history.enabled=true",
+        "neurosql.saved-queries.enabled=true",
+        "neurosql.schema-browser.enabled=true",
+        "neurosql.sql-execution.enabled=true",
+        "neurosql.ai.sql-generation.enabled=true",
+        "neurosql.ai.sql-performance.enabled=true"
+})
+class WorkspaceAuthorizationHttpTest {
+    private static final String TOKEN = "A".repeat(43);
+    private static final UUID USER_ID = UUID.fromString("b4f41d45-68dc-4f7b-8df0-48e3f29e54c1");
+    private static final UUID SESSION_ID = UUID.fromString("4cfa688e-8890-4b5e-8a9a-19f074d5a1f3");
+    private static final UUID WORKSPACE_ID = UUID.fromString("b66c9e57-9e08-4b86-8f3f-65e8d9c60d6b");
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private JdbcTemplate jdbcTemplate;
+
+    @MockBean
+    private ReadOnlyQueryExecutor queryExecutor;
+
+    @MockBean
+    private ActiveQueryRegistry activeQueryRegistry;
+
+    @MockBean
+    private SessionLifecycleService sessions;
+
+    @MockBean
+    private DurableLoginService loginService;
+
+    @MockBean
+    private WorkspaceAuthorizationService workspaceAuthorizationService;
+
+    @MockBean
+    private QueryHistoryService queryHistoryService;
+
+    @MockBean
+    private QueryHistoryReadService queryHistoryReadService;
+
+    @MockBean
+    private SavedQueryService savedQueryService;
+
+    @MockBean
+    private AiSqlGenerationService aiSqlGenerationService;
+
+    @MockBean
+    private AiSqlExplanationService aiSqlExplanationService;
+
+    @MockBean
+    private AiSqlPerformanceRecommendationService aiSqlPerformanceRecommendationService;
+
+    @MockBean
+    private SharedAccountRequestRateLimiter sharedAccountRequestRateLimiter;
+
+    @Test
+    void durableSessionMustProvideCanonicalWorkspaceId() throws Exception {
+        authenticateSession();
+
+        mockMvc.perform(get("/api/schema")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("workspace_id_required"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+
+        verifyNoInteractions(workspaceAuthorizationService);
+    }
+
+    @Test
+    void activeViewerCanReadSchemaOnlyForAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        mockSchemaDatabase();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+
+        mockMvc.perform(get("/api/schema")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.database").value("neurosql_db"))
+                .andExpect(jsonPath("$.tableCount").value(0));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+    }
+
+    @Test
+    void missingMembershipIsDeniedBeforeSchemaMetadataIsRead() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(get("/api/schema")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
+    void unregisteredSqlRoutesFailClosedUntilTheyHaveAnExplicitRolePolicy() throws Exception {
+        authenticateSession();
+
+        mockMvc.perform(get("/api/sql/execute")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_policy_missing"));
+
+        verifyNoInteractions(workspaceAuthorizationService);
+    }
+    @Test
+    void activeViewerCanExecuteReadOnlySqlForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(queryExecutor.execute("SELECT 1")).thenReturn(new ReadOnlyQueryExecutor.QueryResponse(
+                List.of(new ReadOnlyQueryExecutor.ColumnInfo("answer", "int4", java.sql.Types.INTEGER)),
+                List.of(List.of("1")),
+                1,
+                false,
+                2));
+
+        mockMvc.perform(post("/api/sql/execute")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[0][0]").value("1"))
+                .andExpect(jsonPath("$.rowCount").value(1));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(queryExecutor).execute("SELECT 1");
+        verify(queryHistoryService).recordSucceeded(USER_ID, WORKSPACE_ID, "SELECT 1", 1, 2, false);
+    }
+
+    @Test
+    void activeViewerCanGenerateAiSqlOnlyForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlGeneration(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
+        when(aiSqlGenerationService.generate(any()))
+                .thenReturn(new AiSqlGenerationService.GenerateResponse(
+                        "SELECT id FROM public.orders", "SELECT", List.of("unexecuted draft")));
+
+        mockMvc.perform(post("/api/sql/ai/generate")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"prompt":"List order identifiers","schemas":[{"name":"public","tables":[{"name":"orders","columns":[{"name":"id","dataType":"bigint"}]}]}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.sql").value("SELECT id FROM public.orders"))
+                .andExpect(jsonPath("$.statementType").value("SELECT"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(sharedAccountRequestRateLimiter).acquireAiSqlGeneration(USER_ID);
+        verify(aiSqlGenerationService).generate(any());
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotGenerateAiSql() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/ai/generate")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"List order identifiers\",\"schemas\":[]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(sharedAccountRequestRateLimiter);
+        verifyNoInteractions(aiSqlGenerationService);
+    }
+
+    @Test
+    void aiSqlGenerationQuotaReturnsRetryAfterWithoutCallingProvider() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlGeneration(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(false, 120));
+
+        mockMvc.perform(post("/api/sql/ai/generate")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"List order identifiers\",\"schemas\":[]}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "120"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")));
+
+        verifyNoInteractions(aiSqlGenerationService);
+    }
+
+    @Test
+    void activeViewerCanRequestAiExplanationForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlRequest(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
+        when(aiSqlExplanationService.explain(any()))
+                .thenReturn(new AiSqlExplanationService.ExplainResponse(
+                        "The query returns the constant value 1.", "SELECT", List.of("The query was not executed.")));
+
+        mockMvc.perform(post("/api/sql/ai/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.explanation").value("The query returns the constant value 1."))
+                .andExpect(jsonPath("$.statementType").value("SELECT"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(sharedAccountRequestRateLimiter).acquireAiSqlRequest(USER_ID);
+        verify(aiSqlExplanationService).explain(any());
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotRequestAiExplanation() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/ai/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(sharedAccountRequestRateLimiter, aiSqlExplanationService);
+    }
+
+    @Test
+    void aiExplanationSharesTheAiQuotaAndReturnsRetryAfter() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlRequest(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(false, 120));
+
+        mockMvc.perform(post("/api/sql/ai/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "120"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")));
+
+        verifyNoInteractions(aiSqlExplanationService);
+    }
+
+    @Test
+    void activeViewerCanRequestAiPerformanceRecommendationsForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlRequest(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(true, 0));
+        when(aiSqlPerformanceRecommendationService.recommend(any()))
+                .thenReturn(new AiSqlPerformanceRecommendationService.RecommendationResponse(
+                        "Review the scan against representative workload evidence.",
+                        "SELECT",
+                        false,
+                        List.of("Planner estimates are not measured runtime.")));
+
+        mockMvc.perform(post("/api/sql/ai/performance")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.recommendations").value(
+                        "Review the scan against representative workload evidence."))
+                .andExpect(jsonPath("$.statementType").value("SELECT"))
+                .andExpect(jsonPath("$.planTruncated").value(false));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(sharedAccountRequestRateLimiter).acquireAiSqlRequest(USER_ID);
+        verify(aiSqlPerformanceRecommendationService).recommend(any());
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotRequestAiPerformanceRecommendations() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/ai/performance")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(sharedAccountRequestRateLimiter, aiSqlPerformanceRecommendationService);
+    }
+
+    @Test
+    void aiPerformanceRecommendationsShareTheAiQuotaAndReturnRetryAfter() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sharedAccountRequestRateLimiter.acquireAiSqlRequest(USER_ID))
+                .thenReturn(new SharedAccountRequestRateLimiter.Decision(false, 120));
+
+        mockMvc.perform(post("/api/sql/ai/performance")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "120"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")));
+
+        verifyNoInteractions(aiSqlPerformanceRecommendationService);
+    }
+
+    @Test
+    void legacyOwnerCannotUseDurableAiExplanationEndpoint() throws Exception {
+        mockMvc.perform(post("/api/sql/ai/explain")
+                        .with(httpBasic("test-owner", "test-owner-password-123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(aiSqlExplanationService);
+    }
+
+    @Test
+    void legacyOwnerCannotUseDurableAiSqlGenerationEndpoint() throws Exception {
+        mockMvc.perform(post("/api/sql/ai/generate")
+                        .with(httpBasic("test-owner", "test-owner-password-123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"List order identifiers\",\"schemas\":[]}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(aiSqlGenerationService);
+    }
+
+    @Test
+    void productionFrontendCanPreflightAiSqlGenerationPost() throws Exception {
+        mockMvc.perform(options("/api/sql/ai/generate")
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization,content-type,x-neurosql-workspace-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://neurosql.vercel.app"));
+    }
+
+    @Test
+    void failedDatabaseExecutionIsRecordedForTheAuthenticatedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        doThrow(new ReadOnlyQueryExecutor.QueryExecutionException())
+                .when(queryExecutor).execute("SELECT broken FROM");
+
+        mockMvc.perform(post("/api/sql/execute")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sql":"SELECT broken FROM"}
+                                """))
+                .andExpect(status().isUnprocessableEntity());
+
+        verify(queryHistoryService).recordFailed(
+                eq(USER_ID), eq(WORKSPACE_ID), eq("SELECT broken FROM"),
+                org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    void legacyOwnerExecutionDoesNotCreateWorkspaceHistory() throws Exception {
+        when(queryExecutor.execute("SELECT 1")).thenReturn(new ReadOnlyQueryExecutor.QueryResponse(
+                List.of(new ReadOnlyQueryExecutor.ColumnInfo("answer", "int4", java.sql.Types.INTEGER)),
+                List.of(List.of("1")),
+                1,
+                false,
+                2));
+
+        mockMvc.perform(post("/api/sql/execute")
+                        .with(httpBasic("test-owner", "test-owner-password-123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sql":"SELECT 1"}
+                                """))
+                .andExpect(status().isOk());
+
+        verifyNoInteractions(queryHistoryService);
+    }
+
+    @Test
+    void activeViewerCanRequestExplainForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(queryExecutor.explain("SELECT 1")).thenReturn(
+                new ReadOnlyQueryExecutor.ExplainResponse(
+                        "[{\"Plan\":{\"Node Type\":\"Result\"}}]", 1, false));
+
+        mockMvc.perform(post("/api/sql/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analyze").value(false));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(queryExecutor).explain("SELECT 1");
+    }
+
+
+    @Test
+    void activeViewerCanReadOnlyTheirHistoryForAnAuthorizedWorkspace() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        UUID historyId = UUID.fromString("c5f52e56-79ed-4c80-9e50-48e3d9d4e1a7");
+        var entry = new JdbcQueryHistoryRepository.HistoryEntry(
+                historyId,
+                "SELECT 1",
+                "SUCCEEDED",
+                1,
+                4,
+                false,
+                Instant.parse("2026-11-02T10:15:30.123456Z"));
+        when(queryHistoryReadService.list(USER_ID, WORKSPACE_ID, 1, null, null, "2026-11-01", "2026-11-02", "select 1"))
+                .thenReturn(new QueryHistoryReadService.QueryHistoryPage(List.of(entry), "next-page", true));
+
+        mockMvc.perform(get("/api/sql/history")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .param("limit", "1")
+                        .param("from", "2026-11-01")
+                        .param("to", "2026-11-02")
+                        .param("q", "select 1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.items[0].historyId").value(historyId.toString()))
+                .andExpect(jsonPath("$.items[0].queryText").value("SELECT 1"))
+                .andExpect(jsonPath("$.items[0].outcome").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.hasMore").value(true))
+                .andExpect(jsonPath("$.nextCursor").value("next-page"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(queryHistoryReadService).list(USER_ID, WORKSPACE_ID, 1, null, null, "2026-11-01", "2026-11-02", "select 1");
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotReadQueryHistory() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(get("/api/sql/history")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(queryHistoryReadService);
+    }
+
+    @Test
+    void legacyBasicOwnerCannotReadUserQueryHistory() throws Exception {
+        mockMvc.perform(get("/api/sql/history")
+                        .with(httpBasic("test-owner", "test-owner-password-123")))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(queryHistoryReadService);
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotRequestExplain() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/explain")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(queryExecutor);
+    }
+
+    @Test
+    void viewerWithoutWorkspaceMembershipCannotExecuteSql() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/execute")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sql\":\"SELECT 1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(queryExecutor);
+    }
+
+
+    @Test
+    void newSchemaPathsAndMethodsFailClosedUntilTheyHaveAnExplicitPolicy() throws Exception {
+        authenticateSession();
+
+        mockMvc.perform(get("/api/schema/admin")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_policy_missing"));
+
+        verifyNoInteractions(workspaceAuthorizationService);
+        verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
+    void legacyConfiguredOwnerRemainsCompatibleWithoutWorkspaceHeader() throws Exception {
+        mockSchemaDatabase();
+
+        mockMvc.perform(get("/api/schema").with(httpBasic("test-owner", "test-owner-password-123")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.database").value("neurosql_db"));
+
+        verifyNoInteractions(workspaceAuthorizationService);
+    }
+
+    @Test
+    void authenticatedUserCanDiscoverOnlyTheirActiveWorkspaces() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.listActiveWorkspaces(USER_ID)).thenReturn(List.of(
+                new JdbcWorkspaceAuthorizationRepository.ActiveWorkspace(
+                        WORKSPACE_ID, "Engineering", "engineering", WorkspaceRole.MEMBER)));
+
+        mockMvc.perform(get("/api/auth/workspaces")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$[0].workspaceId").value(WORKSPACE_ID.toString()))
+                .andExpect(jsonPath("$[0].name").value("Engineering"))
+                .andExpect(jsonPath("$[0].slug").value("engineering"))
+                .andExpect(jsonPath("$[0].role").value("MEMBER"))
+                .andExpect(jsonPath("$[0].token").doesNotExist());
+    }
+
+    @Test
+    void basicOwnerCannotUseDurableWorkspaceDiscovery() throws Exception {
+        mockMvc.perform(get("/api/auth/workspaces")
+                        .with(httpBasic("test-owner", "test-owner-password-123")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void workspaceHeaderIsAllowedByProductionCorsPreflight() throws Exception {
+        mockMvc.perform(options("/api/schema")
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "GET")
+                        .header("Access-Control-Request-Headers",
+                                "authorization,x-neurosql-workspace-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        "Access-Control-Allow-Origin", "https://neurosql.vercel.app"));
+    }
+
+    @Test
+    void browserCanCompleteLoginWorkspaceSchemaAndLogoutLifecycle() throws Exception {
+        String password = "Correct-Horse-Battery-2026";
+        Instant issuedAt = Instant.now().minusSeconds(60);
+        Instant expiresAt = issuedAt.plusSeconds(12 * 60 * 60);
+        SessionLifecycleService.IssuedSession issued =
+                new SessionLifecycleService.IssuedSession(TOKEN, issuedAt, expiresAt);
+        JdbcSessionRepository.StoredSession stored =
+                new JdbcSessionRepository.StoredSession(SESSION_ID, USER_ID, issuedAt, expiresAt);
+
+        when(loginService.login("alice@example.test", password))
+                .thenReturn(DurableLoginService.LoginAttempt.authenticated(issued));
+        when(sessions.validateSession(eq(TOKEN), any(Instant.class)))
+                .thenReturn(Optional.of(stored), Optional.of(stored), Optional.of(stored),
+                        Optional.of(stored), Optional.empty());
+        when(workspaceAuthorizationService.listActiveWorkspaces(USER_ID)).thenReturn(List.of(
+                new JdbcWorkspaceAuthorizationRepository.ActiveWorkspace(
+                        WORKSPACE_ID, "Engineering", "engineering", WorkspaceRole.MEMBER)));
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(sessions.revokeSession(eq(TOKEN), any(Instant.class))).thenReturn(true);
+        mockSchemaDatabase();
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"alice@example.test\",\"password\":\"" + password + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.token").value(TOKEN))
+                .andExpect(jsonPath("$.expiresAt").value(expiresAt.toString()));
+
+        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        mockMvc.perform(get("/api/auth/workspaces").header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].workspaceId").value(WORKSPACE_ID.toString()));
+
+        mockMvc.perform(get("/api/schema")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.database").value("neurosql_db"))
+                .andExpect(jsonPath("$.tableCount").value(0));
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+
+        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+                .andExpect(status().isUnauthorized());
+
+        verify(sessions).revokeSession(eq(TOKEN), any(Instant.class));
+        verify(sessions, org.mockito.Mockito.times(5)).validateSession(eq(TOKEN), any(Instant.class));
+    }
+
+    @Test
+    void invalidLoginPayloadIsNotCacheableEvenWhenValidationFailsBeforeController() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"not-an-email\",\"password\":\"Correct-Horse-Battery-2026\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache"))
+                .andExpect(header().string(HttpHeaders.EXPIRES, "0"));
+
+        org.mockito.Mockito.verifyNoInteractions(loginService);
+    }
+
+
+    @Test
+    void activeViewerCanListWorkspaceSavedQueries() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        UUID savedId = UUID.fromString("4f3bd8a0-9172-4d40-8b58-0ec90adf7c4c");
+        Instant updatedAt = Instant.parse("2026-11-02T10:30:00.123456Z");
+        var entry = new JdbcSavedQueryRepository.SavedQueryEntry(
+                savedId, WORKSPACE_ID, USER_ID, "Monthly revenue", "Finance report",
+                "SELECT sum(amount) FROM invoices", updatedAt, updatedAt);
+        when(savedQueryService.list(WORKSPACE_ID, 1, "finance", null))
+                .thenReturn(new SavedQueryService.SavedQueryPage(List.of(entry), null, false));
+
+        mockMvc.perform(get("/api/sql/saved-queries")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .param("limit", "1")
+                        .param("q", "finance"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.items[0].savedQueryId").value(savedId.toString()))
+                .andExpect(jsonPath("$.items[0].name").value("Monthly revenue"))
+                .andExpect(jsonPath("$.items[0].queryText").value("SELECT sum(amount) FROM invoices"))
+                .andExpect(jsonPath("$.hasMore").value(false));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(savedQueryService).list(WORKSPACE_ID, 1, "finance", null);
+    }
+
+    @Test
+    void activeMemberCanCreateWorkspaceSavedQuery() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.MEMBER))
+                .thenReturn(true);
+        UUID savedId = UUID.fromString("b81ac18d-6432-4b1b-8cc2-39abf5e1b302");
+        Instant createdAt = Instant.parse("2026-11-02T10:31:00.123456Z");
+        var entry = new JdbcSavedQueryRepository.SavedQueryEntry(
+                savedId, WORKSPACE_ID, USER_ID, "Open invoices", "",
+                "SELECT * FROM invoices WHERE status = 'OPEN'", createdAt, createdAt);
+        when(savedQueryService.create(
+                WORKSPACE_ID, USER_ID, "Open invoices", null,
+                "SELECT * FROM invoices WHERE status = 'OPEN'")).thenReturn(entry);
+
+        mockMvc.perform(post("/api/sql/saved-queries")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Open invoices","queryText":"SELECT * FROM invoices WHERE status = 'OPEN'"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.savedQueryId").value(savedId.toString()))
+                .andExpect(jsonPath("$.ownerUserId").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.name").value("Open invoices"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.MEMBER);
+        verify(savedQueryService).create(
+                WORKSPACE_ID, USER_ID, "Open invoices", null,
+                "SELECT * FROM invoices WHERE status = 'OPEN'");
+    }
+
+    @Test
+    void activeAdminCanUpdateWorkspaceSavedQuery() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN))
+                .thenReturn(true);
+        UUID savedId = UUID.fromString("d0b12b4a-f1a1-45f1-a6d3-54bbf76b70a1");
+        Instant updatedAt = Instant.parse("2026-11-02T11:00:00.123456Z");
+        var entry = new JdbcSavedQueryRepository.SavedQueryEntry(
+                savedId, WORKSPACE_ID, USER_ID, "Updated report", "Updated description",
+                "SELECT 2", updatedAt.minusSeconds(60), updatedAt);
+        when(savedQueryService.update(
+                WORKSPACE_ID, savedId, "Updated report", "Updated description", "SELECT 2"))
+                .thenReturn(Optional.of(entry));
+
+        mockMvc.perform(put("/api/sql/saved-queries/{savedQueryId}", savedId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Updated report","description":"Updated description","queryText":"SELECT 2"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.savedQueryId").value(savedId.toString()))
+                .andExpect(jsonPath("$.ownerUserId").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.name").value("Updated report"))
+                .andExpect(jsonPath("$.queryText").value("SELECT 2"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN);
+        verify(savedQueryService).update(
+                WORKSPACE_ID, savedId, "Updated report", "Updated description", "SELECT 2");
+    }
+
+    @Test
+    void activeAdminCanDeleteWorkspaceSavedQuery() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN))
+                .thenReturn(true);
+        UUID savedId = UUID.fromString("d0b12b4a-f1a1-45f1-a6d3-54bbf76b70a1");
+        when(savedQueryService.delete(WORKSPACE_ID, savedId)).thenReturn(true);
+
+        mockMvc.perform(delete("/api/sql/saved-queries/{savedQueryId}", savedId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN);
+        verify(savedQueryService).delete(WORKSPACE_ID, savedId);
+    }
+
+    @Test
+    void memberCannotUpdateOrDeleteWorkspaceSavedQueries() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.ADMIN))
+                .thenReturn(false);
+        UUID savedId = UUID.fromString("d0b12b4a-f1a1-45f1-a6d3-54bbf76b70a1");
+
+        mockMvc.perform(put("/api/sql/saved-queries/{savedQueryId}", savedId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Updated report","description":"","queryText":"SELECT 2"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        mockMvc.perform(delete("/api/sql/saved-queries/{savedQueryId}", savedId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(savedQueryService);
+    }
+
+    @Test
+    void activeViewerCanRequestCancellationForTheirWorkspaceQuery() throws Exception {
+        authenticateSession();
+        UUID executionId = UUID.fromString("dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b");
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(true);
+        when(activeQueryRegistry.cancel(executionId, USER_ID, SESSION_ID, WORKSPACE_ID))
+                .thenReturn(ActiveQueryRegistry.CancelResult.REQUESTED);
+
+        mockMvc.perform(post("/api/sql/cancel")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"executionId\":\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL,
+                        org.hamcrest.Matchers.containsString("no-store")))
+                .andExpect(jsonPath("$.status").value("CANCEL_REQUESTED"));
+
+        verify(workspaceAuthorizationService)
+                .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
+        verify(activeQueryRegistry).cancel(executionId, USER_ID, SESSION_ID, WORKSPACE_ID);
+    }
+
+    @Test
+    void viewerCannotCancelQueriesWithoutWorkspaceMembership() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/cancel")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"executionId\":\"dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(activeQueryRegistry);
+    }
+
+    @Test
+    void executionCorsAllowsTheClientExecutionIdentifierHeader() throws Exception {
+        mockMvc.perform(options("/api/sql/execute")
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers",
+                                "authorization,content-type,x-neurosql-workspace-id,x-neurosql-execution-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://neurosql.vercel.app"))
+                .andExpect(header().string("Access-Control-Allow-Headers",
+                        org.hamcrest.Matchers.containsString("x-neurosql-execution-id")));
+    }
+
+    @Test
+    void savedQueryMutationCorsIsScopedToSavedQueryRoutes() throws Exception {
+        String path = "/api/sql/saved-queries/d0b12b4a-f1a1-45f1-a6d3-54bbf76b70a1";
+        mockMvc.perform(options(path)
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "PUT")
+                        .header("Access-Control-Request-Headers",
+                                "authorization,content-type,x-neurosql-workspace-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        "Access-Control-Allow-Origin", "https://neurosql.vercel.app"))
+                .andExpect(header().string(
+                        "Access-Control-Allow-Methods", org.hamcrest.Matchers.containsString("PUT")));
+
+        mockMvc.perform(options(path)
+                        .header("Origin", "https://neurosql.vercel.app")
+                        .header("Access-Control-Request-Method", "DELETE")
+                        .header("Access-Control-Request-Headers",
+                                "authorization,x-neurosql-workspace-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        "Access-Control-Allow-Methods", org.hamcrest.Matchers.containsString("DELETE")));
+    }
+
+    @Test
+    void viewerCannotCreateWorkspaceSavedQuery() throws Exception {
+        authenticateSession();
+        when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.MEMBER))
+                .thenReturn(false);
+
+        mockMvc.perform(post("/api/sql/saved-queries")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                        .header(WorkspaceAuthorizationFilter.WORKSPACE_HEADER, WORKSPACE_ID.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Restricted","queryText":"SELECT 1"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("workspace_access_denied"));
+
+        verifyNoInteractions(savedQueryService);
+    }
+
+    @Test
+    void legacyBasicOwnerCannotReadDurableSavedQueries() throws Exception {
+        mockMvc.perform(get("/api/sql/saved-queries")
+                        .with(httpBasic("test-owner", "test-owner-password-123")))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(savedQueryService);
+    }
+
+    private void authenticateSession() {
+        when(sessions.validateSession(eq(TOKEN), any(Instant.class))).thenReturn(Optional.of(
+                new JdbcSessionRepository.StoredSession(
+                        SESSION_ID, USER_ID, Instant.now().minusSeconds(60), Instant.now().plusSeconds(3600))));
+    }
+
+    private void mockSchemaDatabase() {
+        when(jdbcTemplate.queryForObject(eq("SELECT current_database()"), eq(String.class)))
+                .thenReturn("neurosql_db");
+        when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of());
+    }
+}

@@ -1,1 +1,28 @@
-{"name":"neurosql-frontend","private":true,"version":"0.1.0","type":"module","scripts":{"dev":"vite --host 0.0.0.0","build":"tsc -b && vite build","preview":"vite preview --host 0.0.0.0"},"dependencies":{"lucide-react":"^0.468.0","react":"^18.3.1","react-dom":"^18.3.1"},"devDependencies":{"@types/react":"^18.3.12","@types/react-dom":"^18.3.1","@vitejs/plugin-react":"^4.3.4","typescript":"~5.6.3","vite":"^6.0.5"}}
+{
+  "name": "neurosql-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --experimental-strip-types --test tests/durableAuth.test.ts tests/sqlExecution.test.ts tests/sqlExplain.test.ts tests/queryHistory.test.ts tests/savedQueries.test.ts tests/passwordRecovery.test.ts tests/accountOnboarding.test.ts tests/aiSql.test.ts tests/aiSqlExplanation.test.ts tests/aiSqlPerformance.test.ts",
+    "test:responsive": "node tests/responsiveNavigation.e2e.mjs",
+    "test:account-flows": "node tests/accountFlows.e2e.mjs",
+    "test:durable-session-flows": "node tests/durableSessionFlows.e2e.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.5",
+    "playwright": "^1.56.1"
+  }
+}
