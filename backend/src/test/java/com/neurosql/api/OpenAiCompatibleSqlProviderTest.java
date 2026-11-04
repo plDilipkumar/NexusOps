@@ -9,6 +9,9 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import java.time.Duration;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -25,7 +28,7 @@ class OpenAiCompatibleSqlProviderTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         OpenAiCompatibleSqlProvider provider =
-                new OpenAiCompatibleSqlProvider(builder.build(), ENDPOINT, "  " + API_KEY + "  ", "test-model");
+                new OpenAiCompatibleSqlProvider(builder.build(), new ObjectMapper(), ENDPOINT, "  " + API_KEY + "  ", "test-model");
 
         server.expect(requestTo(ENDPOINT))
                 .andExpect(method(HttpMethod.POST))
@@ -51,7 +54,7 @@ class OpenAiCompatibleSqlProviderTest {
     }
 
     @Test
-    void providerErrorsAreRedacted() {
+    void providerErrorsAreRedactedAndNotRetried() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         OpenAiCompatibleSqlProvider provider =
@@ -60,13 +63,14 @@ class OpenAiCompatibleSqlProviderTest {
         server.expect(requestTo(ENDPOINT))
                 .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"error\":\"private-provider-detail\"}"));
+                        .body("{\"error\":\"private-provider-detail\",\"request\":\"" + API_KEY + "\"}"));
 
         assertThatThrownBy(() -> provider.generate("system", "user"))
                 .isInstanceOf(AiSqlProvider.ProviderUnavailableException.class)
                 .hasMessage("AI SQL generation is temporarily unavailable.")
                 .hasMessageNotContaining("private-provider-detail")
-                .hasMessageNotContaining(API_KEY);
+                .hasMessageNotContaining(API_KEY)
+                .hasNoCause();
         server.verify();
     }
 
@@ -74,7 +78,7 @@ class OpenAiCompatibleSqlProviderTest {
     void providerEndpointMustUseHttpsAndCannotEmbedCredentialsOrQueryParameters() {
         RestClient client = RestClient.builder().build();
         assertThatThrownBy(() -> new OpenAiCompatibleSqlProvider(
-                client, "http://provider.example.test/chat", API_KEY, "test-model"))
+                client, new ObjectMapper(), "http://provider.example.test/chat", API_KEY, "test-model"))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new OpenAiCompatibleSqlProvider(
                 client, "https://user:password@provider.example.test/chat", API_KEY, "test-model"))
@@ -123,6 +127,41 @@ class OpenAiCompatibleSqlProviderTest {
         assertThatThrownBy(() -> provider.generate("system", "user"))
                 .isInstanceOf(AiSqlProvider.ProviderUnavailableException.class);
         server.verify();
+    }
+
+ 
+    @Test
+    void rejectsOversizedProviderResponseBodyBeforeJsonParsing() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        OpenAiCompatibleSqlProvider provider =
+                new OpenAiCompatibleSqlProvider(builder.build(), new ObjectMapper(), ENDPOINT, API_KEY, "test-model");
+        String oversizedResponse = "{\"providerMetadata\":\"" + "x".repeat(
+                OpenAiCompatibleSqlProvider.MAX_PROVIDER_RESPONSE_BYTES)
+                + "\",\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"SELECT 1\"}}]}";
+
+        server.expect(requestTo(ENDPOINT))
+                .andRespond(withSuccess(oversizedResponse, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> provider.generate("system", "user"))
+                .isInstanceOf(AiSqlProvider.ProviderUnavailableException.class)
+                .hasMessageNotContaining(API_KEY)
+                .hasNoCause();
+        server.verify();
+    }
+
+    @Test
+    void providerConnectAndReadTimeoutsHaveStrictUpperBounds() {
+        AiSqlGenerationConfiguration configuration = new AiSqlGenerationConfiguration();
+
+        assertThat(configuration.aiSqlProviderRestClient(
+                Duration.ofSeconds(3), Duration.ofSeconds(20))).isNotNull();
+        assertThatThrownBy(() -> configuration.aiSqlProviderRestClient(
+                Duration.ofSeconds(11), Duration.ofSeconds(20)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> configuration.aiSqlProviderRestClient(
+                Duration.ofSeconds(3), Duration.ofSeconds(31)))
+                .isInstanceOf(IllegalStateException.class);
     }
 
 }
