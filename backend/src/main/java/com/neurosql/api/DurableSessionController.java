@@ -12,6 +12,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -23,8 +25,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
  * Durable-session endpoints. This controller is absent unless durable sessions
@@ -42,12 +42,15 @@ public class DurableSessionController {
 
     private final SessionLifecycleService sessions;
     private final DurableLoginService loginService;
+    private final ObjectProvider<ActiveQueryRegistry> activeQueries;
 
     public DurableSessionController(
             SessionLifecycleService sessions,
-            DurableLoginService loginService) {
+            DurableLoginService loginService,
+            ObjectProvider<ActiveQueryRegistry> activeQueries) {
         this.sessions = sessions;
         this.loginService = loginService;
+        this.activeQueries = activeQueries;
     }
 
     /**
@@ -101,7 +104,8 @@ public class DurableSessionController {
     }
 
     /**
-     * Revokes the current bearer session. Basic-auth owners and unauthenticated
+     * Revokes the current bearer session and cancels any SQL statements that
+     * were started by that exact session. Basic-auth owners and unauthenticated
      * requests cannot use this endpoint to revoke durable sessions.
      */
     @PostMapping("/logout")
@@ -109,7 +113,9 @@ public class DurableSessionController {
             Authentication authentication,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
         if (authentication == null
-                || !(authentication.getPrincipal() instanceof DurableSessionAuthenticationFilter.SessionPrincipal)) {
+                || !(authentication.getPrincipal()
+                        instanceof DurableSessionAuthenticationFilter.SessionPrincipal principal)
+                || principal.sessionId() == null) {
             return unauthorized();
         }
 
@@ -119,8 +125,13 @@ public class DurableSessionController {
         }
 
         // The filter has already validated this token. Do not log or return it.
-        // A concurrent logout may have revoked it first; the response stays idempotent.
+        // Cancel after revocation so any subsequent request is rejected by the
+        // session filter, while in-flight statements are stopped or suppressed.
         sessions.revokeSession(matcher.group(1), Instant.now());
+        ActiveQueryRegistry registry = activeQueries.getIfAvailable();
+        if (registry != null) {
+            registry.cancelSession(principal.sessionId());
+        }
         return ResponseEntity.noContent()
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .build();
