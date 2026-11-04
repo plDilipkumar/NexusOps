@@ -108,6 +108,13 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
       return response.status===204||response.status===401;
     }catch{return false;}
   };
+  const revokeSupersededSession=async()=>{
+    const supersedingOperation=durableAuthOperation.current;
+    const revocationConfirmed=await revokeIssuedSession();
+    if(!revocationConfirmed&&durableAuthOperation.current===supersedingOperation){
+      setSchemaError("The selected account flow remains open, but the server could not confirm revocation of the provisional session. It may remain valid until it expires.");
+    }
+  };
   try{
     const response=await fetch(API_BASE_URL+"/api/auth/login",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({email,password}),cache:"no-store"});
     if(response.status===401)throw new Error("Invalid email or password.");
@@ -115,20 +122,20 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
     if(!response.ok)throw new Error("Login failed (HTTP "+response.status+").");
     const issued=parseIssuedSession(await response.json());
     issuedToken=issued.token;
-    if(!isCurrentOperation()){await revokeIssuedSession();return;}
+    if(!isCurrentOperation()){await revokeSupersededSession();return;}
     const authHeaders={Accept:"application/json",Authorization:"Bearer "+issuedToken};
     const identityResponse=await fetch(API_BASE_URL+"/api/auth/me",{headers:authHeaders,cache:"no-store"});
-    if(!isCurrentOperation()){await revokeIssuedSession();return;}
+    if(!isCurrentOperation()){await revokeSupersededSession();return;}
     if(identityResponse.status===401)throw new Error("The new session could not be validated. Please sign in again.");
     if(!identityResponse.ok)throw new Error("Unable to verify session identity (HTTP "+identityResponse.status+").");
     const identity=parseSessionIdentity(await identityResponse.json());
-    if(!isCurrentOperation()){await revokeIssuedSession();return;}
+    if(!isCurrentOperation()){await revokeSupersededSession();return;}
     const workspaceResponse=await fetch(API_BASE_URL+"/api/auth/workspaces",{headers:authHeaders,cache:"no-store"});
-    if(!isCurrentOperation()){await revokeIssuedSession();return;}
+    if(!isCurrentOperation()){await revokeSupersededSession();return;}
     if(workspaceResponse.status===401)throw new Error("The session was rejected while loading workspaces.");
     if(!workspaceResponse.ok)throw new Error("Unable to load workspaces (HTTP "+workspaceResponse.status+").");
     const workspaces=parseWorkspaceList(await workspaceResponse.json());
-    if(!isCurrentOperation()){await revokeIssuedSession();return;}
+    if(!isCurrentOperation()){await revokeSupersededSession();return;}
     setDurableSession({token:issuedToken,email,userId:identity.userId,sessionId:identity.sessionId,expiresAt:identity.expiresAt});
     setDurableWorkspaces(workspaces);setDurablePassword("");
     if(workspaces.length===0){setSelectedWorkspaceId("");setSchemaError("Signed in, but no active workspace membership is assigned to this account.");return;}
@@ -137,7 +144,7 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
     await loadDurableSchema(issuedToken,firstWorkspace.workspaceId);
   }catch(error){
     if(!isCurrentOperation()){
-      await revokeIssuedSession();
+      await revokeSupersededSession();
       return;
     }
     const revocationConfirmed=await revokeIssuedSession();
