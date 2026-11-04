@@ -1869,10 +1869,10 @@ async function testSessionEndInvalidatesInFlightSql({ operation, sessionEnd, sta
       "A late successful response must not render data from the ended session");
     assert.equal(await page.getByText(/Synthetic late (SQL|network) failure/).count(), 0,
       "A late failure must not become visible after the durable session is cleared");
-    assert.equal(await page.getByRole("button", { name: /Run query/ }).isEnabled(), false,
-      "SQL execution must remain unavailable after the durable session is cleared");
-    assert.equal(await page.getByRole("button", { name: /Explain plan/ }).isEnabled(), false,
-      "EXPLAIN must remain unavailable after the durable session is cleared");
+    assert.equal(await page.getByRole("button", { name: /Sign in to run/ }).isDisabled(), true,
+      "The query action must require a new sign-in after the durable session is cleared");
+    assert.equal(await page.getByRole("button", { name: /Explain plan/ }).isDisabled(), true,
+      "EXPLAIN must remain disabled after the durable session is cleared");
     assert.equal(page.url().includes(issuedToken), false);
     await assertNoBrowserPersistence(page);
     assert.equal(unexpected.length, 0,
