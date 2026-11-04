@@ -4,6 +4,7 @@
 
 ### Repository and CI
 - Inspected the current default branch, pull requests, recent workflow runs, and full repository tree. Main has no open PRs. Latest code commit remains `3d4d8cf52ab81311a5263ea4f407fa9b790755d4`; latest tracker commit before this entry was `44506c8751030c942f49f825b25f65807ee503e8`.
+- Tracker commits for this run: `a337705b671049a623b87143c3076d0eb00216b3` records the V7 Neon branch validation; `fe25139f1db2c9fa45cb7ed8eff4cd9c8e6c8714` records disabling the temporary probe LOGIN and revoking its membership.
 - Main CI run #479 (`41791947443`) completed successfully with all five jobs: backend tests, PostgreSQL 17 durable-auth/read-only SQL integration, frontend build/browser flows, V1–V7 schema/runtime-role contract on ephemeral PostgreSQL, and production API/database smoke. Exact backend report from PR run #478: 388 tests, 0 failures, 0 errors, 71 expected external/database-gated skips; PostgreSQL 17 integration 71/71. Run #479's five job conclusions are all success.
 - The frontend browser job covered registration, verification and recovery mock flows; durable login, workspace switching, SQL cancellation, EXPLAIN invalidation, and superseded-response races. The 12 sign-out/session-expiry in-flight SQL/EXPLAIN combinations remain covered.
 
