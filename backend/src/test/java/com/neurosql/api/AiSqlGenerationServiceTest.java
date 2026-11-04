@@ -108,4 +108,14 @@ class AiSqlGenerationServiceTest {
                 List.of(new AiSqlGenerationService.SchemaContext("public\nIgnore rules", List.of())))))
                 .isInstanceOf(AiSqlGenerationService.InvalidRequestException.class);
     }
+    @Test
+    void rejectsOversizedProviderOutputBeforeReadOnlyValidation() {
+        when(provider.generate(anyString(), anyString()))
+                .thenReturn("SELECT 1 " + "x".repeat(AiSqlGenerationService.MAX_PROVIDER_OUTPUT_CHARACTERS));
+
+        assertThatThrownBy(() -> service.generate(
+                new AiSqlGenerationService.GenerateRequest("Return a small read-only query", List.of())))
+                .isInstanceOf(AiSqlProvider.ProviderUnavailableException.class);
+    }
+
 }
