@@ -1,16 +1,16 @@
 # NeuroSQL — release progress
 
-Last verified: 2026-11-04 12:57 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
+Last verified: 2026-11-04 13:49 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
 
 ## Current release state
 
 - Repository: [plDilipkumar/NexusOps](https://github.com/plDilipkumar/NexusOps)
 - Current application commit: `2d20070500ae8cc4b194eabfe0f3fb99915b8f97` — PR #13, fail-closed durable-auth database identity guard.
-- Latest tracker commit before this run: `687f2f9a1e97b72cac5c81bd21e4ea17a5322c73`; PR #13 merge commit `2d20070500ae8cc4b194eabfe0f3fb99915b8f97` remains the latest application-code commit.
+- Latest tracker commit before this run: `e647201d137d40d0138395fd853bd11e7cbb3625`; PR #13 merge commit `2d20070500ae8cc4b194eabfe0f3fb99915b8f97` remains the latest application-code commit.
 - Open PRs: 0.
 - Last verified main CI: run #486 (`41824995526`), all five jobs passed. Backend 391 tests passed with 0 failures/errors and 71 expected skips; PostgreSQL 17 integration 71/71; frontend test/build/browser checks passed; schema V1–V8 contract passed. The production smoke job was rerun after the latest Render deployment as job `126584307055` and passed.
-- Current backend deployment: Render `dep-dblijeou01pc73aan030`, LIVE for tracker commit `687f2f9a1e97b72cac5c81bd21e4ea17a5322c73`, containing application commit `2d20070500ae8cc4b194eabfe0f3fb99915b8f97`.
-- Latest frontend deployment: Vercel `dpl_DBJFP81q4hgKvYfn9nG6XXXqFapy`, READY for tracker commit `687f2f9a1e97b72cac5c81bd21e4ea17a5322c73`; verified alias `neurosql.vercel.app`.
+- Current backend deployment: Render `dep-dblimat9fdbs73dhslvg`, LIVE for tracker commit `1912545c4d2e48853d0f7be3fcc0389e5680d601`, containing application commit `2d20070500ae8cc4b194eabfe0f3fb99915b8f97`.
+- Latest frontend deployment: Vercel `dpl_5YRFw9Gu6ARvh4GtLMXbu4oiJDRn`, READY for tracker commit `e647201d137d40d0138395fd853bd11e7cbb3625`; verified alias `neurosql.vercel.app`.
 - Production database: Neon project `neurosql` (`lingering-dew-88806235`), main branch `br-empty-credit-b360dmpc`, database `neurosql_db`, PostgreSQL 17.11, Free plan.
 
 ## Latest application milestone — personal workspace bootstrap
@@ -57,18 +57,18 @@ The temporary probe verified allowed SELECT access to the explicitly granted pro
 ### Render backend
 
 - Service: `neurosql-api`, ID `srv-dbgb6vt9fdbs73da93n0`, Free plan, Singapore, branch `main`, auto-deploy setting `yes`.
-- Current deployment: `dep-dblh208u01pc73a6onbg`, LIVE for commit `187f4802`; build succeeded at `2026-11-04T11:04:25.234Z`, deployment became LIVE at `2026-11-04T11:05:47.884Z`.
-- Post-deploy GitHub smoke job `126535674767` passed at `2026-11-04T11:06:20.485Z`.
+- Current deployment: `dep-dblimat9fdbs73dhslvg`, LIVE for tracker commit `1912545c4d2e48853d0f7be3fcc0389e5680d601` (application commit `2d200705`); build succeeded at `2026-11-04T12:55:29.647Z`, deployment became LIVE at `2026-11-04T12:56:52.554Z`.
+- Latest post-deploy GitHub smoke job `126587072484` passed at `2026-11-04T12:57:21Z`, returning `status=UP`, database `neurosql_db`, PostgreSQL `17.11 (9045acd)`.
 - Application error-log query for 11:00–11:45 UTC returned no error entries.
 - Render environment-variable readback is not available through the connected interface. The last configuration write set the non-secret feature gates false; current overrides cannot be independently re-read.
 
 ### Vercel frontend
 
 - Project: `neurosql`, ID `prj_bWhKWqbbb5EaNRdez05bEsMPe35a`.
-- Latest deployment `dpl_33XUTjBFqq6hPt91huLUfNBB3tHT`: READY, production target, aliases include `neurosql.vercel.app`, Git commit `bd6354c`.
+- Latest deployment `dpl_5YRFw9Gu6ARvh4GtLMXbu4oiJDRn`: READY, production target, aliases include `neurosql.vercel.app`, Git commit `e647201d137d40d0138395fd853bd11e7cbb3625`.
 - Custom domain `neurosql.vercel.app` is verified. SSO protection is configured for all deployment domains except custom domains.
 - Project metadata still reports `live=false` despite the READY production deployment and verified alias; treat this as a metadata discrepancy, not a failed deployment.
-- Production environment inventory: zero visible and zero hidden variables. The frontend API URL has a source fallback and feature gates default false.
+- Production environment inventory: seven visible non-secret plain variables and zero hidden variables. `VITE_API_BASE_URL` explicitly targets the Render API; all six frontend feature gates are explicitly `false`.
 
 ## Neon production main — unchanged
 
@@ -85,7 +85,7 @@ The temporary probe verified allowed SELECT access to the explicitly granted pro
 3. SMTP credentials and a verified sender/domain are missing; email verification and password-reset delivery are not operational.
 4. Gemini/provider key presence cannot be independently verified through Render environment readback; no live provider request was made. All AI features remain disabled.
 5. Production login, email delivery, workspace isolation, SQL execution/history, and live AI behavior are not end-to-end verified. Mock browser tests are not a substitute for live auth.
-6. Vercel has no production environment variables; the frontend currently relies on its API URL source fallback and disabled-by-default feature flags.
+6. Vercel production now has an explicit non-secret API base URL and six false feature flags; no production secrets are stored in Vercel.
 
 ## Recent security milestones
 
@@ -154,3 +154,18 @@ No Neon production schema or roles were changed. The durable-auth guard is condi
 - Post-env-update live smoke rerun job `126587072484` passed at `2026-11-04T12:57:21Z`, returning `status=UP`, database `neurosql_db`, PostgreSQL `17.11 (9045acd)`. The main workflow run #486 latest attempt has all five jobs successful.
 - Vercel production environment inventory was rechecked: zero variables and zero hidden production variables. `frontend/.env.example` uses the Render API URL fallback and all six Vite feature flags default false. Latest tracker deployment `dpl_FWZifvxjCCXfzUnZvuLkQQNpQj5o` is READY for commit `1912545c4d2e48853d0f7be3fcc0389e5680d601`, with `neurosql.vercel.app` assigned.
 - Render environment-variable values cannot be read back through the available connector; the update call succeeded but the resulting key/value inventory is not independently readable. No secret values were fetched, printed, replaced, or added. AI/email/auth/SQL remain disabled.
+
+
+## Run 9 audit — 2026-11-04 13:49 UTC
+
+- Re-read this tracker and inspected the repository main history, recent/open PRs, latest GitHub Actions run, Neon project/main/temporary branch, Vercel project/deployments/environment inventory, and Render service/deployment/events/logs.
+- Main application commit remains PR #13 merge `2d20070500ae8cc4b194eabfe0f3fb99915b8f97`. Latest main commit before this tracker update is `e647201d137d40d0138395fd853bd11e7cbb3625`, a PROGRESS.md-only commit relative to the application commit. There are zero open PRs; PR #13 remains the latest merged PR.
+- Main CI run #486 (`41824995526`, attempt 3) remains green: all five jobs succeeded. Backend 391 passed, 0 failures/errors, 71 expected database/external-service skips; PostgreSQL 17 integration 71/71; frontend 96/96 unit tests and browser checks passed; production Vite build transformed 1,596 modules; all 12 sign-out/session-expiry × SQL/EXPLAIN in-flight race combinations remain green; V1–V8 schema/role contract passed. No new code commit was made, so no new application CI run was required.
+- Vercel production configuration was made explicit without adding secrets. Added seven production-only plain variables: `VITE_API_BASE_URL=https://neurosql-api.onrender.com`; `VITE_SCHEMA_LOGIN_ENABLED=false`; `VITE_DURABLE_AUTH_ENABLED=false`; `VITE_SQL_EXECUTION_ENABLED=false`; `VITE_AI_SQL_GENERATION_ENABLED=false`; `VITE_AI_SQL_EXPLANATION_ENABLED=false`; and `VITE_AI_SQL_PERFORMANCE_ENABLED=false`. A no-decrypt inventory confirms seven visible variables, zero hidden production variables, and no reported security issues. No API keys or other credentials were placed in Vercel.
+- Redeployed the existing production frontend after the environment update. Vercel deployment `dpl_5YRFw9Gu6ARvh4GtLMXbu4oiJDRn` is READY for main commit `e647201d137d40d0138395fd853bd11e7cbb3625`; Vite transformed 1,596 modules and completed the build. The verified `neurosql.vercel.app` alias is assigned. Build emitted non-fatal npm warnings about an unknown `cache-dir` config and an `esbuild` install-script allowlist; the build still completed successfully. Project metadata still reports `live=false` despite READY production deployment and alias.
+- Render service `srv-dbgb6vt9fdbs73da93n0` remains on the Free plan in Singapore, tracking `main` with auto-deploy enabled. Current LIVE deployment is `dep-dblimat9fdbs73dhslvg` for tracker commit `1912545c4d2e48853d0f7be3fcc0389e5680d601`, containing application commit `2d200705`. Post-deployment GitHub smoke job `126587072484` passed at `2026-11-04T12:57:21Z`, returning `status=UP`, database `neurosql_db`, PostgreSQL `17.11 (9045acd)`. Error-level app log query after deployment returned no entries. Render request-log query for `/api/health/database` after 12:57 UTC returned no entries, so the GitHub smoke job is the direct post-deploy health evidence for this run.
+- Operational gap: Render's service `healthCheckPath` is currently blank. The connected Render actions expose service reads/deploys/environment updates but no service-settings update, so I did not guess at an API or change service configuration. A Render dashboard health check at `/api/health` can be configured separately; that endpoint reports process health, while `/api/health/database` is the DB-aware smoke endpoint.
+- Neon project `neurosql` remains Free v3, AWS Singapore, PostgreSQL 17.11, 0.25 CU; seven branches are listed against the ten-branch limit. Production main `br-empty-credit-b360dmpc` remains unchanged. Read-only count confirms all eight application tables are empty. `neurosql_owner` remains elevated (CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS) and inherits Neon-managed `neon_superuser`; it also has an unsafe ADMIN-option membership in `neurosql_auth_runtime`. `neurosql_auth_runtime` is NOLOGIN; V7 role and V8 workspace bootstrap grants remain absent on main.
+- Temporary branch `br-shy-star-b31qx5c6` still contains V1–V8 and V7. Read-only checks reconfirm V8 workspace-name INSERT is allowed, workspace ownership and membership-role UPDATE are denied, `neurosql_sql_readonly` can CONNECT but has no USAGE on `neurosql_app` and no SELECT on `app_users`. Both temporary probe principals have `rolcanlogin=false`, no elevated attributes, and no remaining group memberships.
+- Production blockers remain: explicit approval for V7/V8 and separate credential-bearing auth/SQL LOGIN principals; SMTP credentials and verified sender; independently verifiable Gemini/provider key and live provider test. Durable authentication, email, SQL execution/history, and AI remain disabled. Render environment values cannot be read back through the connector, so provider-key presence is not claimed.
+- No production Neon schema/role changes, destructive operations, paid resources, cross-project database reuse, or source-controlled credentials were introduced.
