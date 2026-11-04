@@ -341,7 +341,7 @@ return <div className="shell"><a className="skip-link" href="#main-content">Skip
       <>
         <article className="schema-accessbar"><div><CheckCircle2 size={17}/><div><b>Signed in as {durableSession.email}</b><small>Session expires {new Date(durableSession.expiresAt).toLocaleString()} · token held in memory only</small></div></div><div className="schema-actions">
           <label style={{display:"grid",gap:"5px",fontSize:"10px",color:"#a8b7ce"}}>Workspace
-            <select aria-label="Active workspace" value={selectedWorkspaceId} disabled={schemaLoading||durableAuthLoading||durableWorkspaces.length===0} onChange={event=>selectDurableWorkspace(event.target.value)} style={{minWidth:"185px",maxWidth:"240px",padding:"8px 10px",border:"1px solid #30405c",borderRadius:"7px",background:"#0a1220",color:"#e7ecf6"}}>
+            <select aria-label="Active workspace" value={selectedWorkspaceId} disabled={durableAuthLoading||durableWorkspaces.length===0} onChange={event=>selectDurableWorkspace(event.target.value)} style={{minWidth:"185px",maxWidth:"240px",padding:"8px 10px",border:"1px solid #30405c",borderRadius:"7px",background:"#0a1220",color:"#e7ecf6"}}>
               <option value="">Select workspace</option>{durableWorkspaces.map(workspace=><option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.name} · {workspace.role}</option>)}
             </select>
           </label>

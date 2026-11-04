@@ -182,6 +182,157 @@ async function testLoginWorkspaceSwitchAndLogout() {
   }
 }
 
+
+async function testStaleWorkspaceSchemaCannotOverwriteNewSelection() {
+  const page = await browser.newPage();
+  const requests = { login: [], identity: [], workspaces: [], schema: [] };
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  let markAnalyticsStarted;
+  const analyticsStarted = new Promise(resolve => { markAnalyticsStarted = resolve; });
+  let releaseAnalytics;
+  const analyticsGate = new Promise(resolve => { releaseAnalytics = resolve; });
+  let markAnalyticsCompleted;
+  const analyticsCompleted = new Promise(resolve => { markAnalyticsCompleted = resolve; });
+  let markReportingStarted;
+  const reportingStarted = new Promise(resolve => { markReportingStarted = resolve; });
+  let releaseReporting;
+  const reportingGate = new Promise(resolve => { releaseReporting = resolve; });
+  let markReportingCompleted;
+  const reportingCompleted = new Promise(resolve => { markReportingCompleted = resolve; });
+
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      requests.login.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token, expiresAt }),
+      });
+    },
+    "/api/auth/me": async route => {
+      requests.identity.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ userId, sessionId, expiresAt }),
+      });
+    },
+    "/api/auth/workspaces": async route => {
+      requests.workspaces.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          { workspaceId: workspaceA, name: "Analytics", slug: "analytics", role: "OWNER" },
+          { workspaceId: workspaceB, name: "Reporting", slug: "reporting", role: "MEMBER" },
+        ]),
+      });
+    },
+    "/api/schema": async route => {
+      const headers = route.request().headers();
+      const workspaceId = headers["x-neurosql-workspace-id"];
+      requests.schema.push({ authorization: headers.authorization, workspaceId });
+      if (workspaceId === workspaceA) {
+        markAnalyticsStarted();
+        await analyticsGate;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            database: "neurosql_analytics",
+            schemas: [{ name: "analytics_schema", tables: [] }],
+            tableCount: 0,
+            timestamp: "2026-11-04T00:00:00Z",
+          }),
+        });
+        markAnalyticsCompleted();
+        return;
+      }
+      if (workspaceId === workspaceB) {
+        markReportingStarted();
+        await reportingGate;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            database: "neurosql_reporting",
+            schemas: [{ name: "reporting_schema", tables: [] }],
+            tableCount: 0,
+            timestamp: "2026-11-04T00:00:01Z",
+          }),
+        });
+        markReportingCompleted();
+        return;
+      }
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ message: "Unknown workspace" }) });
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    const workspaceSelect = page.getByLabel("Active workspace");
+    await waitForWorkspaceReady(page, workspaceA);
+    await Promise.race([
+      analyticsStarted,
+      delay(5000).then(() => { throw new Error("The initial workspace schema request did not start"); }),
+    ]);
+    assert.equal(await workspaceSelect.isEnabled(), true,
+      "The user must be able to switch workspaces while schema metadata is loading");
+
+    await workspaceSelect.selectOption(workspaceB);
+    await Promise.race([
+      reportingStarted,
+      delay(5000).then(() => { throw new Error("The new workspace schema request did not start"); }),
+    ]);
+    assert.equal(await workspaceSelect.inputValue(), workspaceB);
+    assert.equal(await workspaceSelect.isEnabled(), true,
+      "Workspace selection must remain available while the new schema is loading");
+
+    releaseAnalytics();
+    await Promise.race([
+      analyticsCompleted,
+      delay(5000).then(() => { throw new Error("The stale workspace schema response did not complete"); }),
+    ]);
+    await delay(100);
+    assert.equal(await workspaceSelect.inputValue(), workspaceB,
+      "A delayed response for the previous workspace must not change the selected workspace");
+    assert.equal(await page.getByText("analytics_schema", { exact: true }).count(), 0,
+      "A stale schema payload must never be rendered for the newly selected workspace");
+    assert.equal(await page.getByText("reporting_schema", { exact: true }).count(), 0,
+      "The new workspace schema must remain pending until its own response arrives");
+    const refreshingButton = page.getByRole("button", { name: "Refreshing…", exact: true });
+    assert.equal(await refreshingButton.isDisabled(), true,
+      "A stale request's finally handler must not clear the active workspace loading state");
+
+    releaseReporting();
+    await Promise.race([
+      reportingCompleted,
+      delay(5000).then(() => { throw new Error("The selected workspace schema response did not complete"); }),
+    ]);
+    await page.getByText("reporting_schema", { exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Refresh schema", exact: true }).waitFor({ state: "visible" });
+    assert.equal(await workspaceSelect.inputValue(), workspaceB);
+    assert.equal(await workspaceSelect.isEnabled(), true);
+    assert.equal(await page.getByText("analytics_schema", { exact: true }).count(), 0);
+    assert.equal(await page.getByText("reporting_schema", { exact: true }).count(), 1);
+    assert.deepEqual(requests.schema, [
+      { authorization: "Bearer " + token, workspaceId: workspaceA },
+      { authorization: "Bearer " + token, workspaceId: workspaceB },
+    ], "Each schema request must carry the bearer token and the workspace selected when it started");
+    assert.equal(await page.getByRole("alert").count(), 0,
+      "A stale schema response must not create an error in the newly selected workspace");
+    assert.equal(page.url().includes(token), false);
+    await assertNoBrowserPersistence(page);
+    assert.equal(unexpected.length, 0, "The workspace schema race must not make unmocked API requests");
+    console.log("Delayed schema from the previous workspace cannot replace the new workspace schema or clear its loading state (mock API only)");
+  } finally {
+    releaseAnalytics();
+    releaseReporting();
+    await page.close();
+  }
+}
+
 async function testFixedSessionExpiry() {
   const page = await browser.newPage();
   const expiryToken = "B".repeat(43);
@@ -1178,6 +1329,7 @@ try {
   await waitForPreview();
   browser = await chromium.launch({ headless: true });
   await testLoginWorkspaceSwitchAndLogout();
+  await testStaleWorkspaceSchemaCannotOverwriteNewSelection();
   await testFixedSessionExpiry();
   await testInvalidCredentialsDoNotCreateClientSession();
   await testRejectedIdentityRevokesProvisionallyIssuedSession();
