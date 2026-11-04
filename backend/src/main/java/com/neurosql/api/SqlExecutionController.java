@@ -145,13 +145,22 @@ public class SqlExecutionController {
             Authentication authentication,
             HttpServletRequest request) {
         String rawExecutionId = request.getHeader(ActiveQueryRegistry.EXECUTION_ID_HEADER);
-        if (rawExecutionId == null) {
-            return null;
-        }
         DurableSessionAuthenticationFilter.SessionPrincipal principal = durablePrincipal(authentication);
         UUID workspaceId = workspaceId(request);
-        if (principal == null || principal.sessionId() == null || workspaceId == null) {
+
+        // Every durable-session SQL request is registered for logout revocation,
+        // even when an older client does not send an execution ID header.
+        if (principal == null) {
+            if (rawExecutionId == null) {
+                return null;
+            }
             throw new CancellationNotAvailableException();
+        }
+        if (principal.sessionId() == null || workspaceId == null) {
+            throw new CancellationNotAvailableException();
+        }
+        if (rawExecutionId == null) {
+            return activeQueries.begin(UUID.randomUUID(), principal.userId(), principal.sessionId(), workspaceId);
         }
         try {
             UUID executionId = UUID.fromString(rawExecutionId);
@@ -164,6 +173,20 @@ public class SqlExecutionController {
         }
     }
 
+    private ActiveQueryRegistry.Handle beginSessionScopedExecution(
+            Authentication authentication,
+            HttpServletRequest request) {
+        DurableSessionAuthenticationFilter.SessionPrincipal principal = durablePrincipal(authentication);
+        if (principal == null) {
+            return null;
+        }
+        UUID workspaceId = workspaceId(request);
+        if (principal.sessionId() == null || workspaceId == null) {
+            throw new CancellationNotAvailableException();
+        }
+        return activeQueries.begin(UUID.randomUUID(), principal.userId(), principal.sessionId(), workspaceId);
+    }
+
     @PostMapping(path = "/explain", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> explain(
             @Valid @RequestBody QueryRequest request,
@@ -171,7 +194,7 @@ public class SqlExecutionController {
             HttpServletRequest servletRequest) {
         ActiveQueryRegistry.Handle activeQuery = null;
         try {
-            activeQuery = beginCancellableExecution(authentication, servletRequest);
+            activeQuery = beginSessionScopedExecution(authentication, servletRequest);
             ReadOnlyQueryExecutor.ExplainResponse result = activeQuery == null
                     ? executor.explain(request.sql())
                     : executor.explain(request.sql(), activeQuery);
@@ -181,18 +204,10 @@ public class SqlExecutionController {
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
                     .body(result);
-        } catch (InvalidExecutionIdException invalid) {
-            return ResponseEntity.badRequest()
-                    .cacheControl(CacheControl.noStore())
-                    .body(new QueryError("The execution identifier is invalid.", List.of()));
         } catch (CancellationNotAvailableException unavailable) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .cacheControl(CacheControl.noStore())
-                    .body(new QueryError("Query cancellation requires a durable workspace session.", List.of()));
-        } catch (ActiveQueryRegistry.DuplicateExecutionException duplicate) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .cacheControl(CacheControl.noStore())
-                    .body(new QueryError("An execution with this identifier is already active.", List.of()));
+                    .body(new QueryError("EXPLAIN cancellation requires a durable workspace session.", List.of()));
         } catch (ActiveQueryRegistry.CapacityExceededException capacity) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .cacheControl(CacheControl.noStore())
@@ -200,7 +215,7 @@ public class SqlExecutionController {
         } catch (ReadOnlyQueryExecutor.QueryCancelledException cancelled) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .cacheControl(CacheControl.noStore())
-                    .body(new QueryError("The query plan was cancelled.", List.of()));
+                    .body(new QueryError("The EXPLAIN request was cancelled.", List.of()));
         } catch (ReadOnlyQueryExecutor.QueryRejectedException rejected) {
             return ResponseEntity.badRequest()
                     .cacheControl(CacheControl.noStore())
