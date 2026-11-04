@@ -14,7 +14,6 @@ import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.neurosql.api.ActiveQueryRegistry;
-import com.neurosql.api.SqlExecutionController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -59,8 +58,6 @@ import org.springframework.transaction.support.TransactionTemplate;
         })
 class DurableSessionSqlRevocationPostgresIntegrationTest {
     private static final String PASSWORD = "Correct-Horse-Battery-2026";
-    private static final String TEST_RATE_LIMIT_HMAC_KEY =
-            "ci-only-shared-rate-limit-hmac-key-32-bytes";
     private static final String ROLE_SUFFIX = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     private static final String SQL_READONLY_ROLE = "neurosql_sql_readonly_" + ROLE_SUFFIX;
     private static final String SQL_LOGIN_ROLE = "neurosql_sql_login_" + ROLE_SUFFIX;
@@ -230,7 +227,7 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
             ResponseEntity<JsonNode> rejectedNewQuery = execute(token, fixture.workspaceId(),
                     UUID.randomUUID(), "SELECT 1");
             assertThat(rejectedNewQuery.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-            assertThat(rejectedNewQuery.getBody().toString()).doesNotContain(marker);
+            assertThat(rejectedNewQuery.getBody()).isNull();
 
             ResponseEntity<JsonNode> rejectedCancellation = cancel(
                     token, fixture.workspaceId(), executionId);
@@ -370,7 +367,7 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
             insertMembership(workspaceId, userId);
             insertMembership(otherWorkspaceId, otherUserId);
         });
-        return new Fixture(userId, otherUserId, workspaceId, otherWorkspaceId, email, otherEmail);
+        return new Fixture(workspaceId, otherWorkspaceId, email, otherEmail);
     }
 
     private void insertUser(UUID userId, String email, String passwordHash, String displayName) {
@@ -443,12 +440,6 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
         return value;
     }
 
-    private record Fixture(
-            UUID userId,
-            UUID otherUserId,
-            UUID workspaceId,
-            UUID otherWorkspaceId,
-            String email,
-            String otherEmail) {
+    private record Fixture(UUID workspaceId, UUID otherWorkspaceId, String email, String otherEmail) {
     }
 }
