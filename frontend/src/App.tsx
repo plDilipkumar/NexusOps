@@ -57,7 +57,7 @@ const [accountOnboarding,setAccountOnboarding]=useState<{mode:"register"|"verify
 const [durableSession,setDurableSession]=useState<DurableSession|null>(null);
 const [durableWorkspaces,setDurableWorkspaces]=useState<DurableWorkspace[]>([]);
 const [selectedWorkspaceId,setSelectedWorkspaceId]=useState("");const [savedQuerySeed,setSavedQuerySeed]=useState("");
-const [durableAuthLoading,setDurableAuthLoading]=useState(false);const durableAuthOperation=useRef(0);const durableSchemaRequests=useRef(createRequestGuard());
+const [durableAuthLoading,setDurableAuthLoading]=useState(false);const durableAuthOperation=useRef(0);const durableLoginGeneration=useRef(0);const accountFlowNavigationGeneration=useRef(0);const durableSchemaRequests=useRef(createRequestGuard());
 const queryAbortController=useRef<AbortController|null>(null);const queryGeneration=useRef(0);const activeExecutionRef=useRef<ActiveExecution|null>(null);const explainAbortController=useRef<AbortController|null>(null);const explainGeneration=useRef(0);
 const cancelActiveExecutionSilently=()=>{
   const activeExecution=activeExecutionRef.current;
@@ -98,6 +98,8 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
   const password=durablePassword;
   if(!email||!password){setSchemaError("Enter your email and password.");return;}
   const operation=++durableAuthOperation.current;
+  const loginGeneration=++durableLoginGeneration.current;
+  const accountFlowNavigationAtStart=accountFlowNavigationGeneration.current;
   const isCurrentOperation=()=>durableAuthOperation.current===operation;
   invalidateQuery();durableSchemaRequests.current.invalidate();setSchemaLoading(false);setDurableAuthLoading(true);setSchemaError("");setSchemaData(null);setDurableSession(null);setDurableWorkspaces([]);setSelectedWorkspaceId("");setExpandedTables({});setSavedQuerySeed("");
   let issuedToken:string|null=null;
@@ -111,7 +113,10 @@ const handleDurableLogin=async(event:FormEvent<HTMLFormElement>)=>{
   const revokeSupersededSession=async()=>{
     const supersedingOperation=durableAuthOperation.current;
     const revocationConfirmed=await revokeIssuedSession();
-    if(!revocationConfirmed&&durableAuthOperation.current===supersedingOperation){
+    if(!revocationConfirmed
+      &&accountFlowNavigationGeneration.current!==accountFlowNavigationAtStart
+      &&durableLoginGeneration.current===loginGeneration
+      &&durableAuthOperation.current===supersedingOperation){
       setSchemaError("The selected account flow remains open, but the server could not confirm revocation of the provisional session. It may remain valid until it expires.");
     }
   };
@@ -168,6 +173,7 @@ const logoutDurable=async()=>{
 };
 const invalidatePendingDurableLogin=()=>{
   durableAuthOperation.current+=1;
+  accountFlowNavigationGeneration.current+=1;
   setDurableAuthLoading(false);
   setDurablePassword("");
 };
