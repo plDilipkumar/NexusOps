@@ -200,7 +200,7 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
         String marker = "revoked_sql_" + UUID.randomUUID().toString().replace("-", "");
         ExecutorService queryThread = Executors.newSingleThreadExecutor();
         Future<ResponseEntity<JsonNode>> runningQuery =
-                startQuery(queryThread, token, fixture.workspaceId(), executionId, marker);
+                startQuery(queryThread, token, fixture.workspaceId(), executionId, marker, false);
 
         try {
             awaitActiveQuery(marker);
@@ -302,7 +302,7 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
         String marker = "scoped_sql_" + UUID.randomUUID().toString().replace("-", "");
         ExecutorService queryThread = Executors.newSingleThreadExecutor();
         Future<ResponseEntity<JsonNode>> runningQuery =
-                startQuery(queryThread, token, fixture.workspaceId(), executionId, marker);
+                startQuery(queryThread, token, fixture.workspaceId(), executionId, marker, true);
 
         try {
             awaitActiveQuery(marker);
@@ -347,10 +347,13 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
             String token,
             UUID workspaceId,
             UUID executionId,
-            String marker) {
+            String marker,
+            boolean includeExecutionId) {
         String sql = "SELECT pg_sleep(10), '" + marker + "' AS result /* " + marker + " */";
         HttpHeaders headers = sqlHeaders(token, workspaceId);
-        headers.set(ActiveQueryRegistry.EXECUTION_ID_HEADER, executionId.toString());
+        if (includeExecutionId) {
+            headers.set(ActiveQueryRegistry.EXECUTION_ID_HEADER, executionId.toString());
+        }
         return executor.submit(() -> http.exchange(
                 baseUrl() + "/api/sql/execute",
                 HttpMethod.POST,
