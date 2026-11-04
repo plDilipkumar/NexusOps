@@ -43,7 +43,7 @@ public class RegistrationService {
      * Creates an unverified account, its personal workspace/OWNER membership, and its verification token atomically.
      *
      * <p>An empty delivery token means the normalized email already existed.
-     * A future public endpoint must return the same generic response for both
+     * The public delivery boundary must return the same generic response for both
      * outcomes and must not serialize this result.</p>
      */
     @Transactional
