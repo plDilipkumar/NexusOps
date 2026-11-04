@@ -55,23 +55,18 @@ public class SqlExecutionController {
             HttpServletRequest servletRequest) {
         long startedAt = System.nanoTime();
         ActiveQueryRegistry.Handle activeQuery = null;
-        boolean successRecorded = false;
         try {
             activeQuery = beginCancellableExecution(authentication, servletRequest);
             ReadOnlyQueryExecutor.QueryResponse result = activeQuery == null
                     ? executor.execute(request.sql())
                     : executor.execute(request.sql(), activeQuery);
+            // Revocation can race with JDBC completion. The handle retains its
+            // cancellation flag after executor cleanup, so suppress a result if
+            // logout requested cancellation while the statement was active.
             if (activeQuery != null && activeQuery.cancellationRequested()) {
                 throw new ReadOnlyQueryExecutor.QueryCancelledException();
             }
             recordSuccessfulExecution(authentication, servletRequest, request.sql(), result);
-            successRecorded = true;
-            // Logout may race with the end of JDBC execution or query-history persistence.
-            // Keep the registry entry until this controller finishes so revocation can
-            // still suppress a result that has not yet been returned to the client.
-            if (activeQuery != null && activeQuery.cancellationRequested()) {
-                throw new ReadOnlyQueryExecutor.QueryCancelledException();
-            }
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
                     .body(result);
@@ -92,10 +87,8 @@ public class SqlExecutionController {
                     .cacheControl(CacheControl.noStore())
                     .body(new QueryError("The server is handling its maximum number of active queries.", List.of()));
         } catch (ReadOnlyQueryExecutor.QueryCancelledException cancelled) {
-            if (!successRecorded) {
-                recordCanceledExecution(authentication, servletRequest, request.sql(),
-                        Math.max(0, (System.nanoTime() - startedAt) / 1_000_000));
-            }
+            recordCanceledExecution(authentication, servletRequest, request.sql(),
+                    Math.max(0, (System.nanoTime() - startedAt) / 1_000_000));
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .cacheControl(CacheControl.noStore())
                     .body(new QueryError("The query was cancelled.", List.of()));
