@@ -333,6 +333,128 @@ async function testStaleWorkspaceSchemaCannotOverwriteNewSelection() {
   }
 }
 
+async function testStaleWorkspaceSchemaFailureCannotOverwriteNewSelection({ failure }) {
+  const page = await browser.newPage();
+  const requests = { schema: [] };
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  let markAnalyticsStarted;
+  const analyticsStarted = new Promise(resolve => { markAnalyticsStarted = resolve; });
+  let releaseAnalytics;
+  const analyticsGate = new Promise(resolve => { releaseAnalytics = resolve; });
+  let markAnalyticsCompleted;
+  const analyticsCompleted = new Promise(resolve => { markAnalyticsCompleted = resolve; });
+
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token, expiresAt }),
+      });
+    },
+    "/api/auth/me": async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ userId, sessionId, expiresAt }),
+      });
+    },
+    "/api/auth/workspaces": async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          { workspaceId: workspaceA, name: "Analytics", slug: "analytics", role: "OWNER" },
+          { workspaceId: workspaceB, name: "Reporting", slug: "reporting", role: "MEMBER" },
+        ]),
+      });
+    },
+    "/api/schema": async route => {
+      const headers = route.request().headers();
+      const workspaceId = headers["x-neurosql-workspace-id"];
+      requests.schema.push({ authorization: headers.authorization, workspaceId });
+      if (workspaceId === workspaceA) {
+        markAnalyticsStarted();
+        await analyticsGate;
+        if (failure === "http") {
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ message: "Synthetic obsolete-workspace failure" }),
+          });
+        } else {
+          await route.abort("failed");
+        }
+        markAnalyticsCompleted();
+        return;
+      }
+      if (workspaceId === workspaceB) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            database: "neurosql_reporting",
+            schemas: [{ name: "reporting_schema", tables: [] }],
+            tableCount: 0,
+            timestamp: "2026-11-04T00:00:02Z",
+          }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ message: "Unknown workspace" }) });
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    const workspaceSelect = page.getByLabel("Active workspace");
+    await waitForWorkspaceReady(page, workspaceA);
+    await Promise.race([
+      analyticsStarted,
+      delay(5000).then(() => { throw new Error("The initial Analytics schema request did not start"); }),
+    ]);
+
+    await workspaceSelect.selectOption(workspaceB);
+    await page.getByText("reporting_schema", { exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Refresh schema", exact: true }).waitFor({ state: "visible" });
+    assert.equal(await workspaceSelect.inputValue(), workspaceB);
+    assert.equal(await workspaceSelect.isEnabled(), true,
+      "The selected workspace must remain available after its schema has loaded");
+
+    releaseAnalytics();
+    await Promise.race([
+      analyticsCompleted,
+      delay(5000).then(() => { throw new Error("The obsolete Analytics schema failure did not complete"); }),
+    ]);
+    await delay(100);
+
+    assert.equal(await workspaceSelect.inputValue(), workspaceB,
+      "A stale schema failure must not change the selected workspace");
+    assert.equal(await page.getByText("reporting_schema", { exact: true }).count(), 1,
+      "A stale failure must not clear the active Reporting schema");
+    assert.equal(await page.getByText("analytics_schema", { exact: true }).count(), 0,
+      "The obsolete Analytics schema must never be rendered");
+    assert.equal(await page.getByRole("alert").count(), 0,
+      "A stale HTTP or network failure must not surface an obsolete error");
+    assert.equal(await page.getByRole("button", { name: "Refresh schema", exact: true }).count(), 1,
+      "A stale request's finally handler must not replace the completed active workspace state");
+    assert.equal(await page.getByRole("button", { name: "Refreshing…", exact: true }).count(), 0,
+      "A stale request must not leave the active workspace loading");
+    assert.deepEqual(requests.schema, [
+      { authorization: "Bearer " + token, workspaceId: workspaceA },
+      { authorization: "Bearer " + token, workspaceId: workspaceB },
+    ], "Each schema request must remain scoped to the workspace selected when it started");
+    assert.equal(page.url().includes(token), false);
+    await assertNoBrowserPersistence(page);
+    assert.equal(unexpected.length, 0, "The stale schema failure scenario must not make unmocked API requests");
+    console.log("Obsolete workspace schema " + failure + " failure cannot clear the active workspace (mock API only)");
+  } finally {
+    releaseAnalytics();
+    await page.close();
+  }
+}
+
 async function testFixedSessionExpiry() {
   const page = await browser.newPage();
   const expiryToken = "B".repeat(43);
