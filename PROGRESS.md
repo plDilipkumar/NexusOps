@@ -1,6 +1,43 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-04 — PR #9 merged as `b9eb8be029f5f16ae9688234f90dc2b24a2eb683`; main CI run #469 passed (383 backend tests, 67/67 PostgreSQL 17 integration, 96/96 frontend unit tests, 12 mocked sign-out/session-expiry SQL/EXPLAIN race scenarios, and production API/Neon health `UP` on PostgreSQL 17.11). Vercel production deployment `dpl_48JgD6Mob7JE99J3BV8bo5dd3Zkt` is READY for the merge commit; Render still serves older commit `6425ab4`.
+Last verified: 2026-11-04 — current main before this tracker update `d135873eb8ada81af465a4c37e89e254eed5550c`; PR #7 merged as `6aa4405c92978c351d1658bc133d97b513e88d1d`; CI run #476 passed all jobs (383 backend tests, 67 expected database-gated skips, 67/67 PostgreSQL 17 integration, 96 frontend unit tests, responsive/keyboard/account/session browser flows, schema contract, and live production API/Neon smoke). Neon V1–V6 is applied on production main; Render deployment `dep-dbldf8gu01pc739tdq9g` is LIVE and Vercel deployment `dpl_9fuCutGEE556DwFPNrhfayHzFt14` is READY.
+
+## Current release state — 2026-11-04
+
+### Repository and CI
+- Main HEAD before this tracker update: `d135873eb8ada81af465a4c37e89e254eed5550c`.
+- PR #7 (durable authentication/workspace schema) was rebased onto current main in commit `3341a31a4516fa80935ecca715b1202e446aed23`, then squash-merged as `6aa4405c92978c351d1658bc133d97b513e88d1d`. No open PRs remain.
+- PR CI run #470 passed; main run #471 passed; final main run #476 passed all five jobs.
+- Run #476 exact results: backend `Tests run: 383, Failures: 0, Errors: 0, Skipped: 67` (the 67 skips are expected tests gated on external/database configuration); PostgreSQL 17 integration `67/67`; frontend Node tests `96`; Vite build transformed 1,596 modules; schema-contract job passed on disposable PostgreSQL 17; production API/database smoke passed.
+- Browser checks in run #476 passed desktop 1440px, tablet 851px and 850px, mobile 390px and narrow mobile 320px; skip-to-content and keyboard navigation passed on desktop/mobile; registration/verification/password-reset flows and durable login/workspace/logout flows passed against mock APIs.
+- The durable-session browser suite retains the 12 in-flight race combinations: SQL and EXPLAIN × sign-out and session expiry × late success, HTTP error, and network error. Late responses cannot repopulate results/errors after the session is cleared.
+- Frontend workspace shortcuts now navigate to the real Schema explorer and Query history pages instead of showing placeholder notices. Responsive E2E assertions cover both shortcuts across all five viewports. Commits: `851d30b318a9648f3c220c60d281532a03b24dbf` (UI), `22247f10d6a29604a1b0de2cd97d0c08eb807b40` (E2E tests).
+- README now accurately states that Copilot, explanation, and performance panels are connected behind feature flags; it no longer claims the frontend is disconnected. Commit `d6c58ecc629b21d8868f685c3f35bb68e1742c02`.
+- Feature-gate comments in backend properties were aligned with the applied schema and outstanding LOGIN/SMTP requirements. Commit `d135873eb8ada81af465a4c37e89e254eed5550c`.
+
+### Neon production schema
+- Project `neurosql`, database `neurosql_db`, PostgreSQL `17.11`, production branch `main` (`br-empty-credit-b360dmpc`).
+- Following explicit user approval on 2026-11-04, V1–V6 were applied in one transaction containing 66 individual SQL statements. The approved migration files are in `docs/database/proposed/V1__...` through `V6__...`.
+- Production verification found eight tables (`app_users`, `workspaces`, `workspace_memberships`, `user_sessions`, `auth_login_rate_limits`, `account_action_tokens`, `query_history`, `saved_queries`) and two trigger functions. All eight tables are empty; no test fixtures or user data were left behind.
+- `neurosql_auth_runtime` exists as a NOLOGIN, NOINHERIT, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS group role. Production column grants were queried directly: schema USAGE only, no CREATE; PUBLIC has no schema/table access; the role cannot read `app_users.display_name`, update session token hashes, or delete sessions. The role's allowed column grants match the V2 design.
+- V1–V6 were also applied and verified on free temporary branch `br-aged-violet-b3ma06dw`; the Neon schema comparison between that branch and production main returned an empty diff. The CI schema-contract job passed independently on PostgreSQL 17.
+- V7 (`neurosql_sql_readonly`) remains proposal-only and was not applied to production. No production SQL-execution LOGIN role was created.
+
+### Production deployments and safe configuration
+- Render service `neurosql-api` remains on the free plan. Latest live deployment: `dep-dbldf8gu01pc739tdq9g`, commit `6aa4405c92978c351d1658bc133d97b513e88d1d`, status LIVE. The instance started on port 10000 and established its Neon connection pool. Older deploys were deactivated normally.
+- Render environment update explicitly set all schema-browser, auth, durable-session, shared-rate-limit, email, SQL validation/execution, query-history, saved-query, and AI feature flags to `false`. It also set `NEUROSQL_AUTH_EXPECTED_DATABASE=neurosql_db` and generated/stored a 256-bit `NEUROSQL_AUTH_RATE_LIMIT_HMAC_KEY`; the secret value is not stored in GitHub or this file. The HMAC key is configured but its feature remains disabled.
+- Run #476's production smoke against the live Render deployment returned `status=UP`, `database=neurosql_db`, `postgresVersion=17.11 (9045acd)` at 2026-11-04T07:05:02Z.
+- Vercel latest production deployment: `dpl_9fuCutGEE556DwFPNrhfayHzFt14`, READY for main commit `d135873...`. `neurosql.vercel.app` is verified and is a custom domain excluded from deployment SSO protection. Vercel project metadata still reports `live=false` even though the production deployment is READY and the domain is verified; track this metadata inconsistency, but the latest deployment is available.
+- Vercel production environment inventory previously returned zero visible and zero hidden variables. Frontend feature flags therefore remain at their safe false defaults.
+
+### Remaining release blockers — do not bypass
+1. Production has only the `neurosql_owner` LOGIN plus the `neurosql_auth_runtime` NOLOGIN group. A dedicated least-privilege production LOGIN principal and membership grant have not been created. The earlier explicit approval covered PR #7 and V1–V6, not this separate credential-bearing LOGIN role change. Obtain explicit approval before creating it, then store its generated credential only in Render and switch the application datasource away from the owner role.
+2. SMTP credentials and verified sender/domain settings are not available. Do not invent them. Registration email verification, resend, and password-reset delivery remain disabled.
+3. The Render integration can update environment variables but does not expose a safe environment-variable read operation. The Gemini key's presence cannot be independently verified; no live Gemini request has been made. AI generation, explanation, and performance recommendations remain disabled.
+4. V7 and a dedicated SQL-read-only LOGIN role are not approved/applied in production. SQL execution and EXPLAIN remain disabled until that role is provisioned, verified, and the application is switched to it.
+5. End-to-end production login, email verification, password reset, workspace isolation, SQL execution/history/saved queries, and live Gemini behavior are not yet verified because the required production LOGIN/SMTP/provider gates are incomplete.
+
+No paid resources, destructive operations, credentials in source control, or cross-project databases were used. The dedicated NeuroSQL Neon project remains isolated and on free-tier resources.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
