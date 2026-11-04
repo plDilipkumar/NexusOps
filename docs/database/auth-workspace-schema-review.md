@@ -1,6 +1,6 @@
 # Proposed durable authentication and workspace schema
 
-**Status: draft only.** The SQL in `proposed/V1__durable_auth_workspaces.sql` and `proposed/V2__durable_auth_runtime_grants.sql` is intentionally outside the application's migration-runner path. Neither migration has been applied to Neon `main`; do not wire them into application startup until the schema is approved.
+**Status: V1–V6 approved and applied to Neon `main` on 2026-11-04 IST; V7 remains proposal-only for production.** The SQL in `proposed/V1__durable_auth_workspaces.sql` and `proposed/V2__durable_auth_runtime_grants.sql` is intentionally outside the application's migration-runner path. Neither migration has been applied to Neon `main`; do not wire them into application startup until the schema is approved.
 
 ## Infrastructure inspection (2026-10-29 IST)
 
@@ -67,8 +67,22 @@ The Java limiter supplies a per-bucket threshold; the SQL row lock serializes up
 V6 does not add a table or alter account/session data. It only replaces two CHECK constraints on the proposed rate-limit table. The migration and its contract test are included in PR #7 and run against disposable PostgreSQL 17 in CI; the CI applies V6 with psql --single-transaction so the constraint replacement is atomic. The migration has not been applied to Neon main.
 ## Approval boundary
 
-Do not apply either migration to Neon `main`, add them to an automatically executed migration directory, create production login credentials, or enable production durable authentication without explicit user approval. Keep production durable auth, schema browsing, and SQL validation disabled until the schema, role membership, and deployment configuration are approved and tested.
+The user explicitly approved PR #7 and V1–V6 for production on 2026-11-04 IST. The approved V1–V6 bundle was applied to Neon project `neurosql`, production branch `main`, database `neurosql_db`, in one transaction containing 66 SQL statements.
 
+Production verification on PostgreSQL 17.11 confirmed:
+- Eight application tables and two trigger functions exist under `neurosql_app`.
+- The `neurosql_auth_runtime` group role exists with NOLOGIN, NOINHERIT, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, and NOBYPASSRLS.
+- The role has schema USAGE but no CREATE; it can read only the approved account/session/workspace columns, insert/revoke sessions, maintain rate-limit state, create/read action tokens, append query history, and manage saved queries within the granted columns.
+- It cannot read `app_users.display_name`, change `user_sessions.token_hash`, delete sessions, or access the schema through PUBLIC.
+- All eight application tables contain zero rows. The production schema comparison against independent temporary branch `br-aged-violet-b3ma06dw` returned an empty diff.
+
+Production activation is still deliberately incomplete:
+- No LOGIN principal has been created or granted membership in `neurosql_auth_runtime`; the current Render datasource has not been switched away from its existing identity.
+- V7 and the `neurosql_sql_readonly` group role remain proposal-only; no SQL-execution LOGIN exists.
+- Render auth, schema browsing, SQL validation/execution, query history, saved queries, and AI flags are explicitly false. A 256-bit HMAC key was generated and stored as a Render environment secret; its value is not recorded here.
+- SMTP credentials were not available and were not invented. The presence of the Gemini key could not be independently read through the available Render integration, and no live Gemini request was made. AI remains disabled.
+
+Do not create a production LOGIN role, apply V7, enable authentication/SQL/AI, or replace datasource credentials until the remaining role/credential configuration has been separately approved and verified. Keep all secrets in Render only.
 ## V6 temporary-branch validation (2026-11-03 IST)
 
 - Created temporary branch `neurosql-rate-limit-v6-review-20261103` (`br-silent-cherry-b3k2vqtj`) from the V5 review branch `br-morning-scene-b35jbi7a`; database `neurosql_db`, PostgreSQL 17.11.
