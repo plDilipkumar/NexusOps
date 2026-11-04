@@ -165,11 +165,42 @@ public class SqlExecutionController {
     }
 
     @PostMapping(path = "/explain", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> explain(@Valid @RequestBody QueryRequest request) {
+    public ResponseEntity<?> explain(
+            @Valid @RequestBody QueryRequest request,
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
+        ActiveQueryRegistry.Handle activeQuery = null;
         try {
+            activeQuery = beginCancellableExecution(authentication, servletRequest);
+            ReadOnlyQueryExecutor.ExplainResponse result = activeQuery == null
+                    ? executor.explain(request.sql())
+                    : executor.explain(request.sql(), activeQuery);
+            if (activeQuery != null && activeQuery.cancellationRequested()) {
+                throw new ReadOnlyQueryExecutor.QueryCancelledException();
+            }
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
-                    .body(executor.explain(request.sql()));
+                    .body(result);
+        } catch (InvalidExecutionIdException invalid) {
+            return ResponseEntity.badRequest()
+                    .cacheControl(CacheControl.noStore())
+                    .body(new QueryError("The execution identifier is invalid.", List.of()));
+        } catch (CancellationNotAvailableException unavailable) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new QueryError("Query cancellation requires a durable workspace session.", List.of()));
+        } catch (ActiveQueryRegistry.DuplicateExecutionException duplicate) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new QueryError("An execution with this identifier is already active.", List.of()));
+        } catch (ActiveQueryRegistry.CapacityExceededException capacity) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new QueryError("The server is handling its maximum number of active queries.", List.of()));
+        } catch (ReadOnlyQueryExecutor.QueryCancelledException cancelled) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .cacheControl(CacheControl.noStore())
+                    .body(new QueryError("The query plan was cancelled.", List.of()));
         } catch (ReadOnlyQueryExecutor.QueryRejectedException rejected) {
             return ResponseEntity.badRequest()
                     .cacheControl(CacheControl.noStore())
@@ -184,6 +215,10 @@ public class SqlExecutionController {
             return ResponseEntity.unprocessableEntity()
                     .cacheControl(CacheControl.noStore())
                     .body(new QueryError("The query plan could not be generated.", List.of()));
+        } finally {
+            if (activeQuery != null) {
+                activeQuery.close();
+            }
         }
     }
 
