@@ -886,7 +886,7 @@ class WorkspaceAuthorizationHttpTest {
         UUID executionId = UUID.fromString("dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b");
         when(workspaceAuthorizationService.hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER))
                 .thenReturn(true);
-        when(activeQueryRegistry.cancel(executionId, USER_ID, WORKSPACE_ID))
+        when(activeQueryRegistry.cancel(executionId, USER_ID, SESSION_ID, WORKSPACE_ID))
                 .thenReturn(ActiveQueryRegistry.CancelResult.REQUESTED);
 
         mockMvc.perform(post("/api/sql/cancel")
@@ -901,7 +901,7 @@ class WorkspaceAuthorizationHttpTest {
 
         verify(workspaceAuthorizationService)
                 .hasMinimumRole(USER_ID, WORKSPACE_ID, WorkspaceRole.VIEWER);
-        verify(activeQueryRegistry).cancel(executionId, USER_ID, WORKSPACE_ID);
+        verify(activeQueryRegistry).cancel(executionId, USER_ID, SESSION_ID, WORKSPACE_ID);
     }
 
     @Test
