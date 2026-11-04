@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.neurosql.api.ActiveQueryRegistry;
 import com.neurosql.api.DurableSessionController;
 import com.neurosql.security.DurableLoginService;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,9 @@ class DurableSessionControllerTest {
     @MockBean
     private WorkspaceAuthorizationService workspaceAuthorizationService;
 
+    @MockBean
+    private ActiveQueryRegistry activeQueries;
+
     @Test
     void activeBearerSessionCanReadItsOwnIdentityWithoutReturningToken() throws Exception {
         Instant expiresAt = Instant.now().plusSeconds(3600);
@@ -74,6 +78,7 @@ class DurableSessionControllerTest {
 
         verify(sessions).validateSession(eq(TOKEN), any(Instant.class));
         verify(sessions, never()).revokeSession(eq(TOKEN), any(Instant.class));
+        verifyNoInteractions(activeQueries);
     }
 
     @Test
@@ -83,7 +88,7 @@ class DurableSessionControllerTest {
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\""))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
-        verifyNoInteractions(sessions);
+        verifyNoInteractions(sessions, activeQueries);
     }
 
     @Test
@@ -97,6 +102,7 @@ class DurableSessionControllerTest {
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
         verify(sessions, never()).revokeSession(eq(TOKEN), any(Instant.class));
+        verifyNoInteractions(activeQueries);
     }
 
     @Test
@@ -105,11 +111,11 @@ class DurableSessionControllerTest {
                         .with(httpBasic("test-owner", "test-owner-password-123")))
                 .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(sessions);
+        verifyNoInteractions(sessions, activeQueries);
     }
 
     @Test
-    void activeBearerSessionCanLogoutAndReceiveNoContent() throws Exception {
+    void activeBearerSessionCanLogoutAndCancelsItsActiveQueries() throws Exception {
         when(sessions.validateSession(eq(TOKEN), any(Instant.class))).thenReturn(Optional.of(
                 new JdbcSessionRepository.StoredSession(
                         SESSION_ID, USER_ID, Instant.now().minusSeconds(60), Instant.now().plusSeconds(3600))));
@@ -121,10 +127,11 @@ class DurableSessionControllerTest {
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
         verify(sessions).revokeSession(eq(TOKEN), any(Instant.class));
+        verify(activeQueries).cancelSession(SESSION_ID);
     }
 
     @Test
-    void invalidBearerTokenIsRejectedBeforeLogout() throws Exception {
+    void invalidBearerTokenIsRejectedBeforeLogoutOrQueryCancellation() throws Exception {
         when(sessions.validateSession(eq(TOKEN), any(Instant.class))).thenReturn(Optional.empty());
 
         mockMvc.perform(post("/api/auth/logout")
@@ -134,6 +141,7 @@ class DurableSessionControllerTest {
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
         verify(sessions, never()).revokeSession(eq(TOKEN), any(Instant.class));
+        verifyNoInteractions(activeQueries);
     }
 
     @Test
@@ -143,7 +151,7 @@ class DurableSessionControllerTest {
                 .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"NeuroSQL\""))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")));
 
-        verifyNoInteractions(sessions);
+        verifyNoInteractions(sessions, activeQueries);
     }
 
     @Test
@@ -152,7 +160,7 @@ class DurableSessionControllerTest {
                         .with(httpBasic("test-owner", "test-owner-password-123")))
                 .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(sessions);
+        verifyNoInteractions(sessions, activeQueries);
     }
 
     @Test
@@ -225,5 +233,4 @@ class DurableSessionControllerTest {
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
                 .andExpect(jsonPath("$.message").value("Too many login attempts. Try again later."));
     }
-
 }
