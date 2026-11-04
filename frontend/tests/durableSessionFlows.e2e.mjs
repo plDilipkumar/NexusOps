@@ -928,6 +928,125 @@ async function testAccountFlowSwitchSupersedesPendingBootstrap({ stage, buttonNa
 }
 
 
+async function testOldBootstrapRevocationFailureDoesNotOverwriteNewLogin() {
+  const page = await browser.newPage();
+  const oldToken = "S".repeat(43);
+  const newToken = "T".repeat(43);
+  const oldAuthorization = "Bearer " + oldToken;
+  const newAuthorization = "Bearer " + newToken;
+  const requests = { login: [], identity: [], workspaces: [], schema: [], logout: [] };
+  let loginCount = 0;
+  let markOldIdentityStarted;
+  const oldIdentityStarted = new Promise(resolve => { markOldIdentityStarted = resolve; });
+  let releaseOldIdentity;
+  const oldIdentityGate = new Promise(resolve => { releaseOldIdentity = resolve; });
+  let markOldRevocationCompleted;
+  const oldRevocationCompleted = new Promise(resolve => { markOldRevocationCompleted = resolve; });
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      requests.login.push(route.request().postDataJSON());
+      loginCount += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token: loginCount === 1 ? oldToken : newToken, expiresAt }),
+      });
+    },
+    "/api/auth/me": async route => {
+      const authorization = route.request().headers().authorization;
+      requests.identity.push(authorization);
+      if (authorization === oldAuthorization) {
+        markOldIdentityStarted();
+        await oldIdentityGate;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ userId, sessionId, expiresAt }),
+      });
+    },
+    "/api/auth/workspaces": async route => {
+      requests.workspaces.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([{
+          workspaceId: workspaceA,
+          name: "Analytics",
+          slug: "analytics",
+          role: "OWNER",
+        }]),
+      });
+    },
+    "/api/schema": async route => {
+      requests.schema.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(schemaPayload("neurosql_test")),
+      });
+    },
+    "/api/auth/logout": async route => {
+      requests.logout.push(route.request().headers().authorization);
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "sensitive server failure detail" }),
+      });
+      markOldRevocationCompleted();
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page, "old@example.com");
+    await Promise.race([
+      oldIdentityStarted,
+      delay(5000).then(() => { throw new Error("The old identity request did not start"); }),
+    ]);
+
+    await page.getByRole("button", { name: "Forgot password?", exact: true }).click();
+    await page.getByRole("heading", { name: "Reset your password", exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Back to sign in", exact: true }).click();
+    await page.getByRole("heading", { name: "Sign in to NeuroSQL", exact: true }).waitFor({ state: "visible" });
+
+    await signIn(page, "new@example.com");
+    await waitForWorkspaceReady(page, workspaceA);
+    releaseOldIdentity();
+    await Promise.race([
+      oldRevocationCompleted,
+      delay(5000).then(() => { throw new Error("The old provisional session revocation did not finish"); }),
+    ]);
+
+    assert.deepEqual(requests.login, [
+      { email: "old@example.com", password: "synthetic-test-password-42" },
+      { email: "new@example.com", password: "synthetic-test-password-42" },
+    ]);
+    assert.deepEqual(requests.identity, [oldAuthorization, newAuthorization]);
+    assert.deepEqual(requests.workspaces, [newAuthorization],
+      "The superseded identity response must not continue into old workspace loading");
+    assert.deepEqual(requests.schema, [newAuthorization],
+      "Only the newer login may load workspace schema");
+    assert.deepEqual(requests.logout, [oldAuthorization],
+      "The old provisional session must be revoked without affecting the newer session");
+    assert.equal(await page.getByText("Signed in as new@example.com", { exact: false }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 1);
+    assert.equal(await page.getByRole("alert").count(), 0,
+      "A failed revocation from the superseded login must not overwrite the newer authenticated workspace");
+    await assertNoBrowserPersistence(page);
+    assert.equal(page.url().includes(oldToken), false);
+    assert.equal(page.url().includes(newToken), false);
+    assert.equal(unexpected.length, 0, "The stale-revocation/new-login race must not make unmocked API requests");
+    console.log("Failed revocation of a superseded provisional session cannot overwrite a newer login (mock API only)");
+  } finally {
+    releaseOldIdentity();
+    await page.close();
+  }
+}
+
+
 async function testAccountFlowSwitchSupersedesPendingLogin({ buttonName, heading, issuedToken, returnToSignIn = false }) {
   const page = await browser.newPage();
   const requests = { login: [], identity: [], workspaces: [], schema: [], logout: [] };
@@ -1099,6 +1218,7 @@ try {
     heading: "Create your NeuroSQL account",
     issuedToken: "N".repeat(43),
   });
+  await testOldBootstrapRevocationFailureDoesNotOverwriteNewLogin();
   await testAccountFlowSwitchSupersedesPendingBootstrap({
     stage: "identity",
     buttonName: "Forgot password?",
