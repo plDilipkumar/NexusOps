@@ -1,16 +1,16 @@
 # NeuroSQL — release progress
 
-Last verified: 2026-11-04 11:45 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
+Last verified: 2026-11-04 11:59 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
 
 ## Current release state
 
 - Repository: [plDilipkumar/NexusOps](https://github.com/plDilipkumar/NexusOps)
-- Current application commit: `187f4802bb6c0979d99904860e1407d22d80fcf0` — PR #12, personal workspace bootstrap.
-- Latest main commit at this audit: `bd6354c635b23ea3bd4e594dd5917ab9296165fe` — tracker-only update.
+- Current application commit: `2d20070500ae8cc4b194eabfe0f3fb99915b8f97` — PR #13, fail-closed durable-auth database identity guard.
+- Previous tracker commit: `51186497baffdbc5dc645facc0dc44ae8c2947a9`; PR #13 merge commit is the latest application-code commit.
 - Open PRs: 0.
-- Main CI: run #483 (`41817996488`), attempt 2, all five jobs passed. PR CI run #482 (`41817568439`) passed all four PR jobs.
+- Last verified main CI: run #483 (`41817996488`), all five jobs passed. PR #13 CI run #485 (`41824714562`) passed all four PR jobs; main push CI for merge commit is not surfaced by the available workflow-run listing. PR-run production smoke was skipped as expected.
 - Current backend deployment: Render `dep-dblh208u01pc73a6onbg`, LIVE, for application commit `187f4802`.
-- Latest frontend deployment: Vercel `dpl_33XUTjBFqq6hPt91huLUfNBB3tHT`, READY, for tracker commit `bd6354c`; verified alias `neurosql.vercel.app`.
+- Latest frontend deployment: Vercel `dpl_4f8THEVF6NHk3shy3RSDHdKD6WwT`, READY, for application commit `2d200705`; verified alias `neurosql.vercel.app`.
 - Production database: Neon project `neurosql` (`lingering-dew-88806235`), main branch `br-empty-credit-b360dmpc`, database `neurosql_db`, PostgreSQL 17.11, Free plan.
 
 ## Latest application milestone — personal workspace bootstrap
@@ -102,3 +102,27 @@ The temporary probe verified allowed SELECT access to the explicitly granted pro
 - Fresh temporary-branch checks reconfirmed V7/V8 least-privilege behavior and that the two probe principals are NOLOGIN with no runtime-group memberships.
 - The Vercel tracker deployment `dpl_33XUTjBFqq6hPt91huLUfNBB3tHT` is READY and the custom domain is verified. Render deployment `dep-dblh208u01pc73a6onbg` remains LIVE. No error-level application logs were returned for the audit window.
 - No paid resources, destructive operations, cross-project database reuse, source-controlled credentials, or unapproved production schema/role changes were introduced.
+
+
+## Run 7 continuation — PR #13 durable-auth database identity guard
+
+PR #13, [Fail closed when durable auth uses an unsafe database identity](https://github.com/plDilipkumar/NexusOps/pull/13), was merged by squash after all four PR checks passed.
+
+- PR head: `3935b3b0ac8061e4c78223e04e2e2efa214c6fad`.
+- Merge commit: `2d20070500ae8cc4b194eabfe0f3fb99915b8f97`.
+- PR CI run #485: `41824714562`.
+- Backend job `126556395196`: 391 tests, 0 failures, 0 errors, 71 expected skips; includes 3 new guard unit tests. Production Docker build and UID/GID 10001 assertion passed.
+- PostgreSQL 17 integration job `126556395295`: 71/71 passed.
+- Auth schema/role contract job `126556395317`: passed, including the new disposable LOGIN membership contract.
+- Frontend job `126556394774`: 96/96 unit tests, production build, responsive and mocked account/session browser tests passed.
+- Production smoke was skipped for the PR event; the last post-deploy smoke remains job `126535674767` for the previous Render deployment.
+
+The new `DurableAuthDatabaseRoleGuard` runs only when durable sessions are enabled and outside the disposable `test` profile. It requires the datasource's `session_user` to be a non-privileged LOGIN with exactly one membership in `neurosql_auth_runtime`, using inherited privileges but no SET ROLE or ADMIN OPTION, and no schema CREATE. It refuses startup if the datasource uses the elevated database owner. The first CI attempt correctly exposed that existing Spring integration tests used the admin login; the tests were moved to the explicit `test` profile, then the full PR run #485 passed. Unit tests cover accept/reject/missing-role cases, while the disposable PostgreSQL contract verifies the actual PG17 membership options.
+
+### Post-merge deployment state
+
+- Vercel deployment `dpl_4f8THEVF6NHk3shy3RSDHdKD6WwT` is READY for merge commit `2d200705`, with aliases including `neurosql.vercel.app`.
+- Render service still reports auto-deploy enabled on `main`, but no deployment for `2d200705` appeared in the deploy list after the merge and a two-minute observation window. The current LIVE backend remains deployment `dep-dblh208u01pc73a6onbg` for commit `187f4802`. No manual deploy was triggered because Render's service is configured for automatic commit deploys; the latest backend commit therefore still needs live deployment verification.
+- GitHub combined commit status reports Vercel success. The connected workflow-run listing only exposes pull-request-triggered runs, so no claim is made that the post-merge push CI or production smoke completed.
+
+No Neon production schema or roles were changed. The durable-auth guard is conditional and has not been activated in production. Production auth/SQL/AI/email gates remain disabled pending dedicated LOGIN role approval, V7/V8 production approval, SMTP credentials, and verifiable Gemini/provider credentials.
