@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-04 — account-flow navigation is verified during delayed identity and workspace bootstrap; GitHub Actions run #416 passed.
+Last verified: 2026-11-04 — stale provisional-session revocation failures are reported safely after account-flow navigation; GitHub Actions run #419 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1550,4 +1550,23 @@ Last verified: 2026-11-04 — account-flow navigation is verified during delayed
 - [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
 
 ### Next milestone
-- [ ] Verify that a failed server-side revocation (HTTP error or network failure) after account-flow navigation is handled explicitly without leaking the provisional token, restoring stale auth state, or replacing the selected account-flow screen.
+- [x] Verify that a failed server-side revocation (HTTP error or network failure) after account-flow navigation is handled explicitly without leaking the provisional token, restoring stale auth state, or replacing the selected account-flow screen; completed in the section below.
+
+
+## Account-flow bootstrap revocation failure reporting — PR #9 (2026-11-04)
+
+- [x] Re-read this progress tracker and inspected the current feature branch/PR, dedicated Neon project `neurosql` and database `neurosql_db`, Vercel Git linkage/deployments, and the confirmed Render workspace/service/deploy history before selecting this milestone.
+- [x] Added a guarded `revokeSupersededSession` path in `frontend/src/App.tsx`. If account-flow navigation supersedes an issued login while identity or workspace bootstrap is pending, the provisional token is still revoked. An HTTP status other than 204/401 or a network failure now produces a fixed warning that the provisional session may remain valid until expiry; response bodies and bearer tokens are never rendered or logged.
+- [x] Added separate login and account-flow navigation generations. A revocation warning is shown only when the user remains on the account flow that superseded the login. A newer login or later account-flow action suppresses the stale warning so it cannot overwrite a newer authenticated workspace or screen.
+- [x] Extended `frontend/tests/durableSessionFlows.e2e.mjs` with four mocked browser cases: HTTP 503 and network-abort revocation failures after delayed identity bootstrap, and the same two failures after delayed workspace bootstrap. Each verifies the selected account-flow screen remains visible, the sanitized warning appears, the bearer token and server details are absent, and no stale identity/workspace/schema state is installed.
+- [x] Added a fifth regression case in which the user navigates to password recovery, returns to sign-in, starts a newer login, and only then releases the old identity response. The old provisional token is revoked after its response arrives, but its HTTP 503 must not show a stale warning over the newer successful login/workspace.
+- [x] GitHub Actions run #419 (ID `41750440890`, https://github.com/plDilipkumar/NexusOps/actions/runs/41750440890) passed on branch head `a654f77324f4959a73904ecf493fc866962e14cc`: backend Maven verification completed with 371 tests, 0 failures/errors, and 63 expected database-gated skips; disposable PostgreSQL 17 integration passed 63/63 with 0 failures/errors/skips; frontend unit tests passed 96/96; TypeScript compilation and Vite production build passed (1,596 modules transformed); responsive navigation passed at five viewport profiles; keyboard navigation passed at desktop and mobile; all four account-onboarding browser flows passed; all 24 durable-session browser scenarios passed, including the four HTTP/network revocation failures after account-flow navigation and the newer-login race.
+- [x] The production API/database smoke test was skipped because PR #9 remains unmerged. All browser authentication, workspace, schema, and revocation requests in these tests were mocked; no live account or email was used.
+- [x] Read-only Neon inspection reconfirmed project `neurosql` on the free organization in Singapore with PostgreSQL 17. Production branch `main` (`br-empty-credit-b360dmpc`) and dedicated database `neurosql_db` still have zero application tables and only the `neurosql_owner` password-login role. Review branch `br-silent-cherry-b3k2vqtj` contains the eight proposed `neurosql_app` tables and `neurosql_auth_runtime` as NOLOGIN; no SQL read-only LOGIN role is provisioned. No branch, schema, data, or role writes were made.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` on the Hobby/free team; project metadata reports `live=false`. The latest inspected production-target deployment is READY for `main` commit `6425ab4`; no deployment exists for feature commit `a654f77`. No manual deployment or plan change was triggered.
+- [x] Render service `neurosql-api` remains on the free plan in the confirmed workspace, Singapore region, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. Its latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58d`; no feature-branch deployment or environment change was made.
+- [ ] PR #9 remains open and unmerged; schema PR #7 remains a draft and unapproved. Production durable authentication, shared throttling, SQL execution/EXPLAIN, and AI remain blocked on explicit V1–V6 schema approval, verified least-privilege production application and SQL-read-only LOGIN roles, secure HMAC configuration, deliberate SMTP/provider configuration, and deployment/smoke verification.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Add a mocked browser race test for a delayed schema response from the previously selected workspace after the user switches workspaces. Verify that the stale payload cannot replace the newly selected workspace schema or leave the loading state stuck.
