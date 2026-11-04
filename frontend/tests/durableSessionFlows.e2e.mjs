@@ -1452,6 +1452,8 @@ try {
   browser = await chromium.launch({ headless: true });
   await testLoginWorkspaceSwitchAndLogout();
   await testStaleWorkspaceSchemaCannotOverwriteNewSelection();
+  await testStaleWorkspaceSchemaFailureCannotOverwriteNewSelection({ failure: "http" });
+  await testStaleWorkspaceSchemaFailureCannotOverwriteNewSelection({ failure: "network" });
   await testFixedSessionExpiry();
   await testInvalidCredentialsDoNotCreateClientSession();
   await testRejectedIdentityRevokesProvisionallyIssuedSession();
