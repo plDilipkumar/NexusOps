@@ -1897,6 +1897,13 @@ try {
   await testWorkspaceSwitchInvalidatesInFlightSql({ operation: "query", staleOutcome: "error" });
   await testWorkspaceSwitchInvalidatesInFlightSql({ operation: "explain", staleOutcome: "success" });
   await testWorkspaceSwitchInvalidatesInFlightSql({ operation: "explain", staleOutcome: "error" });
+  for (const operation of ["query", "explain"]) {
+    for (const sessionEnd of ["signout", "expiry"]) {
+      for (const staleOutcome of ["success", "http-error", "network-error"]) {
+        await testSessionEndInvalidatesInFlightSql({ operation, sessionEnd, staleOutcome });
+      }
+    }
+  }
   await testFixedSessionExpiry();
   await testInvalidCredentialsDoNotCreateClientSession();
   await testRejectedIdentityRevokesProvisionallyIssuedSession();
