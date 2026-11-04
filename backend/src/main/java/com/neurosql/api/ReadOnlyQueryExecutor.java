@@ -218,32 +218,56 @@ public final class ReadOnlyQueryExecutor implements AutoCloseable {
      * read-only transaction after the same dedicated-role checks as normal SQL.
      */
     public ExplainResponse explain(String sql) {
-        ReadOnlySqlValidator.ValidationResponse validation = validator.validate(sql);
-        if (!validation.valid()) {
-            throw new QueryRejectedException(validation.errors());
-        }
+        return explain(sql, null);
+    }
 
+    public ExplainResponse explain(String sql, ActiveQueryRegistry.Handle activeQuery) {
         try {
-            return Objects.requireNonNull(transaction.execute(status -> {
-                jdbc.execute("SET TRANSACTION READ ONLY");
-                jdbc.execute("SET LOCAL statement_timeout = '" + (queryTimeoutSeconds * 1_000) + "ms'");
-                assertReadOnlyRuntimeRole();
+            ReadOnlySqlValidator.ValidationResponse validation = validator.validate(sql);
+            if (!validation.valid()) {
+                throw new QueryRejectedException(validation.errors());
+            }
 
-                long startedAt = System.nanoTime();
-                String planJson = jdbc.queryForObject(
-                        "EXPLAIN (FORMAT JSON, COSTS TRUE, VERBOSE FALSE, SETTINGS FALSE) " + sql,
-                        (resultSet, rowNumber) -> resultSet.getString(1));
-                if (planJson == null || planJson.length() > MAX_PLAN_CHARACTERS) {
-                    throw new QueryExecutionException();
+            try {
+                return Objects.requireNonNull(transaction.execute(status -> {
+                    jdbc.execute("SET TRANSACTION READ ONLY");
+                    jdbc.execute("SET LOCAL statement_timeout = '" + (queryTimeoutSeconds * 1_000) + "ms'");
+                    assertReadOnlyRuntimeRole();
+
+                    long startedAt = System.nanoTime();
+                    String planJson = jdbc.query(connection -> {
+                        PreparedStatement statement = connection.prepareStatement(
+                                "EXPLAIN (FORMAT JSON, COSTS TRUE, VERBOSE FALSE, SETTINGS FALSE) " + sql);
+                        statement.setQueryTimeout(queryTimeoutSeconds);
+                        if (activeQuery != null) {
+                            activeQuery.attachStatement(statement);
+                        }
+                        return statement;
+                    }, resultSet -> resultSet.next() ? resultSet.getString(1) : null);
+                    if (planJson == null || planJson.length() > MAX_PLAN_CHARACTERS) {
+                        throw new QueryExecutionException();
+                    }
+                    if (activeQuery != null && activeQuery.cancellationRequested()) {
+                        throw new QueryCancelledException();
+                    }
+                    long elapsedMillis = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
+                    return new ExplainResponse(planJson, elapsedMillis, false);
+                }), "The read-only EXPLAIN transaction returned no result.");
+            } catch (QueryCancelledException cancelled) {
+                throw cancelled;
+            } catch (QueryRejectedException | QueryExecutionUnavailableException | QueryExecutionException known) {
+                throw known;
+            } catch (DataAccessException | TransactionException failure) {
+                if (activeQuery != null && activeQuery.cancellationRequested()) {
+                    throw new QueryCancelledException();
                 }
-                long elapsedMillis = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
-                return new ExplainResponse(planJson, elapsedMillis, false);
-            }), "The read-only EXPLAIN transaction returned no result.");
-        } catch (QueryRejectedException | QueryExecutionUnavailableException | QueryExecutionException known) {
-            throw known;
-        } catch (DataAccessException | TransactionException failure) {
-            // Do not expose SQL, schema names, driver messages, or connection details.
-            throw new QueryExecutionException();
+                // Do not expose SQL, schema names, driver messages, or connection details.
+                throw new QueryExecutionException();
+            }
+        } finally {
+            if (activeQuery != null) {
+                activeQuery.close();
+            }
         }
     }
 
