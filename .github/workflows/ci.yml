@@ -51,6 +51,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_DURABLE_AUTH_ENABLED: "true"
+          VITE_SQL_EXECUTION_ENABLED: "true"
         run: npm run build
       - name: Install Chromium for responsive and account-flow browser checks
         working-directory: frontend
@@ -61,7 +62,7 @@ jobs:
       - name: Verify mocked registration, email verification, and password recovery flows
         working-directory: frontend
         run: npm run test:account-flows
-      - name: Verify mocked durable login, workspace switching, logout, expiry, and superseded-response races
+      - name: Verify mocked durable login, workspace switching, SQL cancellation, EXPLAIN invalidation, and superseded-response races
         working-directory: frontend
         run: npm run test:durable-session-flows
 
