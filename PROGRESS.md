@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-04 — delayed HTTP and network failures from an obsolete workspace schema request cannot clear the newly selected workspace; GitHub Actions run #425 passed.
+Last verified: 2026-11-04 — in-flight SQL and EXPLAIN requests are aborted on sign-out/session expiry; late success, HTTP 503, and network failures cannot restore results or errors; GitHub Actions run #434 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1624,5 +1624,23 @@ Last verified: 2026-11-04 — delayed HTTP and network failures from an obsolete
 - [ ] Production durable authentication, shared throttling, SQL execution/EXPLAIN, and AI remain blocked on explicit V1–V6 schema approval, verified least-privilege production application and SQL-read-only LOGIN roles, secure HMAC/provider configuration, and production deployment/smoke verification.
 - [x] No production database writes/migrations, role changes, Render/Vercel deployments, credentials, or paid resources were introduced.
 
+## Durable-session termination during in-flight SQL and EXPLAIN — PR #9 (2026-11-04)
+
+- [x] Re-read the current tracker and inspected PRs #7/#9, latest CI, Neon project `neurosql` / database `neurosql_db`, Vercel project/deployments, and Render service/deploy history before selecting this milestone.
+- [x] Extended the deferred browser-fetch harness so a test can deliberately resolve or reject an SQL/EXPLAIN request after its AbortSignal has been triggered. This simulates a late response arriving after the browser has locally ended the session.
+- [x] Added 12 mocked Playwright scenarios: SQL execution and EXPLAIN × user sign-out and fixed session expiry × late success, HTTP 503, and network failure. All 12 passed.
+- [x] The tests verify the old transport is aborted; SQL execution sends cancellation for the original workspace and exact execution ID; EXPLAIN is invalidated without an SQL-cancellation call; the workspace/session UI is cleared; and late success/failure cannot restore results or errors. They also verify SQL/EXPLAIN controls require a new sign-in, no bearer token appears in the URL or browser storage, and no unmocked API requests occur.
+- [x] No production frontend logic change was needed: `App.tsx` already increments SQL/EXPLAIN generation counters, aborts both controllers, clears result/error/loading state on sign-out and expiry, and ignores stale completions.
+- [x] The first fully invoked run #433 (ID `41776098200`) caught an incorrect test expectation: after sign-out the query button is labelled `Sign in to run`, not `Run query`. Updated the test to assert the correct disabled sign-in-required control. GitHub Actions run #434 (ID `41776293082`) then passed on code commit `ef9fb307f08ea9e064a9eee2c3b3a07f9aea0e0f`.
+- [x] Run #434 backend Maven verification: 371 tests, 0 failures, 0 errors, 63 expected database-gated skips. Disposable PostgreSQL 17 integration: 63/63 passed, 0 failures/errors/skips. Frontend unit tests: 96/96 passed; TypeScript/Vite build passed (1,596 modules transformed); responsive navigation passed at five viewport sizes; skip-link and keyboard checks passed on desktop/mobile; all four account-onboarding browser flows passed.
+- [x] The production API/database smoke job was skipped because PR #9 remains unmerged. The 12 new browser scenarios used only mocked API responses; no production SQL, live user session, Neon data, SMTP provider, or AI provider was used.
+- [x] PR #9 remains open and mergeable, now at head `ef9fb307f08ea9e064a9eee2c3b3a07f9aea0e0f`; no review approvals are recorded. PR #7 remains draft/unapproved at head `a952e77165b1bd1c396e8926120f595667c44dd4`.
+- [x] PR #7's latest CI run #357 passed the disposable PostgreSQL 17 schema-contract job: V1–V6 proposed schema/grant scripts, constraints, fixture cleanup, restricted-role checks, account-action tokens, query-history/saved-query grants, and shared rate-limit capacity. Neon review branch `br-silent-cherry-b3k2vqtj` currently contains the eight proposed `neurosql_app` tables and the `neurosql_auth_runtime` NOLOGIN group role. This does not create a production LOGIN principal.
+- [x] Read-only Neon inspection: production branch `main` (`br-empty-credit-b360dmpc`) and dedicated database `neurosql_db` remain ready with zero application tables; the only matching user-created production LOGIN role is privileged `neurosql_owner` (CREATEDB/CREATEROLE). No Neon main/review branch schema, role, or data changes were made in this run.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps`. Latest inspected production deployment `dpl_JBL6cHJhkBVANky9kYXhWNzkMHJK` is READY on main commit `6425ab4`; no Vercel deployment exists for PR #9 code commit `ef9fb307`. The project environment-variable inventory returned no visible entries.
+- [x] Render service `neurosql-api` remains on the free plan and linked to repository branch `main`; live deployment `dep-dblak9ijnfac73fdn9e0` serves main commit `6425ab4`. No feature-branch backend deployment or environment change was made.
+- [ ] Production durable auth, SQL execution/EXPLAIN, and AI remain blocked on explicit approval of draft schema PR #7 before applying V1–V6 to Neon main, correctly restricted production application and SQL-read-only LOGIN roles, secure HMAC configuration, deliberate SMTP/verification-email credentials, and live deployment/smoke verification. AI remains disabled; no provider key has been verified end-to-end.
+- [x] No production migrations/role changes, secrets, paid resources, or destructive actions were introduced.
+
 ### Next milestone
-- [ ] Add mocked browser coverage for signing out or expiring a durable session while SQL execution or EXPLAIN is in flight. Verify cancellation/invalidation and ensure a late response cannot repopulate results or errors after the authenticated workspace is cleared.
+- [ ] Add HTTP/PostgreSQL integration coverage for session revocation while a read-only SQL execution is active: verify a revoked session cannot start a new query, cancellation remains restricted to the authenticated workspace and execution ID, and late database completion cannot be exposed through a subsequent request. Keep production flags disabled until the schema and runtime-identity approvals are satisfied.
