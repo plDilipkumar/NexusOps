@@ -222,48 +222,48 @@ public final class ReadOnlyQueryExecutor implements AutoCloseable {
     }
 
     public ExplainResponse explain(String sql, ActiveQueryRegistry.Handle activeQuery) {
+        ReadOnlySqlValidator.ValidationResponse validation = validator.validate(sql);
+        if (!validation.valid()) {
+            throw new QueryRejectedException(validation.errors());
+        }
+
         try {
-            ReadOnlySqlValidator.ValidationResponse validation = validator.validate(sql);
-            if (!validation.valid()) {
-                throw new QueryRejectedException(validation.errors());
-            }
+            ExplainResponse response = Objects.requireNonNull(transaction.execute(status -> {
+                jdbc.execute("SET TRANSACTION READ ONLY");
+                jdbc.execute("SET LOCAL statement_timeout = '" + (queryTimeoutSeconds * 1_000) + "ms'");
+                assertReadOnlyRuntimeRole();
 
-            try {
-                return Objects.requireNonNull(transaction.execute(status -> {
-                    jdbc.execute("SET TRANSACTION READ ONLY");
-                    jdbc.execute("SET LOCAL statement_timeout = '" + (queryTimeoutSeconds * 1_000) + "ms'");
-                    assertReadOnlyRuntimeRole();
-
-                    long startedAt = System.nanoTime();
-                    String planJson = jdbc.query(connection -> {
-                        PreparedStatement statement = connection.prepareStatement(
-                                "EXPLAIN (FORMAT JSON, COSTS TRUE, VERBOSE FALSE, SETTINGS FALSE) " + sql);
-                        statement.setQueryTimeout(queryTimeoutSeconds);
-                        if (activeQuery != null) {
-                            activeQuery.attachStatement(statement);
-                        }
-                        return statement;
-                    }, resultSet -> resultSet.next() ? resultSet.getString(1) : null);
-                    if (planJson == null || planJson.length() > MAX_PLAN_CHARACTERS) {
-                        throw new QueryExecutionException();
+                long startedAt = System.nanoTime();
+                String planJson = jdbc.query(connection -> {
+                    PreparedStatement statement = connection.prepareStatement(
+                            "EXPLAIN (FORMAT JSON, COSTS TRUE, VERBOSE FALSE, SETTINGS FALSE) " + sql);
+                    statement.setQueryTimeout(queryTimeoutSeconds);
+                    if (activeQuery != null) {
+                        activeQuery.attachStatement(statement);
                     }
-                    if (activeQuery != null && activeQuery.cancellationRequested()) {
-                        throw new QueryCancelledException();
-                    }
-                    long elapsedMillis = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
-                    return new ExplainResponse(planJson, elapsedMillis, false);
-                }), "The read-only EXPLAIN transaction returned no result.");
-            } catch (QueryCancelledException cancelled) {
-                throw cancelled;
-            } catch (QueryRejectedException | QueryExecutionUnavailableException | QueryExecutionException known) {
-                throw known;
-            } catch (DataAccessException | TransactionException failure) {
-                if (activeQuery != null && activeQuery.cancellationRequested()) {
-                    throw new QueryCancelledException();
+                    return statement;
+                }, resultSet -> resultSet.next() ? resultSet.getString(1) : null);
+                if (planJson == null || planJson.length() > MAX_PLAN_CHARACTERS) {
+                    throw new QueryExecutionException();
                 }
-                // Do not expose SQL, schema names, driver messages, or connection details.
-                throw new QueryExecutionException();
+                long elapsedMillis = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
+                return new ExplainResponse(planJson, elapsedMillis, false);
+            }), "The read-only EXPLAIN transaction returned no result.");
+
+            if (activeQuery != null && activeQuery.cancellationRequested()) {
+                throw new QueryCancelledException();
             }
+            return response;
+        } catch (QueryCancelledException cancelled) {
+            throw cancelled;
+        } catch (QueryRejectedException | QueryExecutionUnavailableException | QueryExecutionException known) {
+            throw known;
+        } catch (DataAccessException | TransactionException failure) {
+            if (activeQuery != null && activeQuery.cancellationRequested()) {
+                throw new QueryCancelledException();
+            }
+            // Do not expose SQL, schema names, driver messages, or connection details.
+            throw new QueryExecutionException();
         } finally {
             if (activeQuery != null) {
                 activeQuery.close();
