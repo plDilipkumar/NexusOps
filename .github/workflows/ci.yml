@@ -30,6 +30,11 @@ jobs:
       - name: Verify backend
         working-directory: backend
         run: mvn -B verify
+      - name: Build production Docker image and verify non-root runtime
+        working-directory: backend
+        run: |
+          docker build -t neurosql-api:ci .
+          test "$(docker run --rm --entrypoint id neurosql-api:ci -u)" = "10001"
 
   frontend:
     name: Frontend production build
