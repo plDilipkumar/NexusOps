@@ -74,6 +74,15 @@ try {
     }));
     assert.ok(dimensions.documentWidth <= dimensions.viewportWidth,
       `${viewport.name}: horizontal overflow (${dimensions.documentWidth}px > ${dimensions.viewportWidth}px)`);
+    await navigation.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.getByRole("button", { name: "Open schema explorer", exact: true }).click();
+    assert.equal((await page.locator(".crumb b").textContent())?.trim(), "Schema explorer",
+      `${viewport.name}: the workspace schema shortcut should open Schema explorer`);
+    await navigation.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.getByRole("button", { name: "Open history", exact: true }).click();
+    assert.equal((await page.locator(".crumb b").textContent())?.trim(), "Query history",
+      `${viewport.name}: the workspace history shortcut should open Query history`);
+
     console.log(`Responsive navigation passed: ${viewport.name} (${viewport.width}x${viewport.height})`);
   }
 
