@@ -239,4 +239,23 @@ class ReadOnlyQueryExecutorPostgresIntegrationTest {
         }
         return value;
     }
+    @Test
+    void revokedSessionBeforeExplainStatementAttachmentPreventsPlanExecution() {
+        ActiveQueryRegistry registry = new ActiveQueryRegistry();
+        UUID userId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        ActiveQueryRegistry.Handle handle =
+                registry.begin(UUID.randomUUID(), userId, sessionId, workspaceId);
+
+        try {
+            assertThat(registry.cancelSession(sessionId)).isEqualTo(1);
+            assertThatThrownBy(() -> runtimeExecutor().explain("SELECT 1", handle))
+                    .isInstanceOf(ReadOnlyQueryExecutor.QueryCancelledException.class);
+            assertThat(registry.activeCount()).isZero();
+        } finally {
+            handle.close();
+        }
+    }
+
 }
