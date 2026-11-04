@@ -3,6 +3,7 @@ package com.neurosql.security;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component;
  * but must not permit SET ROLE or delegation.</p>
  */
 @Component
+@Profile("!test")
 @ConditionalOnProperty(
         prefix = "neurosql.auth",
         name = "durable-sessions-enabled",
