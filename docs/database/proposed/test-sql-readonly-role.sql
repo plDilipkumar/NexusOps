@@ -43,7 +43,7 @@ CREATE ROLE neurosql_sql_readonly_probe_login
     NOREPLICATION
     NOBYPASSRLS;
 
-GRANT neurosql_sql_readonly TO neurosql_sql_readonly_probe_login;
+GRANT neurosql_sql_readonly TO neurosql_sql_readonly_probe_login WITH INHERIT TRUE, SET FALSE;
 
 CREATE SCHEMA neurosql_sql_probe;
 CREATE TABLE neurosql_sql_probe.probe (
@@ -64,6 +64,19 @@ BEGIN
     SELECT value INTO probe_value
       FROM neurosql_sql_probe.probe
      WHERE id = 1;
+
+    IF NOT pg_has_role(current_user, 'neurosql_sql_readonly', 'USAGE')
+       OR pg_has_role(current_user, 'neurosql_sql_readonly', 'SET')
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_auth_members membership
+           WHERE membership.roleid = 'neurosql_sql_readonly'::regrole
+             AND membership.member = current_user::regrole
+             AND NOT membership.admin_option
+             AND membership.inherit_option
+             AND NOT membership.set_option
+       ) THEN
+        RAISE EXCEPTION 'Read-only SQL membership options are not least-privileged';
+    END IF;
 
     IF probe_value <> 'read-only' THEN
         RAISE EXCEPTION 'Read-only SQL group could not read an explicitly granted table';
