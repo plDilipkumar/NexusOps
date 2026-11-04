@@ -1,6 +1,6 @@
 # NeuroSQL Progress
 
-Last verified: 2026-11-04 — workspace switching remains available during schema loading and stale workspace responses are ignored; GitHub Actions run #422 passed.
+Last verified: 2026-11-04 — delayed HTTP and network failures from an obsolete workspace schema request cannot clear the newly selected workspace; GitHub Actions run #425 passed.
 
 ## Verified
 - [x] Repository scaffold, README, safety principles, and progress tracker exist in `plDilipkumar/NexusOps`.
@@ -1589,3 +1589,21 @@ Last verified: 2026-11-04 — workspace switching remains available during schem
 
 ### Next milestone
 - [ ] Add a mocked browser race test where a delayed HTTP failure or network error from the previously selected workspace's schema request arrives after switching workspaces. Verify that stale failures cannot clear the active workspace schema, surface an obsolete error, or change the current loading state.
+
+
+## Stale workspace schema failures after switching — PR #9 (2026-11-04)
+
+- [x] Re-read this tracker and inspected the current feature branch/PR, dedicated Neon project `neurosql` and database `neurosql_db`, Vercel project/deployments, and the confirmed Render workspace/service/deploy history before selecting this milestone.
+- [x] Added `testStaleWorkspaceSchemaFailureCannotOverwriteNewSelection` to `frontend/tests/durableSessionFlows.e2e.mjs`, with separate HTTP and network-failure cases. Each case delays the initial Analytics schema request, switches to Reporting, waits for Reporting's schema to load successfully, and only then releases the obsolete Analytics request as either HTTP 503 or a network abort.
+- [x] Both cases verify the active Reporting schema remains rendered, the selected workspace remains Reporting, no obsolete alert is shown, the completed loading state is preserved, and no stale Analytics schema appears. They also verify the expected bearer/workspace headers, no token in the URL, no browser-storage persistence, and no unmocked API calls. All API responses are intercepted and mocked.
+- [x] GitHub Actions run #425 (ID `41763506282`, https://github.com/plDilipkumar/NexusOps/actions/runs/41763506282) passed on final code commit `11312b829d09c8b203a8d2e853f9041318ccb40d`. Backend Maven verification, disposable PostgreSQL 17 integration, frontend unit tests/build, responsive navigation, account-onboarding browser tests, and durable-session browser tests all passed. The durable-session suite now includes 27 browser scenarios (the previous 25 plus the HTTP 503 and network-abort stale-workspace cases). TypeScript compilation and the Vite production build passed. Production API/database smoke was skipped as expected for a pull-request run.
+- [x] No backend/API implementation change was needed: `loadDurableSchema` already checks the request-generation guard before processing a response, in its catch handler, and in its finally handler. The new regression tests demonstrate that stale HTTP and network failures cannot clear the newer workspace's schema, surface an obsolete error, or clear the active request's loading state.
+- [x] Read-only Neon inspection reconfirmed free-tier project `neurosql` (PostgreSQL 17, Singapore), ready production branch `main` (`br-empty-credit-b360dmpc`), and dedicated database `neurosql_db` (PostgreSQL 17.11). Production main has no application tables in any non-system schema. The role inventory includes Neon-managed roles plus `neurosql_owner` (LOGIN, CREATEDB, CREATEROLE) and `token_roles` (NOLOGIN); the managed `cloud_admin` role is a superuser LOGIN. There is still no least-privileged NeuroSQL application LOGIN role, and `neurosql_owner` is too privileged for application runtime use.
+- [x] Read-only inspection of review branch `br-silent-cherry-b3k2vqtj` confirmed the eight proposed tables reside in schema `neurosql_app`: `account_action_tokens`, `app_users`, `auth_login_rate_limits`, `query_history`, `saved_queries`, `user_sessions`, `workspace_memberships`, and `workspaces`. `neurosql_auth_runtime` remains NOLOGIN. No production or review-branch SQL/schema/role writes were made in this run.
+- [x] Vercel project `neurosql` remains linked to `plDilipkumar/NexusOps` through deployment metadata and is on the Hobby/free team. Project metadata reports `live=false`; the latest inspected production-target deployment is READY for older `main` commit `6425ab4`. The latest feature-branch preview visible in the deployment listing is for commit `ebc8b24`; no deployment for this run's commit `11312b8` was present at inspection time.
+- [x] Render service `neurosql-api` remains on the free plan in the confirmed Dilip Kumar workspace, Singapore region, linked to `plDilipkumar/NexusOps` branch `main`, Docker context `backend`, with commit auto-deploy enabled. Its latest live deployment remains `dep-dbgfqe6gekts738l9eng` for commit `746d58d`. No feature-branch deployment or environment change was made.
+- [ ] PR #9 remains open and unmerged; schema PR #7 remains a draft and unapproved. Production durable authentication, shared throttling, SQL execution/EXPLAIN, and AI remain blocked on explicit V1–V6 schema approval, a least-privileged production application LOGIN and SQL-read-only LOGIN, secure HMAC configuration, deliberate SMTP/provider configuration, and deployment/smoke verification.
+- [x] No production database writes/migrations, role changes, Render/Vercel deployments, environment changes, credentials, or paid resources were introduced.
+
+### Next milestone
+- [ ] Add mocked browser coverage for switching workspaces while a read-only SQL query or EXPLAIN request is in flight. Verify that the previous workspace's execution is cancelled/invalidated, late results and errors cannot appear under the newly selected workspace, and query/EXPLAIN loading state is reset safely.
