@@ -795,7 +795,7 @@ async function testSupersededLoginResponseCannotReplaceNewSession({ stage }) {
 }
 
 
-async function testAccountFlowSwitchSupersedesPendingBootstrap({ stage, buttonName, heading, issuedToken }) {
+async function testAccountFlowSwitchSupersedesPendingBootstrap({ stage, buttonName, heading, issuedToken, revocationFailure = null }) {
   assert.ok(stage === "identity" || stage === "workspaces", "Only identity and workspace bootstrap stages are supported");
   const page = await browser.newPage();
   const authorization = "Bearer " + issuedToken;
@@ -856,6 +856,20 @@ async function testAccountFlowSwitchSupersedesPendingBootstrap({ stage, buttonNa
     },
     "/api/auth/logout": async route => {
       requests.logout.push(route.request().headers().authorization);
+      if (revocationFailure === "network") {
+        await route.abort("failed");
+        markRevocationCompleted();
+        return;
+      }
+      if (revocationFailure === "http") {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "sensitive server failure detail" }),
+        });
+        markRevocationCompleted();
+        return;
+      }
       await route.fulfill({ status: 204 });
       markRevocationCompleted();
     },
@@ -891,7 +905,16 @@ async function testAccountFlowSwitchSupersedesPendingBootstrap({ stage, buttonNa
     assert.deepEqual(requests.logout, [authorization], "The issued provisional session must be revoked after navigation");
     assert.equal(await page.getByText("Signed in as bootstrap-navigation@example.com", { exact: false }).count(), 0,
       "A superseded bootstrap must not install an authenticated identity");
-    assert.equal(await page.getByRole("alert").count(), 0, "A stale bootstrap must not replace the selected account-flow screen with an error");
+    if (revocationFailure) {
+      const alert = page.getByRole("alert");
+      await alert.waitFor({ state: "visible" });
+      const warning = await alert.innerText();
+      assert.ok(warning.includes("The selected account flow remains open, but the server could not confirm revocation of the provisional session. It may remain valid until it expires."));
+      assert.equal(warning.includes(issuedToken), false, "The provisional bearer token must never appear in the warning");
+      assert.equal(warning.includes("sensitive server failure detail"), false, "Server response details must never be rendered");
+    } else {
+      assert.equal(await page.getByRole("alert").count(), 0, "A successfully revoked stale bootstrap must not show a warning");
+    }
     assert.equal(await page.getByRole("heading", { name: "Sign in to NeuroSQL", exact: true }).count(), 0,
       "The late bootstrap response must not return the user to sign-in");
     assert.equal(page.url().includes(issuedToken), false);
@@ -1075,6 +1098,34 @@ try {
     buttonName: "Create account",
     heading: "Create your NeuroSQL account",
     issuedToken: "N".repeat(43),
+  });
+  await testAccountFlowSwitchSupersedesPendingBootstrap({
+    stage: "identity",
+    buttonName: "Forgot password?",
+    heading: "Reset your password",
+    issuedToken: "O".repeat(43),
+    revocationFailure: "http",
+  });
+  await testAccountFlowSwitchSupersedesPendingBootstrap({
+    stage: "identity",
+    buttonName: "Forgot password?",
+    heading: "Reset your password",
+    issuedToken: "P".repeat(43),
+    revocationFailure: "network",
+  });
+  await testAccountFlowSwitchSupersedesPendingBootstrap({
+    stage: "workspaces",
+    buttonName: "Create account",
+    heading: "Create your NeuroSQL account",
+    issuedToken: "Q".repeat(43),
+    revocationFailure: "http",
+  });
+  await testAccountFlowSwitchSupersedesPendingBootstrap({
+    stage: "workspaces",
+    buttonName: "Create account",
+    heading: "Create your NeuroSQL account",
+    issuedToken: "R".repeat(43),
+    revocationFailure: "network",
   });
 } finally {
   await browser?.close();
