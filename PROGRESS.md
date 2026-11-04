@@ -1,5 +1,35 @@
 # NeuroSQL Progress
 
+## Run 3 verification — 2026-11-04 13:23 IST
+
+### Repository and CI
+- Inspected the current default branch, pull requests, recent workflow runs, and full repository tree. Main has no open PRs. Latest code commit remains `3d4d8cf52ab81311a5263ea4f407fa9b790755d4`; latest tracker commit before this entry was `44506c8751030c942f49f825b25f65807ee503e8`.
+- Main CI run #479 (`41791947443`) completed successfully with all five jobs: backend tests, PostgreSQL 17 durable-auth/read-only SQL integration, frontend build/browser flows, V1–V7 schema/runtime-role contract on ephemeral PostgreSQL, and production API/database smoke. Exact backend report from PR run #478: 388 tests, 0 failures, 0 errors, 71 expected external/database-gated skips; PostgreSQL 17 integration 71/71. Run #479's five job conclusions are all success.
+- The frontend browser job covered registration, verification and recovery mock flows; durable login, workspace switching, SQL cancellation, EXPLAIN invalidation, and superseded-response races. The 12 sign-out/session-expiry in-flight SQL/EXPLAIN combinations remain covered.
+
+### Temporary Neon V7 verification
+- Created free temporary Neon branch `br-shy-star-b31qx5c6` (`neurosql-v7-role-validation-20261104`) from production main `br-empty-credit-b360dmpc`; the branch inherited the approved V1–V6 schema. Applied the current repository migration `docs/database/proposed/V7__read_only_sql_execution_role.sql` only to this temporary branch.
+- V7 created `neurosql_sql_readonly` as NOLOGIN, NOINHERIT, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS; it has CONNECT but no database CREATE and no access to `neurosql_app`.
+- Used a Neon-managed temporary LOGIN principal on this branch with membership `INHERIT TRUE`, `SET FALSE`, and no ADMIN OPTION. Verified SELECT succeeds only on the explicitly granted probe table; INSERT, UPDATE, DELETE, TRUNCATE, CREATE, and reads of `neurosql_app.app_users` and `neurosql_app.user_sessions` are denied. Runtime checks confirmed inherited group use, no SET ROLE capability, CONNECT true, CREATE false; an explicit `SET ROLE neurosql_sql_readonly` was denied.
+- The first attempt to run the repository's disposable-PostgreSQL test script verbatim under Neon owner credentials failed because the owner connection cannot `SET ROLE` to a newly created LOGIN role. The test was rerun using a Neon-managed LOGIN principal and the effective membership/grant behavior above was verified. The existing CI contract also passes on disposable PostgreSQL 17.
+- This branch contains isolated probe objects and a temporary test LOGIN; no production branch, production roles, production data, or credentials in source control were changed.
+
+### Current production inspection
+- Neon project `neurosql`, database `neurosql_db`, PostgreSQL 17. Production main still contains the eight V1–V6 application tables, all empty. Production roles are `neurosql_owner` and NOLOGIN `neurosql_auth_runtime`; no production SQL-read-only group or credential-bearing application LOGIN exists. V7 was not applied to main.
+- Render service `neurosql-api` remains Free with auto-deploy enabled. Deployment `dep-dbldrsijnfac73fnea3g` is LIVE for code commit `3d4d8cf`; main CI production smoke job `126448872670` succeeded after deployment and returned UP for `neurosql_db`, PostgreSQL 17.11. A direct request-log query for the health path returned no matching request entries; this is not treated as a health failure because the post-deploy smoke succeeded.
+- Vercel project `neurosql` has latest production deployment `dpl_D2emjyhMzPDiHkNBBYNtFSL8uzkn` READY for tracker commit `44506c8`; the frontend URL returned HTTP 200 and the expected NeuroSQL app shell/title. Project metadata still reports `live=false` despite READY production deployments. Production environment inventory returned zero visible variables and zero hidden production variables.
+- The Vercel fetch connector cannot fetch the Render URL (it resolves only Vercel deployments); no secrets were read or exposed. Render's available connector supports environment updates but not safe environment-variable inventory/readback.
+
+### Release gates still outstanding
+1. Production auth LOGIN principal and membership for `neurosql_auth_runtime` require explicit approval; the earlier approval covered PR #7 and V1–V6, not a credential-bearing production LOGIN role.
+2. V7 and a separate SQL-read-only production LOGIN principal require explicit approval before production changes. Keep SQL execution and EXPLAIN disabled.
+3. SMTP credentials and verified sender/domain settings are unavailable; do not invent them. Keep email verification and password-reset delivery disabled.
+4. Gemini key presence cannot be independently verified from Render, and no live provider request has been made. Keep AI disabled until key, auth, schema, and SQL safety gates are independently verified.
+5. Production login, workspace isolation, email delivery, SQL execution/history, and live AI behavior are not end-to-end verified. Keep production feature flags disabled.
+
+No paid resources, destructive operations, cross-project databases, production schema/role changes, or source-controlled credentials were introduced in this run.
+
+
 Last verified: 2026-11-04 — main code commit `3d4d8cf52ab81311a5263ea4f407fa9b790755d4` (PR #10 squash-merged); main CI run #479 passed all five jobs; PR CI run #478 passed all four PR jobs (388 backend tests, 71 expected database-gated skips; 71/71 PostgreSQL 17 integration; frontend build and browser checks; ephemeral schema/V7 contract). Render deployment `dep-dbldrsijnfac73fnea3g` is LIVE for `3d4d8cf`; post-deploy smoke rerun job `126448872670` returned `status=UP`, `database=neurosql_db`, PostgreSQL `17.11`. Vercel deployment `dpl_KthTR2fB8mmZX67Vb97TDdniNFFE` is READY and assigned to `neurosql.vercel.app`.
 
 ## Current release state — 2026-11-04
