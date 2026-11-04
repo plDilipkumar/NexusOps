@@ -1,6 +1,6 @@
 # NeuroSQL — release progress
 
-Last verified: 2026-11-04 12:52 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
+Last verified: 2026-11-04 12:54 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
 
 ## Current release state
 
@@ -141,3 +141,8 @@ No Neon production schema or roles were changed. The durable-auth guard is condi
 - No production schema or role changes were made. V1–V6 remain the only approved production migrations. V7/V8 and production LOGIN identities remain gated.
 - Release blockers remain: explicit approval for a dedicated production auth LOGIN and production V7/V8 plus a separate SQL-read-only LOGIN; SMTP credentials and verified sender; independently verifiable Gemini key and a live provider test. Production auth/workspace isolation, SQL execution/history and AI remain disabled pending these gates. Render environment readback is unavailable; Vercel production env inventory remains empty and frontend uses the source API URL fallback.
 - No paid resources, destructive operations, cross-project database reuse, or source-controlled credentials were introduced.
+
+### Additional production role-membership audit — 2026-11-04 12:54 UTC
+
+- Read-only `pg_auth_members` inspection on Neon main confirms `neurosql_owner` is a member of Neon-managed `neon_superuser` with `INHERIT TRUE, SET TRUE`, and a member of `neurosql_auth_runtime` with `INHERIT FALSE, SET FALSE, ADMIN TRUE`. Combined with CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS, this login is categorically unsuitable for application runtime use. The durable-auth startup guard correctly rejects it. No production role membership or attribute was changed.
+- Temporary-branch probe LOGIN roles remain `rolcanlogin=false`; they have no remaining memberships in `neurosql_auth_runtime` or `neurosql_sql_readonly`.
