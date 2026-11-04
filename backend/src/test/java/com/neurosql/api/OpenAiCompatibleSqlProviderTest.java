@@ -58,7 +58,7 @@ class OpenAiCompatibleSqlProviderTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         OpenAiCompatibleSqlProvider provider =
-                new OpenAiCompatibleSqlProvider(builder.build(), ENDPOINT, API_KEY, "test-model");
+                new OpenAiCompatibleSqlProvider(builder.build(), new ObjectMapper(), ENDPOINT, API_KEY, "test-model");
 
         server.expect(requestTo(ENDPOINT))
                 .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
@@ -81,10 +81,10 @@ class OpenAiCompatibleSqlProviderTest {
                 client, new ObjectMapper(), "http://provider.example.test/chat", API_KEY, "test-model"))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new OpenAiCompatibleSqlProvider(
-                client, "https://user:password@provider.example.test/chat", API_KEY, "test-model"))
+                client, new ObjectMapper(), "https://user:password@provider.example.test/chat", API_KEY, "test-model"))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new OpenAiCompatibleSqlProvider(
-                client, "https://provider.example.test/chat?key=secret", API_KEY, "test-model"))
+                client, new ObjectMapper(), "https://provider.example.test/chat?key=secret", API_KEY, "test-model"))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -93,7 +93,7 @@ class OpenAiCompatibleSqlProviderTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         OpenAiCompatibleSqlProvider provider =
-                new OpenAiCompatibleSqlProvider(builder.build(), ENDPOINT, API_KEY, "test-model");
+                new OpenAiCompatibleSqlProvider(builder.build(), new ObjectMapper(), ENDPOINT, API_KEY, "test-model");
 
         server.expect(requestTo(ENDPOINT))
                 .andRespond(withSuccess("""
@@ -109,7 +109,7 @@ class OpenAiCompatibleSqlProviderTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         OpenAiCompatibleSqlProvider provider =
-                new OpenAiCompatibleSqlProvider(builder.build(), ENDPOINT, API_KEY, "test-model");
+                new OpenAiCompatibleSqlProvider(builder.build(), new ObjectMapper(), ENDPOINT, API_KEY, "test-model");
         String oversized = "x".repeat(OpenAiCompatibleSqlProvider.MAX_PROVIDER_CONTENT_CHARACTERS + 1);
 
         server.expect(requestTo(ENDPOINT))
