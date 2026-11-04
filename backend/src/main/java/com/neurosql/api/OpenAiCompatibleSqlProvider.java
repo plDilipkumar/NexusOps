@@ -1,10 +1,13 @@
 package com.neurosql.api;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.http.HttpHeaders;
@@ -25,17 +28,21 @@ import org.springframework.web.client.RestClientException;
                 + "'${neurosql.auth.shared-rate-limit-enabled:false}' == 'true'")
 public class OpenAiCompatibleSqlProvider implements AiSqlProvider {
     static final int MAX_PROVIDER_CONTENT_CHARACTERS = 16_000;
+    static final int MAX_PROVIDER_RESPONSE_BYTES = 64 * 1024;
     private final RestClient restClient;
+    private final ObjectMapper objectMapper;
     private final URI endpoint;
     private final String apiKey;
     private final String model;
 
     public OpenAiCompatibleSqlProvider(
             RestClient aiSqlProviderRestClient,
+            ObjectMapper objectMapper,
             @Value("${neurosql.ai.sql-generation.endpoint:}") String endpoint,
             @Value("${neurosql.ai.sql-generation.api-key:}") String apiKey,
             @Value("${neurosql.ai.sql-generation.model:}") String model) {
         this.restClient = aiSqlProviderRestClient;
+        this.objectMapper = objectMapper;
         this.endpoint = validateEndpoint(endpoint);
         this.apiKey = validateApiKey(apiKey);
         this.model = validateModel(model);
@@ -60,8 +67,26 @@ public class OpenAiCompatibleSqlProvider implements AiSqlProvider {
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(body)
-                    .retrieve()
-                    .body(JsonNode.class);
+                    .exchange((request, clientResponse) -> {
+                        if (!clientResponse.getStatusCode().is2xxSuccessful()) {
+                            throw new ProviderUnavailableException();
+                        }
+                        long contentLength = clientResponse.getHeaders().getContentLength();
+                        if (contentLength > MAX_PROVIDER_RESPONSE_BYTES) {
+                            throw new ProviderUnavailableException();
+                        }
+                        try (InputStream responseBody = clientResponse.getBody()) {
+                            // Read at most one byte beyond the limit so unknown-length/chunked
+                            // responses cannot force an unbounded JSON allocation.
+                            byte[] payload = responseBody.readNBytes(MAX_PROVIDER_RESPONSE_BYTES + 1);
+                            if (payload.length > MAX_PROVIDER_RESPONSE_BYTES) {
+                                throw new ProviderUnavailableException();
+                            }
+                            return objectMapper.readTree(payload);
+                        } catch (IOException | RuntimeException invalidResponse) {
+                            throw new ProviderUnavailableException();
+                        }
+                    });
         } catch (RestClientException failure) {
             throw new ProviderUnavailableException();
         }
