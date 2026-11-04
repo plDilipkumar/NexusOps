@@ -1,16 +1,16 @@
 # NeuroSQL — release progress
 
-Last verified: 2026-11-04 11:59 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
+Last verified: 2026-11-04 12:52 UTC. Timestamps below use UTC. Earlier detailed run notes remain in Git history; this file is kept concise to avoid stale duplicated status sections.
 
 ## Current release state
 
 - Repository: [plDilipkumar/NexusOps](https://github.com/plDilipkumar/NexusOps)
 - Current application commit: `2d20070500ae8cc4b194eabfe0f3fb99915b8f97` — PR #13, fail-closed durable-auth database identity guard.
-- Previous tracker commit: `51186497baffdbc5dc645facc0dc44ae8c2947a9`; PR #13 merge commit is the latest application-code commit.
+- Latest tracker commit before this run: `687f2f9a1e97b72cac5c81bd21e4ea17a5322c73`; PR #13 merge commit `2d20070500ae8cc4b194eabfe0f3fb99915b8f97` remains the latest application-code commit.
 - Open PRs: 0.
-- Last verified main CI: run #483 (`41817996488`), all five jobs passed. PR #13 CI run #485 (`41824714562`) passed all four PR jobs; main push CI for merge commit is not surfaced by the available workflow-run listing. PR-run production smoke was skipped as expected.
-- Current backend deployment: Render `dep-dblh208u01pc73a6onbg`, LIVE, for application commit `187f4802`.
-- Latest frontend deployment: Vercel `dpl_4f8THEVF6NHk3shy3RSDHdKD6WwT`, READY, for application commit `2d200705`; verified alias `neurosql.vercel.app`.
+- Last verified main CI: run #486 (`41824995526`), all five jobs passed. Backend 391 tests passed with 0 failures/errors and 71 expected skips; PostgreSQL 17 integration 71/71; frontend test/build/browser checks passed; schema V1–V8 contract passed. The production smoke job was rerun after the latest Render deployment as job `126584307055` and passed.
+- Current backend deployment: Render `dep-dblijeou01pc73aan030`, LIVE for tracker commit `687f2f9a1e97b72cac5c81bd21e4ea17a5322c73`, containing application commit `2d20070500ae8cc4b194eabfe0f3fb99915b8f97`.
+- Latest frontend deployment: Vercel `dpl_DBJFP81q4hgKvYfn9nG6XXXqFapy`, READY for tracker commit `687f2f9a1e97b72cac5c81bd21e4ea17a5322c73`; verified alias `neurosql.vercel.app`.
 - Production database: Neon project `neurosql` (`lingering-dew-88806235`), main branch `br-empty-credit-b360dmpc`, database `neurosql_db`, PostgreSQL 17.11, Free plan.
 
 ## Latest application milestone — personal workspace bootstrap
@@ -126,3 +126,18 @@ The new `DurableAuthDatabaseRoleGuard` runs only when durable sessions are enabl
 - GitHub combined commit status reports Vercel success. The connected workflow-run listing only exposes pull-request-triggered runs, so no claim is made that the post-merge push CI or production smoke completed.
 
 No Neon production schema or roles were changed. The durable-auth guard is conditional and has not been activated in production. Production auth/SQL/AI/email gates remain disabled pending dedicated LOGIN role approval, V7/V8 production approval, SMTP credentials, and verifiable Gemini/provider credentials.
+
+
+## Run 8 audit — 2026-11-04 12:52 UTC
+
+- Re-read this tracker and inspected the repository/default branch, open PRs, main CI run #486, Neon project/main/temporary branch, Vercel project and production deployments, and Render service/deployments/events/logs.
+- Repository main application commit remains PR #13 merge `2d20070500ae8cc4b194eabfe0f3fb99915b8f97`; no open PRs.
+- Main CI run #486 (`41824995526`) passed all five jobs. Backend: 391 tests, 0 failures, 0 errors, 71 expected database/external-service skips. PostgreSQL 17 integration: 71/71. Frontend production build and unit/browser checks passed. Responsive navigation passed at 1440, 851, 850, 390, and 320 px; account/session flows use a mock API. The 12 in-flight SQL/EXPLAIN sign-out/session-expiry race combinations remain covered by the passing browser suite. V1–V8 schema and least-privilege contracts passed on disposable PostgreSQL 17.
+- Render did not auto-deploy the PR #13 merge despite autoDeploy being enabled. After confirming CI success and no deployment for the merged code, a deployment was triggered: `dep-dblijeou01pc73aan030`, source commit `687f2f9a1e97b72cac5c81bd21e4ea17a5322c73` (tracker-only commit containing app commit `2d200705`). Build succeeded at `2026-11-04T12:50:01Z`; Spring Boot started at `12:51:19Z`; Render emitted `Your service is live` and `deploy_ended/succeeded` at `12:51:24Z`. Runtime log shows Java 21.0.13 and process started by an unprivileged user marker rather than root; CI's production Docker UID/GID assertion remains green.
+- Targeted post-deployment rerun of GitHub smoke job `126584307055` passed at `2026-11-04T12:51:43Z`, returning `status=UP`, database `neurosql_db`, PostgreSQL `17.11 (9045acd)`. This is post-deployment health evidence for the latest Render release.
+- Vercel production deployment `dpl_DBJFP81q4hgKvYfn9nG6XXXqFapy` is READY, aliases include verified custom domain `neurosql.vercel.app`, source commit `687f2f9a1e97b72cac5c81bd21e4ea17a5322c73`. Project metadata still says `live=false` despite READY state and alias; treat as a metadata discrepancy.
+- Production Neon main (`br-empty-credit-b360dmpc`) was read-only inspected. All eight V1–V6 tables remain empty. `neurosql_owner` remains the only LOGIN and has elevated CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS attributes; `neurosql_auth_runtime` is NOLOGIN. Production V7/V8 grants are absent and `neurosql_sql_readonly` does not exist on main.
+- Temporary Neon branch `br-shy-star-b31qx5c6` was read-only rechecked. V7 group role and V8 column-scoped bootstrap grants are present. Auth runtime can INSERT only the named workspace and membership bootstrap columns; it cannot UPDATE membership role. Temporary auth/SQL probe roles have `rolcanlogin=false` and no remaining runtime-group membership. The earlier V7 probe still confirms no SQL write/DDL access and no access to `neurosql_app.app_users` through the read-only role.
+- No production schema or role changes were made. V1–V6 remain the only approved production migrations. V7/V8 and production LOGIN identities remain gated.
+- Release blockers remain: explicit approval for a dedicated production auth LOGIN and production V7/V8 plus a separate SQL-read-only LOGIN; SMTP credentials and verified sender; independently verifiable Gemini key and a live provider test. Production auth/workspace isolation, SQL execution/history and AI remain disabled pending these gates. Render environment readback is unavailable; Vercel production env inventory remains empty and frontend uses the source API URL fallback.
+- No paid resources, destructive operations, cross-project database reuse, or source-controlled credentials were introduced.
