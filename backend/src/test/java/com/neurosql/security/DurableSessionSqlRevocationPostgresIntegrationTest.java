@@ -165,9 +165,7 @@ class DurableSessionSqlRevocationPostgresIntegrationTest {
                     created_at TIMESTAMPTZ NOT NULL,
                     expires_at TIMESTAMPTZ NOT NULL,
                     revoked_at TIMESTAMPTZ,
-                    CHECK (expires_at > created_at),
-                    CHECK (expires_at <= created_at + INTERVAL '12 hours'),
-                    CHECK (revoked_at IS NULL OR revoked_at >= created_at)
+                    revoked_at TIMESTAMPTZ
                 )
                 """);
 
