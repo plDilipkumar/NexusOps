@@ -55,12 +55,23 @@ public class SqlExecutionController {
             HttpServletRequest servletRequest) {
         long startedAt = System.nanoTime();
         ActiveQueryRegistry.Handle activeQuery = null;
+        boolean successRecorded = false;
         try {
             activeQuery = beginCancellableExecution(authentication, servletRequest);
             ReadOnlyQueryExecutor.QueryResponse result = activeQuery == null
                     ? executor.execute(request.sql())
                     : executor.execute(request.sql(), activeQuery);
+            if (activeQuery != null && activeQuery.cancellationRequested()) {
+                throw new ReadOnlyQueryExecutor.QueryCancelledException();
+            }
             recordSuccessfulExecution(authentication, servletRequest, request.sql(), result);
+            successRecorded = true;
+            // Logout may race with the end of JDBC execution or query-history persistence.
+            // Keep the registry entry until this controller finishes so revocation can
+            // still suppress a result that has not yet been returned to the client.
+            if (activeQuery != null && activeQuery.cancellationRequested()) {
+                throw new ReadOnlyQueryExecutor.QueryCancelledException();
+            }
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
                     .body(result);
@@ -81,8 +92,10 @@ public class SqlExecutionController {
                     .cacheControl(CacheControl.noStore())
                     .body(new QueryError("The server is handling its maximum number of active queries.", List.of()));
         } catch (ReadOnlyQueryExecutor.QueryCancelledException cancelled) {
-            recordCanceledExecution(authentication, servletRequest, request.sql(),
-                    Math.max(0, (System.nanoTime() - startedAt) / 1_000_000));
+            if (!successRecorded) {
+                recordCanceledExecution(authentication, servletRequest, request.sql(),
+                        Math.max(0, (System.nanoTime() - startedAt) / 1_000_000));
+            }
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .cacheControl(CacheControl.noStore())
                     .body(new QueryError("The query was cancelled.", List.of()));
@@ -116,12 +129,13 @@ public class SqlExecutionController {
             HttpServletRequest servletRequest) {
         DurableSessionAuthenticationFilter.SessionPrincipal principal = durablePrincipal(authentication);
         UUID workspaceId = workspaceId(servletRequest);
-        if (principal == null || workspaceId == null) {
+        if (principal == null || principal.sessionId() == null || workspaceId == null) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .cacheControl(CacheControl.noStore())
                     .body(new QueryError("Query cancellation requires a durable workspace session.", List.of()));
         }
-        return switch (activeQueries.cancel(request.executionId(), principal.userId(), workspaceId)) {
+        return switch (activeQueries.cancel(
+                request.executionId(), principal.userId(), principal.sessionId(), workspaceId)) {
             case REQUESTED, ALREADY_REQUESTED -> ResponseEntity.accepted()
                     .cacheControl(CacheControl.noStore())
                     .body(new CancelResponse("CANCEL_REQUESTED"));
@@ -143,7 +157,7 @@ public class SqlExecutionController {
         }
         DurableSessionAuthenticationFilter.SessionPrincipal principal = durablePrincipal(authentication);
         UUID workspaceId = workspaceId(request);
-        if (principal == null || workspaceId == null) {
+        if (principal == null || principal.sessionId() == null || workspaceId == null) {
             throw new CancellationNotAvailableException();
         }
         try {
@@ -151,7 +165,7 @@ public class SqlExecutionController {
             if (!executionId.toString().equalsIgnoreCase(rawExecutionId)) {
                 throw new IllegalArgumentException("Non-canonical execution identifier.");
             }
-            return activeQueries.begin(executionId, principal.userId(), workspaceId);
+            return activeQueries.begin(executionId, principal.userId(), principal.sessionId(), workspaceId);
         } catch (IllegalArgumentException invalid) {
             throw new InvalidExecutionIdException();
         }
