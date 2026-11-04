@@ -16,8 +16,11 @@ import org.junit.jupiter.api.Test;
 
 class ActiveQueryRegistryTest {
     private static final UUID EXECUTION_ID = UUID.fromString("dc1bd6a0-9fd6-49d9-a65f-b4e8c6b08e1b");
+    private static final UUID OTHER_EXECUTION_ID = UUID.fromString("8c7c2f58-1e25-4e5e-bcb8-1a50c1a1c2a3");
     private static final UUID USER_ID = UUID.fromString("b4f41d45-68dc-4f7b-8df0-48e3f29e54c1");
     private static final UUID OTHER_USER_ID = UUID.fromString("a2a5b2cb-1d53-4f9d-b2a8-bcdb7b8f2b0f");
+    private static final UUID SESSION_ID = UUID.fromString("df4d1f5b-2e2f-4e5b-9a6c-9d0a0c7d6a11");
+    private static final UUID OTHER_SESSION_ID = UUID.fromString("cf5e2a1c-0a8a-4a3f-9c20-3e2a4b5c6d70");
     private static final UUID WORKSPACE_ID = UUID.fromString("b66c9e57-9e08-4b86-8f3f-65e8d9c60d6b");
     private static final UUID OTHER_WORKSPACE_ID = UUID.fromString("b6a8d11d-f9bd-46d9-8d84-1b90d31a5d28");
 
@@ -43,6 +46,62 @@ class ActiveQueryRegistryTest {
         assertThat(registry.activeCount()).isZero();
         assertThat(registry.cancel(EXECUTION_ID, USER_ID, WORKSPACE_ID))
                 .isEqualTo(ActiveQueryRegistry.CancelResult.NOT_FOUND);
+    }
+
+    @Test
+    void cancellationRequiresTheExactDurableSession() throws Exception {
+        ActiveQueryRegistry.Handle handle =
+                registry.begin(EXECUTION_ID, USER_ID, SESSION_ID, WORKSPACE_ID);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        handle.attachStatement(statement);
+
+        assertThat(registry.cancel(EXECUTION_ID, USER_ID, OTHER_SESSION_ID, WORKSPACE_ID))
+                .isEqualTo(ActiveQueryRegistry.CancelResult.NOT_FOUND);
+        verifyNoInteractions(statement);
+
+        assertThat(registry.cancel(EXECUTION_ID, USER_ID, SESSION_ID, WORKSPACE_ID))
+                .isEqualTo(ActiveQueryRegistry.CancelResult.REQUESTED);
+        verify(statement).cancel();
+        handle.close();
+    }
+
+    @Test
+    void sessionRevocationCancelsOnlyQueriesOwnedByThatSession() throws Exception {
+        ActiveQueryRegistry.Handle revokedHandle =
+                registry.begin(EXECUTION_ID, USER_ID, SESSION_ID, WORKSPACE_ID);
+        ActiveQueryRegistry.Handle otherHandle =
+                registry.begin(OTHER_EXECUTION_ID, USER_ID, OTHER_SESSION_ID, WORKSPACE_ID);
+        PreparedStatement revokedStatement = mock(PreparedStatement.class);
+        PreparedStatement otherStatement = mock(PreparedStatement.class);
+        revokedHandle.attachStatement(revokedStatement);
+        otherHandle.attachStatement(otherStatement);
+
+        assertThat(registry.cancelSession(SESSION_ID)).isEqualTo(1);
+        assertThat(revokedHandle.cancellationRequested()).isTrue();
+        assertThat(otherHandle.cancellationRequested()).isFalse();
+        verify(revokedStatement).cancel();
+        verifyNoInteractions(otherStatement);
+        assertThat(registry.cancelSession(SESSION_ID)).isZero();
+
+        revokedHandle.close();
+        otherHandle.close();
+        assertThat(registry.activeCount()).isZero();
+    }
+
+    @Test
+    void sessionRevocationBeforeStatementAttachmentPreventsExecution() throws Exception {
+        ActiveQueryRegistry.Handle handle =
+                registry.begin(EXECUTION_ID, USER_ID, SESSION_ID, WORKSPACE_ID);
+        PreparedStatement statement = mock(PreparedStatement.class);
+
+        assertThat(registry.cancelSession(SESSION_ID)).isEqualTo(1);
+        assertThatThrownBy(() -> handle.attachStatement(statement))
+                .isInstanceOf(SQLException.class)
+                .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).isEqualTo("57014"));
+        verify(statement).close();
+
+        handle.close();
+        assertThat(registry.activeCount()).isZero();
     }
 
     @Test
