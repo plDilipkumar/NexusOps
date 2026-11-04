@@ -26,6 +26,7 @@ public class AiSqlGenerationService {
     static final int MAX_COLUMNS_PER_TABLE = 25;
     static final int MAX_TOTAL_COLUMNS = 400;
     static final int MAX_SCHEMA_CONTEXT_JSON_CHARS = 16_000;
+    static final int MAX_PROVIDER_OUTPUT_CHARACTERS = 16_000;
 
     private static final String SYSTEM_PROMPT = """
             You generate PostgreSQL 17 read-only SQL drafts for a database workspace.
@@ -163,7 +164,8 @@ public class AiSqlGenerationService {
     }
 
     private static String extractSql(String providerOutput) {
-        if (providerOutput == null || providerOutput.isBlank()) {
+        if (providerOutput == null || providerOutput.isBlank()
+                || providerOutput.length() > MAX_PROVIDER_OUTPUT_CHARACTERS) {
             throw new AiSqlProvider.ProviderUnavailableException();
         }
         String output = providerOutput.trim();
