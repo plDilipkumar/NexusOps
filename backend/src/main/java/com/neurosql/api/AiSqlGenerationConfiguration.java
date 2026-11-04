@@ -25,6 +25,8 @@ public class AiSqlGenerationConfiguration {
 
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(connectTimeout)
+                // Never forward the bearer API key to a redirect destination.
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(readTimeout);
