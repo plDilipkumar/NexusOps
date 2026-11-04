@@ -1447,6 +1447,262 @@ async function testAccountFlowBackSupersedesPendingLogin() {
   });
 }
 
+
+async function installDeferredSqlFetch(page) {
+  await page.addInitScript(() => {
+    const pending = [];
+    window.__neuroSqlRequests = pending;
+    window.__completeNeuroSqlRequest = (index, status, body) => {
+      const entry = pending[index];
+      if (!entry || entry.completed) throw new Error("The deferred SQL request is missing or already completed.");
+      entry.completed = true;
+      entry.resolve(new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }));
+    };
+
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = (input, init = {}) => {
+      const rawUrl = typeof input === "string" ? input : input.url;
+      const url = new URL(rawUrl, window.location.href);
+      if (url.pathname !== "/api/sql/execute" && url.pathname !== "/api/sql/explain") {
+        return nativeFetch(input, init);
+      }
+
+      const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
+      return new Promise(resolve => {
+        const entry = {
+          path: url.pathname,
+          method: init.method ?? (input instanceof Request ? input.method : "GET"),
+          headers: Object.fromEntries(headers.entries()),
+          body: typeof init.body === "string" ? init.body : null,
+          aborted: false,
+          completed: false,
+          resolve,
+        };
+        if (init.signal) {
+          entry.aborted = init.signal.aborted;
+          init.signal.addEventListener("abort", () => { entry.aborted = true; }, { once: true });
+        }
+        pending.push(entry);
+      });
+    };
+  });
+}
+
+function deferredSqlSuccess(operation, marker) {
+  if (operation === "query") {
+    return {
+      columns: [{ name: "workspace_marker", databaseType: "text", jdbcType: 12 }],
+      rows: [[marker]],
+      rowCount: 1,
+      truncated: false,
+      executionTimeMillis: 4,
+    };
+  }
+  return {
+    planJson: JSON.stringify([{
+      Plan: {
+        "Node Type": "Seq Scan",
+        "Relation Name": marker,
+        "Startup Cost": 0,
+        "Total Cost": 1,
+        "Plan Rows": 1,
+        "Plan Width": 4,
+      },
+    }]),
+    elapsedTimeMillis: 4,
+    analyze: false,
+  };
+}
+
+async function testWorkspaceSwitchInvalidatesInFlightSql({ operation, staleOutcome }) {
+  const page = await browser.newPage();
+  await installDeferredSqlFetch(page);
+  const requests = { schema: [], cancellation: [] };
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  let markCancellationStarted;
+  const cancellationStarted = new Promise(resolve => { markCancellationStarted = resolve; });
+  const operationPath = operation === "query" ? "/api/sql/execute" : "/api/sql/explain";
+  const runningButton = operation === "query" ? /Running…/ : /Planning…/;
+  const resultRegion = operation === "query" ? "SQL query results" : "PostgreSQL execution plan";
+  const staleMarker = operation === "query" ? "analytics_only_value" : "analytics_only_table";
+  const freshMarker = operation === "query" ? "reporting_only_value" : "reporting_only_table";
+  const unexpected = await installApiMocks(page, {
+    "/api/auth/login": async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token, expiresAt }),
+      });
+    },
+    "/api/auth/me": async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ userId, sessionId, expiresAt }),
+      });
+    },
+    "/api/auth/workspaces": async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          { workspaceId: workspaceA, name: "Analytics", slug: "analytics", role: "OWNER" },
+          { workspaceId: workspaceB, name: "Reporting", slug: "reporting", role: "MEMBER" },
+        ]),
+      });
+    },
+    "/api/schema": async route => {
+      const headers = route.request().headers();
+      const workspaceId = headers["x-neurosql-workspace-id"];
+      requests.schema.push({ authorization: headers.authorization, workspaceId });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          database: workspaceId === workspaceA ? "neurosql_analytics" : "neurosql_reporting",
+          schemas: [{ name: workspaceId === workspaceA ? "analytics_schema" : "reporting_schema", tables: [] }],
+          tableCount: 0,
+          timestamp: "2026-11-04T00:00:03Z",
+        }),
+      });
+    },
+    "/api/sql/cancel": async route => {
+      const headers = route.request().headers();
+      const body = route.request().postDataJSON();
+      requests.cancellation.push({
+        authorization: headers.authorization,
+        workspaceId: headers["x-neurosql-workspace-id"],
+        executionId: body.executionId,
+      });
+      markCancellationStarted();
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "CANCEL_REQUESTED" }),
+      });
+    },
+  });
+
+  try {
+    await openDurableSignIn(page);
+    await signIn(page);
+    await waitForWorkspaceReady(page, workspaceA);
+    await page.getByText("analytics_schema", { exact: true }).waitFor({ state: "visible" });
+
+    const navigation = page.getByRole("navigation", { name: "Workspace navigation" });
+    await navigation.getByRole("button", { name: "Workspace", exact: true }).click();
+    const startButton = operation === "query"
+      ? page.getByRole("button", { name: /Run query/ })
+      : page.getByRole("button", { name: /Explain plan/ });
+    assert.equal(await startButton.isEnabled(), true, operation + " should be enabled for the signed-in workspace");
+    await startButton.click();
+    await page.waitForFunction(() => window.__neuroSqlRequests?.length === 1);
+
+    const oldRequest = await page.evaluate(() => {
+      const { path, method, headers, body } = window.__neuroSqlRequests[0];
+      return { path, method, headers, body };
+    });
+    assert.equal(oldRequest.path, operationPath);
+    assert.equal(oldRequest.method, "POST");
+    assert.equal(oldRequest.headers.authorization, "Bearer " + token);
+    assert.equal(oldRequest.headers["x-neurosql-workspace-id"], workspaceA,
+      "The in-flight " + operation + " must remain scoped to Analytics");
+    assert.equal(JSON.parse(oldRequest.body).sql.length > 0, true);
+    if (operation === "query") {
+      assert.match(oldRequest.headers["x-neurosql-execution-id"], /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    }
+
+    await navigation.getByRole("button", { name: "Schema explorer", exact: true }).click();
+    const workspaceSelect = page.getByLabel("Active workspace");
+    await workspaceSelect.selectOption(workspaceB);
+    await page.getByText("reporting_schema", { exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Refresh schema", exact: true }).waitFor({ state: "visible" });
+
+    const oldRequestWasAborted = await page.evaluate(() => window.__neuroSqlRequests[0].aborted);
+    assert.equal(oldRequestWasAborted, true,
+      "Switching workspaces must abort the previous " + operation + " transport");
+    if (operation === "query") {
+      await Promise.race([
+        cancellationStarted,
+        delay(5000).then(() => { throw new Error("The previous workspace SQL execution was not cancelled"); }),
+      ]);
+      assert.deepEqual(requests.cancellation, [{
+        authorization: "Bearer " + token,
+        workspaceId: workspaceA,
+        executionId: oldRequest.headers["x-neurosql-execution-id"],
+      }], "Server-side cancellation must target the old execution and its original workspace");
+    } else {
+      assert.deepEqual(requests.cancellation, [], "EXPLAIN is invalidated client-side and must not call SQL execution cancellation");
+    }
+
+    await navigation.getByRole("button", { name: "Workspace", exact: true }).click();
+    assert.equal(await page.getByRole("region", { name: resultRegion }).count(), 0,
+      "Switching workspaces must clear the previous " + operation + " result and loading panel");
+    assert.equal(await page.getByRole("alert").count(), 0);
+    assert.equal(await page.getByRole("button", { name: /Run query/ }).isEnabled(), true);
+    assert.equal(await page.getByRole("button", { name: /Explain plan/ }).isEnabled(), true);
+
+    await page.getByLabel("SQL editor").fill("SELECT 'reporting_only_value' AS workspace_marker");
+    const newStartButton = operation === "query"
+      ? page.getByRole("button", { name: /Run query/ })
+      : page.getByRole("button", { name: /Explain plan/ });
+    await newStartButton.click();
+    await page.waitForFunction(() => window.__neuroSqlRequests?.length === 2);
+    const newRequest = await page.evaluate(() => {
+      const { path, method, headers, body, aborted } = window.__neuroSqlRequests[1];
+      return { path, method, headers, body, aborted };
+    });
+    assert.equal(newRequest.path, operationPath);
+    assert.equal(newRequest.headers.authorization, "Bearer " + token);
+    assert.equal(newRequest.headers["x-neurosql-workspace-id"], workspaceB,
+      "The new " + operation + " must use the newly selected Reporting workspace");
+    assert.equal(newRequest.aborted, false);
+    assert.equal(JSON.parse(newRequest.body).sql, "SELECT 'reporting_only_value' AS workspace_marker");
+
+    const staleStatus = staleOutcome === "error" ? 503 : 200;
+    const staleBody = staleOutcome === "error"
+      ? { message: "Synthetic obsolete-workspace SQL failure" }
+      : deferredSqlSuccess(operation, staleMarker);
+    await page.evaluate(({ status, body }) => window.__completeNeuroSqlRequest(0, status, body), {
+      status: staleStatus,
+      body: staleBody,
+    });
+    await page.waitForTimeout(75);
+
+    await page.getByRole("button", { name: runningButton }).waitFor({ state: "visible" });
+    assert.equal(await page.getByRole("region", { name: resultRegion }).getByText(staleMarker, { exact: true }).count(), 0,
+      "A late " + staleOutcome + " from Analytics must not replace Reporting's active " + operation);
+    assert.equal(await page.getByRole("alert").count(), 0,
+      "A stale " + operation + " failure must not appear in the Reporting workspace");
+
+    await page.evaluate(({ body }) => window.__completeNeuroSqlRequest(1, 200, body), {
+      body: deferredSqlSuccess(operation, freshMarker),
+    });
+    await page.getByRole("region", { name: resultRegion }).getByText(freshMarker, { exact: true }).waitFor({ state: "visible" });
+    assert.equal(await page.getByRole("region", { name: resultRegion }).getByText(staleMarker, { exact: true }).count(), 0);
+    assert.equal(await page.getByRole("alert").count(), 0);
+    await page.getByRole("button", { name: operation === "query" ? /Run query/ : /Explain plan/ }).waitFor({ state: "visible" });
+
+    await navigation.getByRole("button", { name: "Schema explorer", exact: true }).click();
+    assert.equal(await workspaceSelect.inputValue(), workspaceB,
+      "The delayed old-workspace response must not change the active workspace selection");
+    assert.equal(await page.getByText("reporting_schema", { exact: true }).count(), 1);
+    assert.deepEqual(requests.schema.map(request => request.workspaceId), [workspaceA, workspaceB]);
+    assert.equal(page.url().includes(token), false);
+    await assertNoBrowserPersistence(page);
+    assert.equal(unexpected.length, 0, "The SQL workspace race must not make unexpected API requests");
+    console.log(
+      "Switching workspaces safely invalidates in-flight " + operation + " " + staleOutcome
+      + " responses; the newer workspace request remains active and wins (mock API only)",
+    );
+  } finally {
+    await page.close();
+  }
+}
+
 try {
   await waitForPreview();
   browser = await chromium.launch({ headless: true });
