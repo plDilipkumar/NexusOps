@@ -144,3 +144,59 @@ END
 $$;
 
 SELECT 'Least-privilege runtime grant contract passed; fixtures rolled back.' AS result;
+
+
+-- Verify the exact production login-membership shape expected by
+-- DurableAuthDatabaseRoleGuard. This probe exists only in disposable CI PostgreSQL.
+CREATE ROLE neurosql_auth_identity_probe
+    LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+
+GRANT neurosql_auth_runtime TO neurosql_auth_identity_probe
+    WITH INHERIT TRUE, SET FALSE, ADMIN FALSE;
+
+DO $$
+DECLARE
+    identity_safe BOOLEAN;
+BEGIN
+    SELECT (
+        r.rolcanlogin
+        AND r.rolinherit
+        AND NOT r.rolsuper
+        AND NOT r.rolcreatedb
+        AND NOT r.rolcreaterole
+        AND NOT r.rolreplication
+        AND NOT r.rolbypassrls
+        AND pg_has_role(r.rolname, 'neurosql_auth_runtime', 'MEMBER')
+        AND pg_has_role(r.rolname, 'neurosql_auth_runtime', 'USAGE')
+        AND NOT pg_has_role(r.rolname, 'neurosql_auth_runtime', 'SET')
+        AND has_schema_privilege(r.rolname, 'neurosql_app', 'USAGE')
+        AND NOT has_schema_privilege(r.rolname, 'neurosql_app', 'CREATE')
+        AND (
+            SELECT count(*) FROM pg_auth_members m WHERE m.member = r.oid
+        ) = 1
+        AND EXISTS (
+            SELECT 1
+              FROM pg_auth_members m
+              JOIN pg_roles g ON g.oid = m.roleid
+             WHERE m.member = r.oid
+               AND g.rolname = 'neurosql_auth_runtime'
+               AND m.inherit_option
+               AND NOT m.set_option
+               AND NOT m.admin_option
+        )
+    )
+      INTO identity_safe
+      FROM pg_roles r
+     WHERE r.rolname = 'neurosql_auth_identity_probe';
+
+    IF identity_safe IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'Dedicated auth runtime login identity contract failed';
+    END IF;
+END
+$$;
+
+REVOKE neurosql_auth_runtime FROM neurosql_auth_identity_probe;
+ALTER ROLE neurosql_auth_identity_probe NOLOGIN;
+DROP ROLE neurosql_auth_identity_probe;
+
+SELECT 'Dedicated durable-auth LOGIN identity contract passed.' AS result;
