@@ -1661,4 +1661,23 @@ Last verified: 2026-11-04 — in-flight SQL and EXPLAIN requests are aborted on 
 - [x] No production migrations/role changes, deployment/environment changes, secrets, paid resources, or destructive actions were introduced.
 
 ### Next milestone
-- [ ] Review the remaining SQL/EXPLAIN and AI provider implementation for production-readiness gaps, with particular attention to session revocation during EXPLAIN, provider timeout/redaction behavior, and least-privilege database identity checks. Keep all production flags disabled pending schema/role/secret approval.
+- [x] EXPLAIN session revocation/cancellation is now covered by the milestone below. Continue with AI provider timeout/redaction behavior and least-privilege database identity checks. Keep all production flags disabled pending schema/role/secret approval.
+
+
+## EXPLAIN session-revocation cancellation — PR #9 (2026-11-04)
+
+- [x] Re-read the feature-branch tracker and PR #9/#7, then rechecked CI, Neon project/branches/main roles and tables, Vercel production deployments/environment metadata, and Render service/deployment state before changing code.
+- [x] Found a concrete gap: `POST /api/sql/explain` used the read-only executor but did not register a durable-session execution handle, so logout could cancel regular SQL while an EXPLAIN request was not covered by the same session-scoped cancellation registry.
+- [x] Updated `SqlExecutionController` so EXPLAIN requests carrying the durable-session execution ID are registered against the authenticated user, session, and authorized workspace. Invalid IDs, unsupported legacy-owner cancellation, duplicate IDs, capacity limits, and cancellation now return bounded no-store responses.
+- [x] Updated `ReadOnlyQueryExecutor.explain` to attach its actual PostgreSQL PreparedStatement to the active-query handle, set the statement timeout, detect a cancellation flag before returning a plan, translate cancellation without exposing JDBC details, and always close the registry handle.
+- [x] Added a PostgreSQL 17 integration test proving a session revoked after registry registration but before PreparedStatement attachment prevents the EXPLAIN from reaching PostgreSQL and returns no plan. Existing HTTP integration tests continue to verify logout cancels an active SQL statement and rejects later requests.
+- [x] First CI run #456 (ID `41783151408`) caught a timing-sensitive test design: EXPLAIN planning completed before a `pg_stat_activity` polling assertion could observe it. Replaced that unreliable timing test with deterministic cancellation-before-statement-attachment coverage; no production code was weakened to make the test pass.
+- [x] Final CI run #462 (ID `41783384599`, https://github.com/plDilipkumar/NexusOps/actions/runs/41783384599) passed all three required jobs for PR #9 head `b582f899094d9576785d222632cd91b4f989888e`. Backend Maven: 379 tests, 0 failures/errors, 67 expected database-gated skips. Disposable PostgreSQL 17 integration: 67/67 passed, 0 failures/errors/skips. Frontend: 96/96 unit tests; TypeScript/Vite build passed; responsive navigation passed at five viewport sizes; skip-link and keyboard navigation passed on desktop/mobile; four account-onboarding flows and 43 durable-session browser scenarios passed.
+- [x] Production API/database smoke remained skipped because PR #9 is unmerged. All database integration ran only against the disposable loopback `neurosql_test` PostgreSQL 17 container.
+- [x] Neon remains unchanged: project `neurosql` on free tier, production `main` branch/database `neurosql_db` has zero application tables and only `neurosql_owner` LOGIN role; review branch `br-silent-cherry-b3k2vqtj` remains separate with proposed schema. No database schema/data/role writes were made.
+- [x] Render `neurosql-api` remains free-tier on `main`, live deployment `dep-dblak9ijnfac73fdn9e0` on `6425ab4`. Vercel production remains READY on main commit `6425ab4`; no feature deployment or environment changes were made. Environment inventory still shows zero visible and zero hidden production variables.
+- [ ] PR #9 remains unmerged; PR #7 remains draft/unapproved. Production remains blocked on explicit schema approval, verified least-privilege production application and SQL-read-only LOGIN roles, HMAC secret, SMTP credentials, AI provider configuration, and live post-deploy verification.
+- [x] No production migrations, roles, deployments, environment variables, credentials, paid resources, or destructive actions were changed.
+
+### Next milestone
+- [ ] Audit AI provider client timeouts, response-size bounds, redaction, retry behavior, and prompt/data minimization. Confirm provider errors cannot leak API keys, SQL literals, or schema data. Keep AI disabled until a user-supplied provider key and deliberate production configuration are available.
