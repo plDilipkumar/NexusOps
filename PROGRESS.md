@@ -169,3 +169,34 @@ No Neon production schema or roles were changed. The durable-auth guard is condi
 - Temporary branch `br-shy-star-b31qx5c6` still contains V1–V8 and V7. Read-only checks reconfirm V8 workspace-name INSERT is allowed, workspace ownership and membership-role UPDATE are denied, `neurosql_sql_readonly` can CONNECT but has no USAGE on `neurosql_app` and no SELECT on `app_users`. Both temporary probe principals have `rolcanlogin=false`, no elevated attributes, and no remaining group memberships.
 - Production blockers remain: explicit approval for V7/V8 and separate credential-bearing auth/SQL LOGIN principals; SMTP credentials and verified sender; independently verifiable Gemini/provider key and live provider test. Durable authentication, email, SQL execution/history, and AI remain disabled. Render environment values cannot be read back through the connector, so provider-key presence is not claimed.
 - No production Neon schema/role changes, destructive operations, paid resources, cross-project database reuse, or source-controlled credentials were introduced.
+
+
+## Run 10 — approved production database migration and identity provisioning — 2026-11-05
+
+User explicitly approved V7/V8 on Neon main and creation of dedicated least-privilege production LOGIN identities.
+
+### Repository and CI inspection
+- Re-read this file at start of run. GitHub default branch is `main`; latest recorded application commit remains `2d20070500ae8cc4b194eabfe0f3fb99915b8f97`.
+- Open PRs: 0.
+- Latest CI run #486 (`41824995526`) remains completed/successful with all five jobs green. Backend 391 passed, 0 failures/errors, 71 expected skips; PostgreSQL 17 integration 71/71; frontend 96/96 plus production build/browser checks; V1–V8 contract passed; 12 SQL/EXPLAIN sign-out/session-expiry race combinations passed.
+- No new application-code changes were made in this run.
+
+### Neon production migration
+- Project `neurosql`, ID `lingering-dew-88806235`; default/main branch `br-empty-credit-b360dmpc`; database `neurosql_db`; PostgreSQL 17.
+- Prepared approved V7+V8 migration on temporary branch `br-proud-hall-b3zb7j32`, migration ID `4e5b8632-857c-4860-bb7d-11a6a46fdcf5`.
+- Temporary branch verification confirmed V7 group role is NOLOGIN, NOINHERIT, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS; CONNECT allowed, database CREATE denied, and no USAGE/SELECT on `neurosql_app`. V8 column-scoped INSERT grants for workspace and owner membership were present. Existing V2 column-scoped auth SELECT grants were also verified. Temporary branch had no customer data schema beyond `neurosql_app` and `public`.
+- After verification, applied the exact prepared V7+V8 SQL to Neon main using the user's explicit approval. Neon confirmed successful application and deletion of temporary branch `br-proud-hall-b3zb7j32`.
+- Created production LOGIN `neurosql_auth_login` with INHERIT TRUE, no superuser/createdb/createrole/replication/BYPASSRLS; granted exactly `neurosql_auth_runtime` with INHERIT TRUE, SET FALSE, ADMIN FALSE.
+- Created production LOGIN `neurosql_sql_login` with the same non-privileged attributes; granted exactly `neurosql_sql_readonly` with INHERIT TRUE, SET FALSE, ADMIN FALSE.
+- Readback confirmed both LOGIN roles have exactly one intended group membership and no elevated role attributes. Passwords have NOT been generated; neither login is yet configured in Render.
+- Auth runtime privileges verified on main: schema USAGE true, CREATE false; email/session hash column SELECT true; display_name SELECT false; workspace and membership bootstrap column INSERT true.
+- SQL login can CONNECT, cannot CREATE in database, has no USAGE or SELECT on `neurosql_app`. There are currently no customer data tables outside `neurosql_app`; public schema exists but contains no application tables. SQL execution must remain disabled until the intended user-data schema/table grants are explicitly established and tested.
+- Production role inventory now includes owner, auth group, SQL group, auth LOGIN, SQL LOGIN. The elevated `neurosql_owner` remains unsuitable for application runtime and is not used as an application datasource.
+
+### Render / Vercel inspection and blockers
+- Render workspace listing returned one workspace: `Dilip kumar's workspace`, ID `tea-d2amubadbo4c73a1jvag`. Per workspace-selection safety, no Render service/env/deployment action has been performed in this run pending user confirmation of that workspace.
+- Vercel project `neurosql`, ID `prj_bWhKWqbbb5EaNRdez05bEsMPe35a`; latest production deployment `dpl_AEuePiqQAs4FSVvQU14fvaaVXc4F` READY, custom domain `neurosql.vercel.app`. Seven non-secret production variables are recorded from the previous run; no secrets are stored in Vercel.
+- Gemini key was reported by user as already present in Render, but provider key presence and a live Gemini request are not independently verified. AI remains disabled.
+- SMTP credentials and verified sender are still missing. Email verification/password reset remain disabled. Recommended no-cost candidate: Brevo Free, official docs state 300 emails/day and transactional SMTP support.
+- Production auth, SQL execution, and AI remain disabled until Render JDBC credentials and app flags are configured, auth is tested live, SQL data-plane grants are designed for actual customer data schemas, and Gemini provider test succeeds.
+- No destructive or paid operations, cross-project DB use, or source-controlled credentials were introduced.
